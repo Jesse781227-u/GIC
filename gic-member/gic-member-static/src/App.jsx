@@ -288,14 +288,74 @@ function Welcome() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [installPrompt, setInstallPrompt] = useState(null)
 
-  // Auto sign-in on recognized devices
+  // Restore and refresh the device session whenever the browser opens the app.
+  // The device ID is persisted separately from the JWT, so an expired token can
+  // be replaced without sending the member through onboarding again.
   useEffect(() => {
-    const existingToken = localStorage.getItem('gic_auth_token')
-    if (existingToken) {
-      navigate('/home', { replace: true })
+    let cancelled = false
+    const restoreSession = async () => {
+      const deviceId = localStorage.getItem('gic_device_id')
+      const existingToken = localStorage.getItem('gic_auth_token')
+
+      if (!deviceId && !existingToken) return
+
+      try {
+        await performDeviceAuth(localStorage.getItem('gic_member_name') || 'Member')
+        if (!cancelled) navigate('/home', { replace: true })
+      } catch {
+        // Keep a still-valid local session usable if the API is temporarily unavailable.
+        if (existingToken && !cancelled) navigate('/home', { replace: true })
+      }
     }
+
+    restoreSession()
+    return () => { cancelled = true }
   }, [navigate])
+
+  // When the URL is opened in a normal browser, offer the installed PWA entry
+  // point. Browsers may block an automatic prompt, so keep a visible fallback.
+  useEffect(() => {
+    if (isStandalonePwa()) return
+
+    const handleInstallPrompt = (event) => {
+      event.preventDefault()
+      setInstallPrompt(event)
+      if (localStorage.getItem('gic_pwa_install_prompt_seen') === 'true') return
+
+      localStorage.setItem('gic_pwa_install_prompt_seen', 'true')
+      window.setTimeout(async () => {
+        try {
+          await event.prompt()
+          const choice = await event.userChoice
+          if (choice.outcome === 'accepted') {
+            localStorage.setItem('gic_pwa_installed', 'true')
+            window.location.reload()
+          }
+        } catch {
+          // The browser requires the visible fallback button instead.
+        }
+      }, 450)
+    }
+
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt)
+    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
+  }, [])
+
+  const handleOpenApp = async () => {
+    if (!installPrompt) {
+      navigate('/home', { replace: true })
+      return
+    }
+
+    await installPrompt.prompt()
+    const choice = await installPrompt.userChoice
+    if (choice.outcome === 'accepted') {
+      localStorage.setItem('gic_pwa_installed', 'true')
+      window.location.reload()
+    }
+  }
 
   const handleGetStarted = async () => {
     setLoading(true)
@@ -325,6 +385,7 @@ function Welcome() {
 
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {error && <p className="auth-inline-error" role="alert">{error}</p>}
+        {installPrompt && <button className="btn primary wide" onClick={handleOpenApp} style={{ fontSize: '14px', padding: '14px' }}>Open GIC App</button>}
         <button
           className="btn gold wide"
           onClick={handleGetStarted}
@@ -585,7 +646,7 @@ function HomePage() {
           <small>{nextEvent.title}</small>
           <h3>{nextEvent.date} · {nextEvent.time}</h3>
           <p>{nextEvent.location}</p>
-          <span className="link-button">Service information</span>
+          <span className="link-button"></span>
         </div>
       </article>
     </section>
