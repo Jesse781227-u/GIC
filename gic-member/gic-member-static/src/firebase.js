@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAnalytics, isSupported as analyticsIsSupported } from 'firebase/analytics';
 import { getMessaging, getToken } from 'firebase/messaging';
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
 
 const FIREBASE_CONFIG = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCjxH5M9pHLmXHtBqyPIbOvsv_SGmroucM',
@@ -42,3 +43,13 @@ export async function getFcmToken() {
     return '';
   }
 }
+
+export function createPhoneAuth() {
+  return getAuth(firebaseApp);
+}
+
+export function createPhoneRecaptcha(containerId) {
+  return new RecaptchaVerifier(getAuth(firebaseApp), containerId, { size: 'invisible' });
+}
+
+export { signInWithPhoneNumber };

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { SignJWT } from "jose";
 import { getJwtSecret } from "../middleware/auth.js";
+import { getFirebaseAuth } from "../lib/firebase.js";
 import { db } from "../db/index.js";
 import { members } from "../db/schema.js";
 import { eq } from "drizzle-orm";
@@ -27,6 +28,37 @@ const profileSchema = z.object({
   membershipStatus: z.string().trim().optional(),
   avatar: z.string().optional(),
 });
+
+function normalizePhone(phone: string) {
+  return phone.replace(/\D/g, "");
+}
+
+async function issueMemberToken(member: typeof members.$inferSelect, platform = "web") {
+  return new SignJWT({ sub: member.id, role: "MEMBER", name: member.displayName, platform })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(getJwtSecret());
+}
+
+function memberResponse(member: typeof members.$inferSelect) {
+  return {
+    id: member.id,
+    name: member.displayName,
+    phone: member.phone,
+    email: member.email || "",
+    ministries: member.ministries || "",
+    center: member.center || "",
+    serviceTime: member.serviceTime || "",
+    birthday: member.birthday || "",
+    membershipStatus: member.membershipStatus || "",
+    avatar: member.avatar || "",
+    active: member.active,
+    profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
+    authMethod: "device_auth",
+    authenticatedAt: new Date().toISOString(),
+  };
+}
 
 app.post("/device", async (c) => {
   try {
@@ -65,40 +97,40 @@ app.post("/device", async (c) => {
       })
       .returning();
 
-    const secret = getJwtSecret();
-    const token = await new SignJWT({
-      sub: deviceId,
-      role: "MEMBER",
-      name: memberName,
-      platform: platform || "web",
-    })
-      .setProtectedHeader({ alg: "HS256" })
-      .setIssuedAt()
-      .setExpirationTime("30d")
-      .sign(secret);
+    const token = await issueMemberToken(member, platform || "web");
 
     return c.json({
       token,
-      member: {
-        id: member.id,
-        name: member.displayName,
-        phone: member.phone,
-        email: member.email || "",
-        ministries: member.ministries || "",
-        center: member.center || "",
-        serviceTime: member.serviceTime || "",
-        birthday: member.birthday || "",
-        membershipStatus: member.membershipStatus || "",
-        avatar: member.avatar || "",
-        active: member.active,
-        profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
-        authMethod: "device_auth",
-        authenticatedAt: new Date().toISOString(),
-      },
+      member: memberResponse(member),
     });
   } catch (err: any) {
     console.error("Device auth error:", err);
     return c.json({ error: "Internal error", message: err.message }, 500);
+  }
+});
+
+app.post("/recover", async (c) => {
+  try {
+    const body = await c.req.json();
+    const firebaseToken = z.string().min(1).parse(body.firebaseToken);
+    const deviceId = z.string().min(1).parse(body.deviceId);
+    const firebaseUser = await getFirebaseAuth().verifyIdToken(firebaseToken);
+    const phoneNumber = firebaseUser.phone_number;
+    if (!phoneNumber) return c.json({ error: "A verified phone number is required" }, 400);
+
+    const candidates = await db.select().from(members);
+    const member = candidates.find((item) => item.phone && normalizePhone(item.phone) === normalizePhone(phoneNumber));
+    if (!member) return c.json({ error: "No GIC account was found for this phone number" }, 404);
+
+    const [updatedMember] = await db.update(members)
+      .set({ lastSeenAt: new Date(), updatedAt: new Date() })
+      .where(eq(members.id, member.id))
+      .returning();
+    const token = await issueMemberToken(updatedMember, "web");
+    return c.json({ token, deviceId, member: memberResponse(updatedMember) });
+  } catch (error: any) {
+    console.error("Phone recovery error:", error);
+    return c.json({ error: "Phone recovery failed" }, 400);
   }
 });
 

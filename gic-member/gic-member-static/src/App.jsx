@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getFcmToken } from './firebase'
+import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
@@ -176,6 +176,20 @@ export function getOrCreateDeviceId() {
   return id
 }
 
+function storeMemberSession(data) {
+  localStorage.setItem('gic_auth_token', data.token)
+  localStorage.setItem('gic_member_name', data.member.name)
+  localStorage.setItem('gic_member_phone', data.member.phone || '')
+  localStorage.setItem('gic_member_email', data.member.email || '')
+  localStorage.setItem('gic_member_ministries', data.member.ministries || '')
+  localStorage.setItem('gic_member_center', data.member.center || '')
+  localStorage.setItem('gic_member_service_time', data.member.serviceTime || '')
+  localStorage.setItem('gic_member_birthday', data.member.birthday || '')
+  localStorage.setItem('gic_membership_status', data.member.membershipStatus || '')
+  if (data.member.avatar) localStorage.setItem('gic_member_avatar', data.member.avatar)
+  localStorage.setItem('gic_auth_method', 'device_auth')
+}
+
 export async function performDeviceAuth(memberName) {
   const deviceId = getOrCreateDeviceId()
   const payload = {
@@ -192,17 +206,7 @@ export async function performDeviceAuth(memberName) {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Device authentication failed')
-    localStorage.setItem('gic_auth_token', data.token)
-    localStorage.setItem('gic_member_name', data.member.name)
-    localStorage.setItem('gic_member_phone', data.member.phone || '')
-    localStorage.setItem('gic_member_email', data.member.email || '')
-    localStorage.setItem('gic_member_ministries', data.member.ministries || '')
-    localStorage.setItem('gic_member_center', data.member.center || '')
-    localStorage.setItem('gic_member_service_time', data.member.serviceTime || '')
-    localStorage.setItem('gic_member_birthday', data.member.birthday || '')
-    localStorage.setItem('gic_membership_status', data.member.membershipStatus || '')
-    if (data.member.avatar) localStorage.setItem('gic_member_avatar', data.member.avatar)
-    localStorage.setItem('gic_auth_method', 'device_auth')
+    storeMemberSession(data)
     return data
   } catch (e) {
     console.error('Device authentication failed:', e)
@@ -224,12 +228,12 @@ function Button({ children, variant = 'primary', className = '', ...props }) {
   return <button className={`btn ${variant} ${className}`} {...props}>{children}</button>
 }
 
-function Field({ label, value, type = 'text', placeholder, onChange, icon: Icon }) {
+function Field({ label, value, type = 'text', placeholder, onChange, icon: Icon, required = false }) {
   return <label className="field">
     <span>{label}</span>
     <div className="field-wrap">
       {Icon && <Icon size={15} />}
-      <input type={type} value={onChange ? value : undefined} defaultValue={onChange ? undefined : value} placeholder={placeholder} onChange={onChange} />
+      <input type={type} value={onChange ? value : undefined} defaultValue={onChange ? undefined : value} placeholder={placeholder} onChange={onChange} required={required} />
     </div>
   </label>
 }
@@ -364,6 +368,15 @@ function Welcome() {
       if (!deviceId && !existingToken) return
 
       try {
+        if (existingToken) {
+          const { profile } = await fetchMemberApi('/api/auth/profile')
+          if (!cancelled) {
+            localStorage.setItem('gic_member_name', profile.name || '')
+            localStorage.setItem('gic_member_phone', profile.phone || '')
+            navigate(profile.profileComplete ? (localStorage.getItem('gic_onboarding_completed') === 'true' && isStandalonePwa() ? '/home' : '/onboarding') : '/profile/edit?required=1', { replace: true })
+          }
+          return
+        }
         const data = await performDeviceAuth(localStorage.getItem('gic_member_name'))
         if (!cancelled) {
           const onboardingComplete = localStorage.getItem('gic_onboarding_completed') === 'true'
@@ -416,9 +429,75 @@ function Welcome() {
         >
           {loading ? 'Entering Portal...' : 'Get Started'}
         </button>
+        <Link className="center link-button" to="/recover">Recover account with phone</Link>
       </div>
     </div>
   </div>
+}
+
+function Recovery() {
+  const navigate = useNavigate()
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [confirmation, setConfirmation] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const requestCode = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const auth = createPhoneAuth()
+      const verifier = createPhoneRecaptcha('phone-recovery-recaptcha')
+      const result = await signInWithPhoneNumber(auth, phone.trim(), verifier)
+      setConfirmation(result)
+    } catch (recoveryError) {
+      setError(recoveryError.message || 'Unable to send verification code.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const recoverAccount = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const firebaseUser = await confirmation.confirm(code.trim())
+      const response = await fetch(`${API_BASE}/api/auth/recover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firebaseToken: await firebaseUser.user.getIdToken(), deviceId: getOrCreateDeviceId() }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Account recovery failed.')
+      storeMemberSession(data)
+      localStorage.setItem('gic_profile_completed', data.member.profileComplete ? 'true' : 'false')
+      localStorage.setItem('gic_onboarding_profile', 'true')
+      navigate('/onboarding', { replace: true })
+    } catch (recoveryError) {
+      setError(recoveryError.message || 'The verification code was not accepted.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="onboarding-page"><div className="onboarding-card">
+    <Logo />
+    <h1 style={{ textAlign: 'center', fontSize: '20px', marginTop: '16px' }}>Recover your account</h1>
+    <p className="sub">Use the phone number saved on your GIC profile. Include the country code, for example +2348012345678.</p>
+    {error && <p className="auth-inline-error" role="alert">{error}</p>}
+    {!confirmation ? <form className="stack" onSubmit={requestCode}>
+      <Field label="Phone Number" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+234 801 234 5678" icon={Phone} required />
+      <div id="phone-recovery-recaptcha" />
+      <button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending code...' : 'Send verification code'}</button>
+    </form> : <form className="stack" onSubmit={recoverAccount}>
+      <Field label="Verification Code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="123456" required />
+      <button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Recovering account...' : 'Recover account'}</button>
+    </form>}
+    <Link className="center link-button" to="/">Back to welcome</Link>
+  </div></div>
 }
 
 function OnboardingFlow() {
@@ -1178,6 +1257,7 @@ function SignIn() {
 export default function App() {
   return <Routes>
     <Route path="/" element={<Welcome />} />
+    <Route path="/recover" element={<Recovery />} />
     <Route path="/signin" element={<SignIn />} />
     <Route path="/onboarding" element={<OnboardingFlow />} />
     <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
