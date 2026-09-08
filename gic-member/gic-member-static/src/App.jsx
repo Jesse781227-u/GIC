@@ -273,6 +273,9 @@ function Welcome() {
     setError('')
     try {
       await performDeviceAuth('Member')
+      localStorage.removeItem('gic_profile_completed')
+      localStorage.removeItem('gic_onboarding_completed')
+      localStorage.setItem('gic_onboarding_profile', 'true')
       navigate('/onboarding')
     } catch {
       setError('We could not connect to the member service. Please try again.')
@@ -311,7 +314,7 @@ function OnboardingFlow() {
   const [busy, setBusy] = useState(false)
   const [permissionState, setPermissionState] = useState('default')
   const [installPrompt, setInstallPrompt] = useState(null)
-  const [stage, setStage] = useState('notification')
+  const [stage, setStage] = useState('profile')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
 
@@ -327,13 +330,18 @@ function OnboardingFlow() {
       return
     }
 
+    const profileCompleted = localStorage.getItem('gic_profile_completed') === 'true'
     const savedPermission = localStorage.getItem('gic_notification_permission')
     if (savedPermission) {
       setPermissionState(savedPermission)
     }
 
-    if (savedPermission === 'granted') {
+    if (!profileCompleted) {
+      setStage('profile')
+    } else if (savedPermission === 'granted') {
       setStage('pwa')
+    } else {
+      setStage('notification')
     }
 
     const handleInstallPrompt = (event) => {
@@ -353,6 +361,7 @@ function OnboardingFlow() {
 
   const finishOnboarding = () => {
     setLocalState('gic_onboarding_completed', 'true')
+    localStorage.removeItem('gic_onboarding_profile')
     navigate('/home', { replace: true })
   }
 
@@ -451,7 +460,13 @@ function OnboardingFlow() {
 
   return <div className="onboarding-page"><div className="onboarding-card">
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
-    {stage === 'notification' ? <>
+    {stage === 'profile' ? <>
+      <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Complete your profile</h1>
+      <p className="sub" style={{ textAlign: 'center' }}>Tell us a little about yourself so your GIC member experience is personalized.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '18px' }}>
+        <button className="btn primary wide" onClick={() => navigate('/profile/edit')}>Complete Profile</button>
+      </div>
+    </> : stage === 'notification' ? <>
       <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Stay connected with GIC</h1>
       <p className="sub" style={{ textAlign: 'center' }}>Get important church updates, event reminders, registration updates, announcements and other notifications directly on your device.</p>
       <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -832,7 +847,8 @@ function EditProfile() {
     const profileFields = { phone, email, ministries: ministriesValue.join(', '), center, serviceTime, birthday, membershipStatus }
     Object.entries(profileFields).forEach(([key, value]) => localStorage.setItem(`gic_member_${key === 'ministries' ? 'ministries' : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`, value.trim()))
     if (avatar) localStorage.setItem('gic_member_avatar', avatar)
-    navigate('/profile')
+    localStorage.setItem('gic_profile_completed', 'true')
+    navigate(localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding' : '/profile')
   }
 
   const handleAvatarChange = (event) => {
@@ -904,6 +920,9 @@ function SignIn() {
   const navigate = useNavigate()
   const handleDemoSignIn = async () => {
     await performDeviceAuth('Member')
+    localStorage.removeItem('gic_profile_completed')
+    localStorage.removeItem('gic_onboarding_completed')
+    localStorage.setItem('gic_onboarding_profile', 'true')
     navigate('/onboarding')
   }
 
