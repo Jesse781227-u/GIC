@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getFcmToken } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
@@ -194,6 +195,13 @@ export async function performDeviceAuth(memberName) {
     localStorage.setItem('gic_auth_token', data.token)
     localStorage.setItem('gic_member_name', data.member.name)
     localStorage.setItem('gic_member_phone', data.member.phone || '')
+    localStorage.setItem('gic_member_email', data.member.email || '')
+    localStorage.setItem('gic_member_ministries', data.member.ministries || '')
+    localStorage.setItem('gic_member_center', data.member.center || '')
+    localStorage.setItem('gic_member_service_time', data.member.serviceTime || '')
+    localStorage.setItem('gic_member_birthday', data.member.birthday || '')
+    localStorage.setItem('gic_membership_status', data.member.membershipStatus || '')
+    if (data.member.avatar) localStorage.setItem('gic_member_avatar', data.member.avatar)
     localStorage.setItem('gic_auth_method', 'device_auth')
     return data
   } catch (e) {
@@ -307,12 +315,23 @@ function ProtectedRoute({ children }) {
         if (cancelled) return
         localStorage.setItem('gic_member_name', profile.name || '')
         localStorage.setItem('gic_member_phone', profile.phone || '')
+        localStorage.setItem('gic_member_email', profile.email || '')
+        localStorage.setItem('gic_member_ministries', profile.ministries || '')
+        localStorage.setItem('gic_member_center', profile.center || '')
+        localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
+        localStorage.setItem('gic_member_birthday', profile.birthday || '')
+        localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
+        if (profile.avatar) localStorage.setItem('gic_member_avatar', profile.avatar)
         if (!profile.active || !profile.profileComplete) {
           if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
           return
         }
         if (!isStandalonePwa() && location.pathname !== '/onboarding') {
           navigate('/onboarding?stage=install', { replace: true })
+          return
+        }
+        if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding') {
+          navigate('/onboarding?stage=notifications', { replace: true })
           return
         }
         setChecking(false)
@@ -419,7 +438,8 @@ function OnboardingFlow() {
       return
     }
 
-    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile() && isStandalonePwa()) {
+    const notificationsAllowed = !('Notification' in window) || Notification.permission !== 'default'
+    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile() && isStandalonePwa() && notificationsAllowed) {
       navigate('/home', { replace: true })
       return
     }
@@ -435,8 +455,12 @@ function OnboardingFlow() {
       setStage('profile')
     } else if (requestedStage === 'install' && !isStandalonePwa()) {
       setStage('pwa')
+    } else if (requestedStage === 'notifications' && isStandalonePwa()) {
+      setStage('notification')
     } else if (!isStandalonePwa()) {
       setStage('pwa')
+    } else if (Notification.permission === 'default') {
+      setStage('notification')
     } else {
       setStage('notification')
     }
@@ -501,6 +525,8 @@ function OnboardingFlow() {
         setPermissionState('granted')
         setLocalState('gic_notification_permission', 'granted')
         setLocalState('gic_notifications_prompted', 'true')
+        const token = await getFcmToken()
+        if (token) await registerPushTokenWithBackend(token)
         finishOnboarding()
         return
       }
@@ -516,6 +542,10 @@ function OnboardingFlow() {
       setPermissionState(permission)
       setLocalState('gic_notification_permission', permission)
       setLocalState('gic_notifications_prompted', 'true')
+      if (permission === 'granted') {
+        const token = await getFcmToken()
+        if (token) await registerPushTokenWithBackend(token)
+      }
       finishOnboarding()
     } catch (error) {
       console.error('Notification onboarding error:', error)
@@ -1020,7 +1050,17 @@ function EditProfile() {
     const authData = await performDeviceAuth(name.trim())
     const profileResponse = await fetchMemberApi('/api/auth/profile', {
       method: 'PATCH',
-      body: JSON.stringify({ name: name.trim(), phone: phone.trim() }),
+      body: JSON.stringify({
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        ministries: ministriesValue.join(', '),
+        center,
+        serviceTime,
+        birthday,
+        membershipStatus,
+        avatar,
+      }),
     })
     const savedProfile = profileResponse.profile
     localStorage.setItem('gic_member_name', savedProfile.name)

@@ -19,6 +19,13 @@ const deviceAuthSchema = z.object({
 const profileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   phone: z.string().trim().min(1, "Phone number is required"),
+  email: z.string().trim().optional(),
+  ministries: z.string().trim().optional(),
+  center: z.string().trim().optional(),
+  serviceTime: z.string().trim().optional(),
+  birthday: z.string().trim().optional(),
+  membershipStatus: z.string().trim().optional(),
+  avatar: z.string().optional(),
 });
 
 app.post("/device", async (c) => {
@@ -76,6 +83,13 @@ app.post("/device", async (c) => {
         id: member.id,
         name: member.displayName,
         phone: member.phone,
+        email: member.email || "",
+        ministries: member.ministries || "",
+        center: member.center || "",
+        serviceTime: member.serviceTime || "",
+        birthday: member.birthday || "",
+        membershipStatus: member.membershipStatus || "",
+        avatar: member.avatar || "",
         active: member.active,
         profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
         authMethod: "device_auth",
@@ -100,6 +114,13 @@ app.get("/profile", async (c) => {
       id: member.id,
       name: member.displayName,
       phone: member.phone || "",
+      email: member.email || "",
+      ministries: member.ministries || "",
+      center: member.center || "",
+      serviceTime: member.serviceTime || "",
+      birthday: member.birthday || "",
+      membershipStatus: member.membershipStatus || "",
+      avatar: member.avatar || "",
       active: member.active,
       profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
     },
@@ -112,13 +133,39 @@ app.patch("/profile", async (c) => {
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message || "Invalid profile" }, 400);
 
   const [member] = await db.update(members)
-    .set({ displayName: parsed.data.name, phone: parsed.data.phone, active: true, updatedAt: new Date(), lastSeenAt: new Date() })
+    .set({
+      displayName: parsed.data.name,
+      phone: parsed.data.phone,
+      email: parsed.data.email || "",
+      ministries: parsed.data.ministries || "",
+      center: parsed.data.center || "",
+      serviceTime: parsed.data.serviceTime || "",
+      birthday: parsed.data.birthday || "",
+      membershipStatus: parsed.data.membershipStatus || "",
+      avatar: parsed.data.avatar || "",
+      active: true,
+      updatedAt: new Date(),
+      lastSeenAt: new Date(),
+    })
     .where(eq(members.id, user.sub))
     .returning();
   if (!member) return c.json({ error: "Account not found" }, 404);
 
   return c.json({
-    profile: { id: member.id, name: member.displayName, phone: member.phone, active: member.active, profileComplete: true },
+    profile: {
+      id: member.id,
+      name: member.displayName,
+      phone: member.phone,
+      email: member.email || "",
+      ministries: member.ministries || "",
+      center: member.center || "",
+      serviceTime: member.serviceTime || "",
+      birthday: member.birthday || "",
+      membershipStatus: member.membershipStatus || "",
+      avatar: member.avatar || "",
+      active: member.active,
+      profileComplete: true,
+    },
   });
 });
 
