@@ -4,7 +4,7 @@ import {
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2
 } from 'lucide-react'
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 const events = [
   { id: 'youth-conference-2024', title: 'Youth Conference 2026', date: 'Sat, 24 Oct 2026', time: '10:00 AM', location: 'Global Impact Church, Lekki', image: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=900&q=80', tag: 'Youth' },
@@ -14,9 +14,14 @@ const events = [
 ]
 
 const ministries = [
-  { id: 'youth', title: 'Youth Ministry', desc: 'Equipping and raising young leaders.', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=700&q=80' },
-  { id: 'ushering', title: 'Ushering Ministry', desc: 'Serving with excellence and a heart.', image: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=700&q=80' },
-  { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
+  { id: 'youth', title: 'Youth Ministry', desc: 'Equipping and raising young leaders.', requirements: 'Open to young people who want to grow in faith, build friendships, and serve consistently.', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=700&q=80' },
+  { id: 'ushering', title: 'Ushering Ministry', desc: 'Serving with excellence and a heart.', requirements: 'A welcoming heart, punctuality, a neat appearance, and willingness to serve during church gatherings.', image: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=700&q=80' },
+  { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", requirements: 'Interest or experience in photography, video, graphics, livestreaming, audio, or communications.', image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
+  { id: 'choir', title: 'Choir', desc: 'Leading the church in worship through music.', requirements: 'A love for worship, regular attendance, willingness to rehearse, and a teachable spirit.', image: 'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=700&q=80' },
+  { id: 'children', title: "Children's Ministry", desc: 'Helping children discover faith and grow with joy.', requirements: 'Patience, care for children, reliability, and willingness to complete the church safeguarding process.', image: 'https://images.unsplash.com/photo-1504159506876-f8338247a14a?auto=format&fit=crop&w=700&q=80' },
+  { id: 'men', title: "Men's Fellowship", desc: 'Building purposeful men through faith and fellowship.', requirements: 'Men who want to grow spiritually, support one another, and participate in fellowship activities.', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=700&q=80' },
+  { id: 'women', title: "Women's Ministry", desc: 'Growing together in faith, purpose, and community.', requirements: 'Women who want to connect, grow, and contribute to gatherings and support activities.', image: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=700&q=80' },
+  { id: 'prayer', title: 'Prayer Ministry', desc: 'Standing together in prayer for the church and community.', requirements: 'A committed prayer life, confidentiality, consistency, and willingness to join prayer gatherings.', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=700&q=80' },
 ]
 
 const ministryOptions = [
@@ -44,7 +49,7 @@ function getSelectedService() {
 function getSundayServiceCopy() {
   const { center, time } = getSelectedService()
   return {
-    summary: `Join us this Sunday at ${center}. Your selected service time is ${time}.`,
+    summary: `Join us this Sunday at ${center}. Your preferred service time is ${time}.`,
     body: [
       `Join us this Sunday at ${center} for worship, the Word, and fellowship at Global Impact Church. Your selected service time is ${time}.`,
       'Come expectant and invite someone to experience the presence of God with us.',
@@ -747,7 +752,22 @@ function MinistriesPage() {
 
   return <MemberShell active="ministries" title="My Ministries" backTo="/home">
     <p className="ministries-subtitle"></p>
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{ministry.desc}</small></div><ChevronRight size={18} /></Link>)}</div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/profile/edit">Browse Ministries</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need to talk to someone about finding the right ministry? Contact details will be available here soon.</span></div></div>}
+    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need to talk to someone about finding the right ministry? Contact details will be available here soon.</span></div></div>}
+  </MemberShell>
+}
+
+function MinistryDirectory() {
+  return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
+    <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
+    <div className="directory-list">{ministries.map((ministry) => <article className="directory-card" key={ministry.id}>
+      <img src={ministry.image} alt="" />
+      <div className="directory-card-body">
+        <h2>{ministry.title}</h2>
+        <p>{ministry.desc}</p>
+        <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
+        <Link className="btn primary wide" to={`/profile/edit?ministry=${ministry.id}`}>Choose this ministry</Link>
+      </div>
+    </article>)}</div>
   </MemberShell>
 }
 
@@ -768,7 +788,7 @@ function Profile() {
     ['Email Address', localStorage.getItem('gic_member_email') || 'Add info', Mail],
     ['Ministries', localStorage.getItem('gic_member_ministries') || 'Add info', Users],
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
-    ['Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
+    ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
     ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
     ['Membership Status', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
   ]
@@ -826,12 +846,16 @@ function Profile() {
 
 function EditProfile() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [name, setName] = useState(localStorage.getItem('gic_member_name') || 'Member')
   const [phone, setPhone] = useState(localStorage.getItem('gic_member_phone') || '')
   const [email, setEmail] = useState(localStorage.getItem('gic_member_email') || '')
   const [ministriesValue, setMinistriesValue] = useState(() => {
     const savedMinistries = localStorage.getItem('gic_member_ministries') || ''
-    return savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
+    const selectedMinistries = savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
+    const ministryId = new URLSearchParams(location.search).get('ministry')
+    const chosenMinistry = ministries.find((ministry) => ministry.id === ministryId)?.title
+    return chosenMinistry && !selectedMinistries.includes(chosenMinistry) ? [...selectedMinistries, chosenMinistry] : selectedMinistries
   })
   const [center, setCenter] = useState(localStorage.getItem('gic_member_center') || '')
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
@@ -878,7 +902,7 @@ function EditProfile() {
       <SelectField label="Center You Attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
         {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
       </SelectField>
-      <SelectField label="Service Time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
+      <SelectField label="Preferred Service Time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
         {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
       </SelectField>
       <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
@@ -912,7 +936,19 @@ function MyRegistrations() {
         <div className="registered-event-cover" style={{ backgroundImage: `url(${event.image})` }}><span className="status">Registered</span></div>
         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small><div className="countdown"><small>Event starts in</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
       </article>
-    }) : <div className="empty"><CalendarDays size={28} /><h2>No registrations yet</h2><p>Events you register for will appear here.</p><Link className="btn primary wide" to="/events">Browse Events</Link></div>}
+    }) : <div className="events-empty-state">
+      <div className="events-empty-illustration" aria-hidden="true">
+        <div className="events-empty-calendar"><CalendarDays size={86} strokeWidth={1.35} /></div>
+        <span className="events-empty-cross">✦</span>
+        <span className="events-empty-person person-one"><User size={18} /></span>
+        <span className="events-empty-person person-two"><User size={16} /></span>
+        <span className="events-empty-dot dot-one" />
+        <span className="events-empty-dot dot-two" />
+      </div>
+      <h1>No events yet</h1>
+      <p>Hey {localStorage.getItem('gic_member_name') || 'there'} 👋<br />You haven't registered for any events.<br />Discover upcoming conferences, special programmes and services, there is always a place for you!</p>
+      <Link className="btn primary wide events-empty-button" to="/events">Find Events</Link>
+    </div>}
   </MemberShell>
 }
 
@@ -957,6 +993,7 @@ export default function App() {
     <Route path="/forms" element={<FormsPage />} />
     <Route path="/forms/prayer-request" element={<PrayerRequest />} />
     <Route path="/ministries" element={<MinistriesPage />} />
+    <Route path="/ministries/browse" element={<MinistryDirectory />} />
     <Route path="/ministries/:id" element={<MinistryDetails />} />
     <Route path="/profile" element={<Profile />} />
     <Route path="/profile/edit" element={<EditProfile />} />
