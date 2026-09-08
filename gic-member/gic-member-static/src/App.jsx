@@ -380,7 +380,9 @@ function Welcome() {
         const data = await performDeviceAuth(localStorage.getItem('gic_member_name'))
         if (!cancelled) {
           const onboardingComplete = localStorage.getItem('gic_onboarding_completed') === 'true'
-          navigate(data.member.profileComplete && onboardingComplete && isStandalonePwa() ? '/home' : data.member.profileComplete ? '/onboarding' : '/profile/edit?required=1', { replace: true })
+          if (data.member.profileComplete) {
+            navigate(onboardingComplete && isStandalonePwa() ? '/home' : '/onboarding', { replace: true })
+          }
         }
       } catch {
         if (existingToken && !cancelled && hasCompleteLocalProfile()) {
