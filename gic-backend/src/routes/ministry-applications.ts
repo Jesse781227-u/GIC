@@ -26,6 +26,15 @@ memberApp.post("/", async (c) => {
   return c.json({ application }, 201);
 });
 
+memberApp.get("/", async (c) => {
+  const user = c.get("user");
+  const applications = await db.query.ministryApplications.findMany({
+    where: eq(ministryApplications.memberId, user.sub),
+    orderBy: [desc(ministryApplications.createdAt)],
+  });
+  return c.json({ applications });
+});
+
 const adminApp = new Hono();
 adminApp.use("*", authMiddleware, adminMiddleware);
 adminApp.get("/", async (c) => c.json({ applications: await db.query.ministryApplications.findMany({ orderBy: [desc(ministryApplications.createdAt)] }) }));
