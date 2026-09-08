@@ -7,8 +7,8 @@ import {
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 const events = [
-  { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1519491050282-cf00c82424b4?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
-  { id: 'midweek-service', title: 'Midweek Service', date: 'Wed, 7 Oct 2026', time: '6:00 PM WAT', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
+  { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://i.ibb.co/zTcjGhTp/Screenshot-2026-09-08-134018.png', tag: 'Service', isService: true },
+  { id: 'midweek-service', title: 'Midweek Service', date: 'Wed, 7 Oct 2026', time: '6:00 PM WAT', location: 'Global Impact Church', image: 'https://i.ibb.co/VYtgTk3b/Screenshot-2026-09-08-131313.png', tag: 'Service', isService: true },
 ]
 
 const ministries = [
@@ -54,8 +54,31 @@ function getSundayServiceCopy() {
   }
 }
 
+function getNextServiceDate(event, now = new Date()) {
+  if (!event.isService) return new Date(event.date.replace(/^\w+, /, '')).getTime()
+  const targetDay = event.id === 'midweek-service' ? 3 : 0 // Wednesday / Sunday
+  const next = new Date(now)
+  const daysUntilTarget = (targetDay - next.getDay() + 7) % 7
+  next.setDate(next.getDate() + daysUntilTarget)
+  next.setHours(event.id === 'midweek-service' ? 18 : 8, 45, 0, 0)
+  if (daysUntilTarget === 0 && next.getTime() <= now.getTime()) next.setDate(next.getDate() + 7)
+  return next.getTime()
+}
+
+function getUpcomingEvents() {
+  return [...events].sort((first, second) => getNextServiceDate(first) - getNextServiceDate(second))
+}
+
 function getNextEvent() {
-  return [...events].sort((first, second) => new Date(first.date.replace(/^\w+, /, '')).getTime() - new Date(second.date.replace(/^\w+, /, '')).getTime())[0]
+  return getUpcomingEvents()[0]
+}
+
+function getServiceDisplay(event) {
+  const { center, time } = getSelectedService()
+  const sundayTime = time.replace(/^Sunday Services?:\s*/i, '')
+  return event.id === 'sunday-service'
+    ? { ...event, date: 'This Sunday', time: sundayTime, location: center }
+    : { ...event, date: 'This Wednesday', time: '6:00 PM WAT', location: center }
 }
 
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
@@ -265,14 +288,74 @@ function Welcome() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [installPrompt, setInstallPrompt] = useState(null)
 
-  // Auto sign-in on recognized devices
+  // Restore and refresh the device session whenever the browser opens the app.
+  // The device ID is persisted separately from the JWT, so an expired token can
+  // be replaced without sending the member through onboarding again.
   useEffect(() => {
-    const existingToken = localStorage.getItem('gic_auth_token')
-    if (existingToken) {
-      navigate('/home', { replace: true })
+    let cancelled = false
+    const restoreSession = async () => {
+      const deviceId = localStorage.getItem('gic_device_id')
+      const existingToken = localStorage.getItem('gic_auth_token')
+
+      if (!deviceId && !existingToken) return
+
+      try {
+        await performDeviceAuth(localStorage.getItem('gic_member_name') || 'Member')
+        if (!cancelled) navigate('/home', { replace: true })
+      } catch {
+        // Keep a still-valid local session usable if the API is temporarily unavailable.
+        if (existingToken && !cancelled) navigate('/home', { replace: true })
+      }
     }
+
+    restoreSession()
+    return () => { cancelled = true }
   }, [navigate])
+
+  // When the URL is opened in a normal browser, offer the installed PWA entry
+  // point. Browsers may block an automatic prompt, so keep a visible fallback.
+  useEffect(() => {
+    if (isStandalonePwa()) return
+
+    const handleInstallPrompt = (event) => {
+      event.preventDefault()
+      setInstallPrompt(event)
+      if (localStorage.getItem('gic_pwa_install_prompt_seen') === 'true') return
+
+      localStorage.setItem('gic_pwa_install_prompt_seen', 'true')
+      window.setTimeout(async () => {
+        try {
+          await event.prompt()
+          const choice = await event.userChoice
+          if (choice.outcome === 'accepted') {
+            localStorage.setItem('gic_pwa_installed', 'true')
+            window.location.reload()
+          }
+        } catch {
+          // The browser requires the visible fallback button instead.
+        }
+      }, 450)
+    }
+
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt)
+    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
+  }, [])
+
+  const handleOpenApp = async () => {
+    if (!installPrompt) {
+      navigate('/home', { replace: true })
+      return
+    }
+
+    await installPrompt.prompt()
+    const choice = await installPrompt.userChoice
+    if (choice.outcome === 'accepted') {
+      localStorage.setItem('gic_pwa_installed', 'true')
+      window.location.reload()
+    }
+  }
 
   const handleGetStarted = async () => {
     setLoading(true)
@@ -302,6 +385,7 @@ function Welcome() {
 
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {error && <p className="auth-inline-error" role="alert">{error}</p>}
+        {installPrompt && <button className="btn primary wide" onClick={handleOpenApp} style={{ fontSize: '14px', padding: '14px' }}>Open GIC App</button>}
         <button
           className="btn gold wide"
           onClick={handleGetStarted}
@@ -496,7 +580,7 @@ function OnboardingFlow() {
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || 'Member'
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
-  const nextEvent = getNextEvent()
+  const nextEvent = getServiceDisplay(getNextEvent())
 
   useEffect(() => {
     fetch(`${API_BASE}/api/mixlr/latest`)
@@ -562,19 +646,21 @@ function HomePage() {
           <small>{nextEvent.title}</small>
           <h3>{nextEvent.date} · {nextEvent.time}</h3>
           <p>{nextEvent.location}</p>
-          <Link to={`/events/${nextEvent.id}`}>View Details</Link>
+          <span className="link-button"></span>
         </div>
       </article>
     </section>
     <section className="section">
       <div className="section-head"><span>Upcoming Events</span><Link to="/events">View All</Link></div>
-      {events.slice(0, 2).map(e => <EventRow key={e.id} event={e} />)}
+      {getUpcomingEvents().slice(0, 2).map(e => <EventRow key={e.id} event={e} />)}
     </section>
   </MemberShell>
 }
 
 function EventRow({ event }) {
-  return <Link className="event-row" to={`/events/${event.id}`}><img src={event.image} alt="" /><div><b>{event.title}</b><small className="event-meta"><CalendarDays size={13} />{event.date} · {event.time}</small><small className="event-location"><MapPin size={13} />{event.location}</small></div><ChevronRight className="event-chevron" size={19} /></Link>
+  const displayEvent = event.isService ? getServiceDisplay(event) : event
+  const content = <><img src={displayEvent.image} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date} · {displayEvent.time}</small><small className="event-location"><MapPin size={13} />{displayEvent.location}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
+  return displayEvent.isService ? <div className="event-row service-row">{content}</div> : <Link className="event-row" to={`/events/${displayEvent.id}`}>{content}</Link>
 }
 
 function Announcements() {
@@ -646,12 +732,16 @@ function AnnouncementDetails() {
 function EventsPage() {
   return <MemberShell active="events" title="Events" backTo="/home">
     <div className="segmented"><button className="active">Upcoming</button><Link to="/my-registrations">My Events</Link></div>
-    {events.map(e => <EventRow key={e.id} event={e} />)}
+    {getUpcomingEvents().map(e => <EventRow key={e.id} event={e} />)}
   </MemberShell>
 }
 
 function EventDetails() {
   const { id } = useParams(); const e = events.find(x => x.id === id) || events[0]
+  if (e.isService) {
+    const service = getServiceDisplay(e)
+    return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p></div></MemberShell>
+  }
   const isRegistered = Boolean(localStorage.getItem(`gic_registration_${e.id}`))
   return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
 }
