@@ -92,6 +92,7 @@ function Sidebar(){
    <div className="nav">
      {item('/dashboard','Dashboard',LayoutDashboard)}
      {item('/members','Members',Users)}
+    {item('/ministry-applications','Ministry applications',ClipboardList)}
      <button className={'nav-item nav-button '+(active('/events')?'active':'')} onClick={()=>setOpen({...open,events:!open.events})}><CalendarDays size={17}/><span>Events</span><ChevronDown size={15} className={open.events?'':'rotated'}/></button>
      {open.events && <div className="subnav">{item('/events','All Events',CalendarDays)}{item('/events/registrations','Registrations',ClipboardList)}{item('/events/forms','Forms',FormInput)}</div>}
      <button className={'nav-item nav-button '+(active('/messages')?'active':'')} onClick={()=>setOpen({...open,messages:!open.messages})}><MessageSquare size={17}/><span>Messages</span><ChevronDown size={15} className={open.messages?'':'rotated'}/></button>
@@ -286,6 +287,16 @@ function ActivityLog(){
 
 function Placeholder({title}){return <Page title={title}><Card className="empty"><Activity size={30}/><h2>{title}</h2><p>This static screen is included as a navigation placeholder and is ready for backend integration.</p></Card></Page>}
 
+function MinistryApplications(){
+  const [applications,setApplications]=useState([])
+  const [loading,setLoading]=useState(true)
+  const [error,setError]=useState('')
+  const load=()=>fetchAdminApi('/api/admin/ministry-applications').then(({applications:items=[]})=>setApplications(items)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
+  useEffect(()=>{load()},[])
+  const updateStatus=(id,status)=>fetchAdminApi(`/api/admin/ministry-applications/${id}`,{method:'PATCH',body:JSON.stringify({status})}).then(({application})=>setApplications((items)=>items.map((item)=>item.id===application.id?application:item)))
+  return <Page title="Ministry applications" subtitle="Review member requests to serve in GIC ministries"><Card className="table-card">{loading&&<div className="empty-message">Loading applications...</div>}{error&&<div className="empty-message">Applications are unavailable right now.</div>}{!loading&&!error&&!applications.length&&<div className="empty-message">No ministry applications yet.</div>}{!loading&&!error&&applications.map((application)=><div className="application-row" key={application.id}><div><b>{application.memberName}</b><small>{application.ministry}</small>{application.message&&<p>{application.message}</p>}</div><span className={'badge '+(application.status==='APPROVED'?'success':application.status==='DECLINED'?'gray':'blue')}>{application.status}</span><div className="application-actions"><button className="tool" onClick={()=>updateStatus(application.id,'APPROVED')}>Approve</button><button className="tool" onClick={()=>updateStatus(application.id,'DECLINED')}>Decline</button></div></div>)}</Card></Page>
+}
+
 function AdminLogin(){
  const [email,setEmail]=useState('')
  const [password,setPassword]=useState('')
@@ -328,5 +339,6 @@ export default function App(){
   <Route path="/events/registrations" element={<EventRegistrations/>}/><Route path="/events/forms" element={<EventForms/>}/>
   <Route path="/messages" element={<Messages/>}/><Route path="/messages/1" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/><Route path="/messages/scheduled" element={<Messages initialTab="Scheduled"/>}/><Route path="/messages/drafts" element={<Messages initialTab="Drafts"/>}/><Route path="/messages/sent" element={<Messages initialTab="Sent"/>}/><Route path="/messages/templates" element={<Placeholder title="Message Templates"/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<ActivityLog/>}/>
+    <Route path="/ministry-applications" element={<MinistryApplications/>}/>
  </Routes></Shell></AdminGate>
 }

@@ -4,24 +4,26 @@ import {
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2
 } from 'lucide-react'
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 const events = [
-  { id: 'youth-conference-2024', title: 'Youth Conference 2026', date: 'Sat, 24 Oct 2026', time: '10:00 AM', location: 'Global Impact Church, Lekki', image: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=900&q=80', tag: 'Youth' },
-  { id: 'prayer-meeting', title: 'Prayer Meeting', date: 'Wed, 7 Oct 2026', time: '6:00 PM', location: 'Online', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=900&q=80', tag: 'General' },
-  { id: 'women-of-impact', title: 'Women of Impact', date: 'Sat, 7 Nov 2026', time: '10:00 AM', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=900&q=80', tag: 'Women' },
-  { id: 'leadership-seminar', title: 'Leadership Seminar', date: 'Sat, 9 Jan 2027', time: '10:00 AM', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?auto=format&fit=crop&w=900&q=80', tag: 'Leadership' },
+  { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1519491050282-cf00c82424b4?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
+  { id: 'midweek-service', title: 'Midweek Service', date: 'Wed, 7 Oct 2026', time: '6:00 PM WAT', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
 ]
 
 const ministries = [
-  { id: 'youth', title: 'Youth Ministry', desc: 'Equipping and raising young leaders.', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=700&q=80' },
-  { id: 'ushering', title: 'Ushering Ministry', desc: 'Serving with excellence and a heart.', image: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=700&q=80' },
-  { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
+  { id: 'ushering', title: 'Ushering Ministry', desc: 'Serving with excellence and a heart.', requirements: 'A welcoming heart, punctuality, a neat appearance, and willingness to serve during church gatherings.', image: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=700&q=80' },
+  { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", requirements: 'Interest or experience in photography, video, graphics, livestreaming, audio, or communications.', image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
+  { id: 'choir', title: 'Choir', desc: 'Leading the church in worship through music.', requirements: 'A love for worship, regular attendance, willingness to rehearse, and a teachable spirit.', image: 'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=700&q=80' },
+  { id: 'children', title: "Children's Ministry", desc: 'Helping children discover faith and grow with joy.', requirements: 'Patience, care for children, reliability, and willingness to complete the church safeguarding process.', image: 'https://images.unsplash.com/photo-1504159506876-f8338247a14a?auto=format&fit=crop&w=700&q=80' },
+  { id: 'prayer', title: 'Prayer Ministry', desc: 'Standing together in prayer for the church and community.', requirements: 'A committed prayer life, confidentiality, consistency, and willingness to join prayer gatherings.', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=700&q=80' },
+  { id: 'acts-of-mercy', title: 'Acts Of Mercy', desc: 'Serving people in need through practical charity and compassion.', requirements: 'A compassionate heart, reliability, willingness to serve communities in need, and respect for every person.', image: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=700&q=80' },
+  { id: 'evangelism', title: 'Evangelism', desc: 'Sharing the gospel and helping people encounter the love of Christ.', requirements: 'A growing relationship with Christ, courage to connect with people, and willingness to participate in outreach.', image: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?auto=format&fit=crop&w=700&q=80' },
 ]
 
 const ministryOptions = [
-  'Youth Ministry', 'Ushering Ministry', 'Media Ministry', 'Choir',
-  "Children's Ministry", "Men's Fellowship", "Women's Ministry", 'Prayer Ministry'
+  'Ushering Ministry', 'Media Ministry', 'Choir', "Children's Ministry", 'Prayer Ministry',
+  'Acts Of Mercy', 'Evangelism'
 ]
 
 const serviceCenters = [
@@ -44,12 +46,16 @@ function getSelectedService() {
 function getSundayServiceCopy() {
   const { center, time } = getSelectedService()
   return {
-    summary: `Join us this Sunday at ${center}. Your selected service time is ${time}.`,
+    summary: `Join us this Sunday at ${center}. Your preferred service time is ${time}.`,
     body: [
       `Join us this Sunday at ${center} for worship, the Word, and fellowship at Global Impact Church. Your selected service time is ${time}.`,
       'Come expectant and invite someone to experience the presence of God with us.',
     ],
   }
+}
+
+function getNextEvent() {
+  return [...events].sort((first, second) => new Date(first.date.replace(/^\w+, /, '')).getTime() - new Date(second.date.replace(/^\w+, /, '')).getTime())[0]
 }
 
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
@@ -273,6 +279,9 @@ function Welcome() {
     setError('')
     try {
       await performDeviceAuth('Member')
+      localStorage.removeItem('gic_profile_completed')
+      localStorage.removeItem('gic_onboarding_completed')
+      localStorage.setItem('gic_onboarding_profile', 'true')
       navigate('/onboarding')
     } catch {
       setError('We could not connect to the member service. Please try again.')
@@ -311,7 +320,7 @@ function OnboardingFlow() {
   const [busy, setBusy] = useState(false)
   const [permissionState, setPermissionState] = useState('default')
   const [installPrompt, setInstallPrompt] = useState(null)
-  const [stage, setStage] = useState('notification')
+  const [stage, setStage] = useState('profile')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
 
@@ -327,13 +336,18 @@ function OnboardingFlow() {
       return
     }
 
+    const profileCompleted = localStorage.getItem('gic_profile_completed') === 'true'
     const savedPermission = localStorage.getItem('gic_notification_permission')
     if (savedPermission) {
       setPermissionState(savedPermission)
     }
 
-    if (savedPermission === 'granted') {
+    if (!profileCompleted) {
+      setStage('profile')
+    } else if (savedPermission === 'granted') {
       setStage('pwa')
+    } else {
+      setStage('notification')
     }
 
     const handleInstallPrompt = (event) => {
@@ -353,6 +367,7 @@ function OnboardingFlow() {
 
   const finishOnboarding = () => {
     setLocalState('gic_onboarding_completed', 'true')
+    localStorage.removeItem('gic_onboarding_profile')
     navigate('/home', { replace: true })
   }
 
@@ -451,7 +466,13 @@ function OnboardingFlow() {
 
   return <div className="onboarding-page"><div className="onboarding-card">
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
-    {stage === 'notification' ? <>
+    {stage === 'profile' ? <>
+      <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Complete your profile</h1>
+      <p className="sub" style={{ textAlign: 'center' }}>Tell us a little about yourself so your GIC member experience is personalized.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '18px' }}>
+        <button className="btn primary wide" onClick={() => navigate('/profile/edit')}>Complete Profile</button>
+      </div>
+    </> : stage === 'notification' ? <>
       <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Stay connected with GIC</h1>
       <p className="sub" style={{ textAlign: 'center' }}>Get important church updates, event reminders, registration updates, announcements and other notifications directly on your device.</p>
       <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -475,6 +496,7 @@ function OnboardingFlow() {
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || 'Member'
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
+  const nextEvent = getNextEvent()
 
   useEffect(() => {
     fetch(`${API_BASE}/api/mixlr/latest`)
@@ -491,7 +513,7 @@ function HomePage() {
     <section className="hero-card" style={{ padding: '18px', minHeight: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <div>
-          <small style={{ color: '#e0d6fc', fontSize: '11px', display: 'block' }}>Good Day,</small>
+          <small style={{ color: '#e0d6fc', fontSize: '11px', display: 'block' }}>Welcome home,</small>
           <h2 style={{ margin: '2px 0 0', fontSize: '20px', fontWeight: 700 }}>{memberName} </h2>
         </div>
         <Logo light />
@@ -510,7 +532,7 @@ function HomePage() {
             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block', boxShadow: '0 0 8px #3b82f6' }}/>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording?.displayTitle || 'Loading latest recording...'}</span>
-              <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.title || 'Fetching from Mixlr'}</small>
+              <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.displayDate || 'Fetching from Mixlr'}</small>
             </div>
           </div>
           <a 
@@ -523,19 +545,24 @@ function HomePage() {
           </a>
         </div>
 
-        <a href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} target="_blank" rel="noreferrer" className="btn white wide">
-          Listen to recording on Mixlr
-        </a>
+        {latestMixlrRecording?.audioUrl ? <audio
+          controls
+          preload="metadata"
+          src={latestMixlrRecording.audioUrl}
+          aria-label={latestMixlrRecording.title}
+          style={{ width: '100%', height: '42px' }}
+        /> : <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>Latest recording is not available right now.</p>}
       </div>
     </section>
     <section className="section">
-      <div className="section-head"><span>Latest Announcement</span></div>
+      <div className="section-head"><span>Next Service</span></div>
       <article className="announcement-card">
-        <div className="image-banner" style={{ backgroundImage: `url(${events[0].image})` }} />
+        <div className="image-banner" style={{ backgroundImage: `url(${nextEvent.image})` }} />
         <div className="pad">
-          <small>Sunday Service Update</small>
-          <h3>{getSundayServiceCopy().summary}</h3>
-          <Link to="/announcements">View Details</Link>
+          <small>{nextEvent.title}</small>
+          <h3>{nextEvent.date} · {nextEvent.time}</h3>
+          <p>{nextEvent.location}</p>
+          <Link to={`/events/${nextEvent.id}`}>View Details</Link>
         </div>
       </article>
     </section>
@@ -719,16 +746,61 @@ function PrayerRequest() {
 function MinistriesPage() {
   const memberName = localStorage.getItem('gic_member_name') || 'Member'
   const selectedNames = (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean)
-  const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name) || {
-    id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    title: name,
-    desc: 'Your selected ministry.',
-    image: ministries[2].image,
-  })
+  const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
 
   return <MemberShell active="ministries" title="My Ministries" backTo="/home">
     <p className="ministries-subtitle"></p>
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{ministry.desc}</small></div><ChevronRight size={18} /></Link>)}</div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/profile/edit">Browse Ministries</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need to talk to someone about finding the right ministry? Contact details will be available here soon.</span></div></div>}
+    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need to talk to someone about finding the right ministry? Contact details will be available here soon.</span></div></div>}
+  </MemberShell>
+}
+
+function MinistryDirectory() {
+  return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
+    <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
+    <div className="directory-list">{ministries.map((ministry) => <article className="directory-card" key={ministry.id}>
+      <img src={ministry.image} alt="" />
+      <div className="directory-card-body">
+        <h2>{ministry.title}</h2>
+        <p>{ministry.desc}</p>
+        <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
+        <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>
+      </div>
+    </article>)}</div>
+  </MemberShell>
+}
+
+function MinistryApplication() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const ministry = ministries.find((item) => item.id === id)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  if (!ministry) return <Navigate to="/ministries/browse" replace />
+
+  const submitApplication = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      await fetchMemberApi('/api/ministry-applications', {
+        method: 'POST',
+        body: JSON.stringify({
+          ministry: ministry.title,
+          message,
+          memberName: localStorage.getItem('gic_member_name') || 'Member',
+        }),
+      })
+      setSubmitted(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application sent</h2><p>Your application to serve in {ministry.title} has been sent to the GIC team for review.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
+
+  return <MemberShell active="ministries" title="Apply to serve" backTo="/ministries/browse">
+    <div className="detail-body"><span className="eyebrow">Ministry application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
   </MemberShell>
 }
 
@@ -747,9 +819,9 @@ function Profile() {
   const profileDetails = [
     ['Phone Number', localStorage.getItem('gic_member_phone') || 'Add info', Phone],
     ['Email Address', localStorage.getItem('gic_member_email') || 'Add info', Mail],
-    ['Ministries', localStorage.getItem('gic_member_ministries') || 'Youth Ministry, Media Ministry, Choir', Users],
+    ['Ministries', localStorage.getItem('gic_member_ministries') || 'Add info', Users],
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
-    ['Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
+    ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
     ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
     ['Membership Status', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
   ]
@@ -807,12 +879,16 @@ function Profile() {
 
 function EditProfile() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [name, setName] = useState(localStorage.getItem('gic_member_name') || 'Member')
   const [phone, setPhone] = useState(localStorage.getItem('gic_member_phone') || '')
   const [email, setEmail] = useState(localStorage.getItem('gic_member_email') || '')
   const [ministriesValue, setMinistriesValue] = useState(() => {
     const savedMinistries = localStorage.getItem('gic_member_ministries') || ''
-    return savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
+    const selectedMinistries = savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
+    const ministryId = new URLSearchParams(location.search).get('ministry')
+    const chosenMinistry = ministries.find((ministry) => ministry.id === ministryId)?.title
+    return chosenMinistry && !selectedMinistries.includes(chosenMinistry) ? [...selectedMinistries, chosenMinistry] : selectedMinistries
   })
   const [center, setCenter] = useState(localStorage.getItem('gic_member_center') || '')
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
@@ -828,7 +904,8 @@ function EditProfile() {
     const profileFields = { phone, email, ministries: ministriesValue.join(', '), center, serviceTime, birthday, membershipStatus }
     Object.entries(profileFields).forEach(([key, value]) => localStorage.setItem(`gic_member_${key === 'ministries' ? 'ministries' : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`, value.trim()))
     if (avatar) localStorage.setItem('gic_member_avatar', avatar)
-    navigate('/profile')
+    localStorage.setItem('gic_profile_completed', 'true')
+    navigate(localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding' : '/profile')
   }
 
   const handleAvatarChange = (event) => {
@@ -858,7 +935,7 @@ function EditProfile() {
       <SelectField label="Center You Attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
         {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
       </SelectField>
-      <SelectField label="Service Time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
+      <SelectField label="Preferred Service Time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
         {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
       </SelectField>
       <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
@@ -892,7 +969,19 @@ function MyRegistrations() {
         <div className="registered-event-cover" style={{ backgroundImage: `url(${event.image})` }}><span className="status">Registered</span></div>
         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small><div className="countdown"><small>Event starts in</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
       </article>
-    }) : <div className="empty"><CalendarDays size={28} /><h2>No registrations yet</h2><p>Events you register for will appear here.</p><Link className="btn primary wide" to="/events">Browse Events</Link></div>}
+    }) : <div className="events-empty-state">
+      <div className="events-empty-illustration" aria-hidden="true">
+        <div className="events-empty-calendar"><CalendarDays size={86} strokeWidth={1.35} /></div>
+        <span className="events-empty-cross">✦</span>
+        <span className="events-empty-person person-one"><User size={18} /></span>
+        <span className="events-empty-person person-two"><User size={16} /></span>
+        <span className="events-empty-dot dot-one" />
+        <span className="events-empty-dot dot-two" />
+      </div>
+      <h1>No events yet</h1>
+      <p>Hey {localStorage.getItem('gic_member_name') || 'there'} <br />You haven't registered for any events.<br />Discover upcoming conferences, special programmes and services, there is always a place for you!</p>
+      <Link className="btn primary wide events-empty-button" to="/events">Find Events</Link>
+    </div>}
   </MemberShell>
 }
 
@@ -900,6 +989,9 @@ function SignIn() {
   const navigate = useNavigate()
   const handleDemoSignIn = async () => {
     await performDeviceAuth('Member')
+    localStorage.removeItem('gic_profile_completed')
+    localStorage.removeItem('gic_onboarding_completed')
+    localStorage.setItem('gic_onboarding_profile', 'true')
     navigate('/onboarding')
   }
 
@@ -934,6 +1026,8 @@ export default function App() {
     <Route path="/forms" element={<FormsPage />} />
     <Route path="/forms/prayer-request" element={<PrayerRequest />} />
     <Route path="/ministries" element={<MinistriesPage />} />
+    <Route path="/ministries/browse" element={<MinistryDirectory />} />
+    <Route path="/ministries/:id/apply" element={<MinistryApplication />} />
     <Route path="/ministries/:id" element={<MinistryDetails />} />
     <Route path="/profile" element={<Profile />} />
     <Route path="/profile/edit" element={<EditProfile />} />

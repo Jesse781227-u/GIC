@@ -60,6 +60,24 @@ export const members = pgTable("members", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
+export const ministryApplications = pgTable(
+  "ministry_applications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: text("member_id").notNull(),
+    memberName: text("member_name").notNull(),
+    ministry: text("ministry").notNull(),
+    message: text("message"),
+    status: text("status").notNull().default("PENDING"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    memberIdx: index("ministry_applications_member_id_idx").on(t.memberId),
+    statusIdx: index("ministry_applications_status_idx").on(t.status),
+  })
+);
+
 // ─── push_devices ─────────────────────────────────────────────────────────────
 // One member can have multiple browser/device registrations.
 
