@@ -12,6 +12,7 @@ const app = new Hono();
 
 const deviceAuthSchema = z.object({
   deviceId: z.string().min(1),
+  accountId: z.string().min(1).optional(),
   deviceName: z.string().optional(),
   platform: z.string().optional(),
   name: z.string().optional(),
@@ -74,7 +75,21 @@ app.post("/device", async (c) => {
       return c.json({ error: "Invalid data", details: parsed.error.issues }, 400);
     }
 
-    const { deviceId, deviceName, platform, name } = parsed.data;
+    const { deviceId, accountId, deviceName, platform, name } = parsed.data;
+    if (accountId) {
+      const existingAccount = await db.query.members.findFirst({ where: eq(members.id, accountId) });
+      if (existingAccount) {
+        const [member] = await db.update(members)
+          .set({
+            ...(name?.trim() ? { displayName: name.trim() } : {}),
+            lastSeenAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(members.id, existingAccount.id))
+          .returning();
+        return c.json({ token: await issueMemberToken(member, platform || "web"), member: memberResponse(member) });
+      }
+    }
     const existingMember = await db.query.members.findFirst({ where: eq(members.id, deviceId) });
     const memberName = name?.trim() || existingMember?.displayName || "Member";
 

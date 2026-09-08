@@ -125,6 +125,30 @@ function setLocalState(key, value) {
   localStorage.setItem(key, value)
 }
 
+function playNotificationsEnabledSound() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextClass) return
+    const context = new AudioContextClass()
+    const now = context.currentTime
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(880, now)
+    oscillator.frequency.setValueAtTime(1175, now + 0.09)
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24)
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start(now)
+    oscillator.stop(now + 0.24)
+    oscillator.addEventListener('ended', () => context.close())
+  } catch {
+    // Audio is optional and may be unavailable in some browsers.
+  }
+}
+
 function nextStep() {
   if (window.location.pathname !== '/onboarding') {
     return
@@ -176,7 +200,18 @@ export function getOrCreateDeviceId() {
   return id
 }
 
+function getAccountId() {
+  return document.cookie.match(/(?:^|; )gic_account_id=([^;]+)/)?.[1] || localStorage.getItem('gic_account_id') || ''
+}
+
+function storeAccountId(accountId) {
+  if (!accountId) return
+  localStorage.setItem('gic_account_id', accountId)
+  document.cookie = `gic_account_id=${encodeURIComponent(accountId)}; Max-Age=31536000; Path=/; SameSite=Lax`
+}
+
 function storeMemberSession(data) {
+  storeAccountId(data.member.id)
   localStorage.setItem('gic_auth_token', data.token)
   localStorage.setItem('gic_member_name', data.member.name)
   localStorage.setItem('gic_member_phone', data.member.phone || '')
@@ -194,6 +229,7 @@ export async function performDeviceAuth(memberName) {
   const deviceId = getOrCreateDeviceId()
   const payload = {
     deviceId,
+    ...(getAccountId() ? { accountId: getAccountId() } : {}),
     deviceName: window.navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Browser',
     platform: 'web',
     ...(memberName?.trim() && memberName.trim() !== 'Member' ? { name: memberName.trim() } : {})
@@ -206,6 +242,7 @@ export async function performDeviceAuth(memberName) {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Device authentication failed')
+    storeAccountId(data.member.id)
     storeMemberSession(data)
     return data
   } catch (e) {
@@ -317,6 +354,7 @@ function ProtectedRoute({ children }) {
       try {
         const { profile } = await fetchMemberApi('/api/auth/profile')
         if (cancelled) return
+        storeAccountId(profile.id)
         localStorage.setItem('gic_member_name', profile.name || '')
         localStorage.setItem('gic_member_phone', profile.phone || '')
         localStorage.setItem('gic_member_email', profile.email || '')
@@ -353,22 +391,24 @@ function ProtectedRoute({ children }) {
 
 function Welcome() {
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const handleGetStarted = async () => {
-    setLoading(true)
+  const handleSignIn = async () => {
+    setBusy(true)
     setError('')
     try {
-      const data = await performDeviceAuth()
-      localStorage.removeItem('gic_profile_completed')
-      localStorage.removeItem('gic_onboarding_completed')
-      localStorage.setItem('gic_onboarding_profile', 'true')
-      navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1')
+      let profile
+      if (localStorage.getItem('gic_auth_token')) {
+        profile = (await fetchMemberApi('/api/auth/profile')).profile
+      } else {
+        profile = (await performDeviceAuth()).member
+      }
+      navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
     } catch {
-      setError('We could not connect to the member service. Please try again.')
+      setError('We could not sign you in. Please recover your account with your phone number.')
     } finally {
-      setLoading(false)
+      setBusy(false)
     }
   }
 
@@ -384,16 +424,8 @@ function Welcome() {
 
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {error && <p className="auth-inline-error" role="alert">{error}</p>}
-        <button
-          className="btn gold wide"
-          onClick={handleGetStarted}
-          disabled={loading}
-          style={{ fontSize: '14px', padding: '14px' }}
-        >
-          {loading ? 'Entering Portal...' : 'Get Started'}
-        </button>
-        <Link className="btn white wide" to="/signin">Sign In</Link>
-        <Link className="center link-button" to="/recover">Recover account with phone</Link>
+        <button className="btn white wide" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in...' : 'Sign In'}</button>
+        <Link className="center link-button" style={{ color: '#fff' }} to="/recover">Recover account with phone</Link>
       </div>
     </div>
   </div>
@@ -568,6 +600,7 @@ function OnboardingFlow() {
         setPermissionState('granted')
         setLocalState('gic_notification_permission', 'granted')
         setLocalState('gic_notifications_prompted', 'true')
+        playNotificationsEnabledSound()
         const token = await getFcmToken()
         if (token) await registerPushTokenWithBackend(token)
         finishOnboarding()
@@ -586,6 +619,7 @@ function OnboardingFlow() {
       setLocalState('gic_notification_permission', permission)
       setLocalState('gic_notifications_prompted', 'true')
       if (permission === 'granted') {
+        playNotificationsEnabledSound()
         const token = await getFcmToken()
         if (token) await registerPushTokenWithBackend(token)
       }
@@ -935,10 +969,19 @@ function MinistriesPage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const selectedNames = (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean)
   const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
+  const [applications, setApplications] = useState([])
+
+  useEffect(() => {
+    fetchMemberApi('/api/ministry-applications')
+      .then((response) => setApplications(response.applications || []))
+      .catch(() => setApplications([]))
+  }, [])
+
+  const pendingMinistries = new Set(applications.filter((application) => application.status === 'PENDING').map((application) => application.ministry))
 
   return <MemberShell active="ministries" title="My Ministries" backTo="/home">
     <p className="ministries-subtitle"></p>
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need to talk to someone about finding the right ministry? Contact details will be available here soon.</span></div></div>}
+    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need to talk to someone about finding the right ministry? Contact details will be available here soon.</span></div></div>}
   </MemberShell>
 }
 
@@ -985,7 +1028,7 @@ function MinistryApplication() {
     }
   }
 
-  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application sent</h2><p>Your application to serve in {ministry.title} has been sent to the GIC team for review.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
+  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application being processed</h2><p>Your application to serve in {ministry.title} has been sent and is being processed by the GIC team.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
 
   return <MemberShell active="ministries" title="Apply to serve" backTo="/ministries/browse">
     <div className="detail-body"><span className="eyebrow">Ministry application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
@@ -1011,7 +1054,7 @@ function Profile() {
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
     ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
     ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
-    ['Membership Status', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
+    ['New member?', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
   ]
   const deviceId = getOrCreateDeviceId()
 
@@ -1084,35 +1127,54 @@ function EditProfile() {
   const [birthday, setBirthday] = useState(localStorage.getItem('gic_member_birthday') || '')
   const [membershipStatus, setMembershipStatus] = useState(localStorage.getItem('gic_membership_status') || '')
   const [avatar, setAvatar] = useState(localStorage.getItem('gic_member_avatar') || '')
+  const [saveError, setSaveError] = useState('')
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
   const availableServiceTimes = selectedCenter?.times || []
 
   const handleSave = async (e) => {
     e.preventDefault()
     if (!name.trim() || !phone.trim()) return
-    const authData = await performDeviceAuth(name.trim())
-    const profileResponse = await fetchMemberApi('/api/auth/profile', {
-      method: 'PATCH',
-      body: JSON.stringify({
-        name: name.trim(),
-        phone: phone.trim(),
-        email: email.trim(),
-        ministries: ministriesValue.join(', '),
-        center,
-        serviceTime,
-        birthday,
-        membershipStatus,
-        avatar,
-      }),
-    })
-    const savedProfile = profileResponse.profile
-    localStorage.setItem('gic_member_name', savedProfile.name)
-    localStorage.setItem('gic_member_phone', savedProfile.phone)
-    const profileFields = { phone, email, ministries: ministriesValue.join(', '), center, serviceTime, birthday, membershipStatus }
-    Object.entries(profileFields).forEach(([key, value]) => localStorage.setItem(`gic_member_${key === 'ministries' ? 'ministries' : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`, value.trim()))
-    if (avatar) localStorage.setItem('gic_member_avatar', avatar)
-    localStorage.setItem('gic_profile_completed', 'true')
-    navigate(required || localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding?stage=install' : '/profile')
+    setSaveError('')
+    try {
+      await performDeviceAuth(name.trim())
+      const profileResponse = await fetchMemberApi('/api/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          ministries: ministriesValue.join(', '),
+          center,
+          serviceTime,
+          birthday,
+          membershipStatus,
+          avatar,
+        }),
+      })
+      const savedProfile = profileResponse.profile
+      localStorage.setItem('gic_member_name', savedProfile.name || '')
+      localStorage.setItem('gic_member_phone', savedProfile.phone || '')
+      localStorage.setItem('gic_member_email', savedProfile.email || '')
+      localStorage.setItem('gic_member_ministries', savedProfile.ministries || '')
+      localStorage.setItem('gic_member_center', savedProfile.center || '')
+      localStorage.setItem('gic_member_service_time', savedProfile.serviceTime || '')
+      localStorage.setItem('gic_member_birthday', savedProfile.birthday || '')
+      localStorage.setItem('gic_membership_status', savedProfile.membershipStatus || '')
+      if (savedProfile.avatar) localStorage.setItem('gic_member_avatar', savedProfile.avatar)
+      localStorage.setItem('gic_profile_completed', 'true')
+      const notificationReady = !('Notification' in window) || Notification.permission !== 'default'
+      if (isStandalonePwa() && notificationReady) {
+        localStorage.setItem('gic_onboarding_completed', 'true')
+        localStorage.removeItem('gic_onboarding_profile')
+        navigate('/home', { replace: true })
+      } else if (required || localStorage.getItem('gic_onboarding_profile') === 'true') {
+        navigate('/onboarding?stage=install', { replace: true })
+      } else {
+        navigate('/profile')
+      }
+    } catch (error) {
+      setSaveError(error.message || 'Profile could not be saved. Please try again.')
+    }
   }
 
   const handleAvatarChange = (event) => {
@@ -1132,6 +1194,7 @@ function EditProfile() {
       </label>
     </div>
     {required && <p className="auth-inline-error" role="alert">Your account needs a name and phone number before you can continue.</p>}
+    {saveError && <p className="auth-inline-error" role="alert">{saveError}</p>}
     <form onSubmit={handleSave} className="stack">
       <label className="field">
         <span>FULL NAME</span>
@@ -1147,7 +1210,10 @@ function EditProfile() {
         {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
       </SelectField>
       <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
-      <Field label="Membership Status" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)} placeholder="Member" icon={ShieldCheck} />
+      <SelectField label="New member?" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)}>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </SelectField>
       <Button type="submit" className="wide">Save Changes & Sync Device</Button>
     </form>
   </MemberShell>
@@ -1193,36 +1259,10 @@ function MyRegistrations() {
   </MemberShell>
 }
 
-function SignIn() {
-  const navigate = useNavigate()
-  const handleDemoSignIn = async () => {
-    const data = await performDeviceAuth()
-    localStorage.removeItem('gic_profile_completed')
-    localStorage.removeItem('gic_onboarding_completed')
-    localStorage.setItem('gic_onboarding_profile', 'true')
-    navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1')
-  }
-
-  return <div className="onboarding-page">
-    <div className="onboarding-card">
-      <Logo />
-      <h1 style={{ textAlign: 'center', fontSize: '20px', marginTop: '16px' }}>Welcome back</h1>
-      <p className="sub">Sign in to your account.</p>
-      <div className="stack">
-        <Field label="Email Address" value="john.doe@gmail.com" icon={Mail} />
-        <Field label="Password" value="••••••••••" type="password" icon={Lock} />
-        <button className="btn primary wide" onClick={handleDemoSignIn}>Sign In</button>
-        <Link className="center link-button" to="/">Back to Welcome Screen</Link>
-      </div>
-    </div>
-  </div>
-}
-
 export default function App() {
   return <Routes>
     <Route path="/" element={<Welcome />} />
     <Route path="/recover" element={<Recovery />} />
-    <Route path="/signin" element={<SignIn />} />
     <Route path="/onboarding" element={<OnboardingFlow />} />
     <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
     <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
