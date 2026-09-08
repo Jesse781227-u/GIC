@@ -1,5 +1,6 @@
 import { type Context, type Next } from "hono";
 import { jwtVerify, importSPKI, type JWTPayload } from "jose";
+import { getFirebaseAuth } from "../lib/firebase.js";
 
 export interface GicJwtPayload extends JWTPayload {
   sub: string;       // member / admin user ID
@@ -15,7 +16,11 @@ declare module "hono" {
 }
 
 export function getJwtSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET || "gic-default-secret-key-32-chars-min!!";
+  const configuredSecret = process.env.JWT_SECRET;
+  if (!configuredSecret && process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET environment variable is required in production");
+  }
+  const secret = configuredSecret || "gic-local-development-secret-change-me";
   return new TextEncoder().encode(secret);
 }
 
@@ -26,9 +31,21 @@ export async function authMiddleware(c: Context, next: Next) {
   }
   const token = authHeader.slice(7);
   try {
-    const { payload } = await jwtVerify(token, getJwtSecret());
-    c.set("user", payload as GicJwtPayload);
-    await next();
+    try {
+      const firebaseUser = await getFirebaseAuth().verifyIdToken(token);
+      const isAdmin = firebaseUser.admin === true || firebaseUser.role === "ADMIN";
+      c.set("user", {
+        sub: firebaseUser.uid,
+        role: isAdmin ? "ADMIN" : "MEMBER",
+        email: firebaseUser.email,
+        name: firebaseUser.name,
+      });
+      return await next();
+    } catch {
+      const { payload } = await jwtVerify(token, getJwtSecret());
+      c.set("user", payload as GicJwtPayload);
+      return await next();
+    }
   } catch {
     return c.json({ error: "Invalid or expired token" }, 401);
   }

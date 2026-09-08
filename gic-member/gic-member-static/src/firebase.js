@@ -1,14 +1,28 @@
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import { getAnalytics, isSupported as analyticsIsSupported } from 'firebase/analytics';
+import { getMessaging, getToken } from 'firebase/messaging';
+
 const FIREBASE_CONFIG = {
-  apiKey: 'demo-api-key',
-  authDomain: 'gic-demo.firebaseapp.com',
-  projectId: 'gic-demo',
-  messagingSenderId: '000000000000',
-  appId: '1:000000000000:web:demo',
-  vapidKey: 'demo-vapid-key',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCjxH5M9pHLmXHtBqyPIbOvsv_SGmroucM',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'global-impact-church-9b8fd.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'global-impact-church-9b8fd',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'global-impact-church-9b8fd.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '320455366678',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:320455366678:web:b5b41b1528e4df6cf87d37',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-2K8DHP787M',
+  vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BHRou-Sz8Oqk58uawSudi2ltzCUO2xDycdxNsK6QgGxCWiG32CFLhUCJExI8Gmb4XyVaAeeqDOxACzWfwe4ufig',
 };
 
+const firebaseApp = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
+
+if (typeof window !== 'undefined') {
+  analyticsIsSupported().then((supported) => {
+    if (supported) getAnalytics(firebaseApp);
+  }).catch(() => {});
+}
+
 export function hasFirebaseConfig() {
-  return Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== 'demo-api-key');
+  return Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.vapidKey);
 }
 
 export async function getFcmToken() {
@@ -21,13 +35,7 @@ export async function getFcmToken() {
   }
 
   try {
-    const [{ initializeApp }, { getMessaging, getToken }] = await Promise.all([
-      import('firebase/app'),
-      import('firebase/messaging'),
-    ]);
-
-    const app = initializeApp(FIREBASE_CONFIG);
-    const messaging = getMessaging(app);
+    const messaging = getMessaging(firebaseApp);
     return await getToken(messaging, { vapidKey: FIREBASE_CONFIG.vapidKey });
   } catch (error) {
     console.warn('FCM token unavailable:', error);
