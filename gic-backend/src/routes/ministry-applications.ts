@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { ministryApplications } from "../db/schema.js";
+import { members } from "../db/schema.js";
 
 const memberApp = new Hono();
 memberApp.use("*", authMiddleware);
@@ -37,6 +38,10 @@ memberApp.get("/", async (c) => {
 
 const adminApp = new Hono();
 adminApp.use("*", authMiddleware, adminMiddleware);
+adminApp.get("/members", async (c) => {
+  const records = await db.query.members.findMany({ orderBy: (table, { desc }) => [desc(table.createdAt)] });
+  return c.json({ members: records });
+});
 adminApp.get("/", async (c) => c.json({ applications: await db.query.ministryApplications.findMany({ orderBy: [desc(ministryApplications.createdAt)] }) }));
 adminApp.patch("/:id", async (c) => {
   const parsed = z.object({ status: z.enum(["PENDING", "APPROVED", "DECLINED"]) }).safeParse(await c.req.json());

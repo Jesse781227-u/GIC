@@ -1054,7 +1054,7 @@ function Profile() {
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
     ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
     ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
-    ['Membership Status', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
+    ['New member?', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
   ]
   const deviceId = getOrCreateDeviceId()
 
@@ -1210,7 +1210,10 @@ function EditProfile() {
         {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
       </SelectField>
       <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
-      <Field label="Membership Status" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)} placeholder="Member" icon={ShieldCheck} />
+      <SelectField label="New member?" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)}>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </SelectField>
       <Button type="submit" className="wide">Save Changes & Sync Device</Button>
     </form>
   </MemberShell>

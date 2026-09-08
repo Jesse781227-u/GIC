@@ -74,11 +74,7 @@ const eventOperations={
 
 function Logo(){
  return <div className="brand" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-   <img 
-     src="https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png" 
-     alt="Global Impact Church" 
-     style={{ height: '36px', width: 'auto', objectFit: 'contain' }}
-   />
+   <img src="https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png" alt="Global Impact Church" style={{ height: '36px', width: 'auto', objectFit: 'contain' }} />
    <span style={{ fontSize: '7px', letterSpacing: '1px', fontWeight: 700, color: '#f5c238' }}>GLOBAL IMPACT CHURCH</span>
  </div>
 }
@@ -92,16 +88,16 @@ function Sidebar(){
    <div className="nav">
      {item('/dashboard','Dashboard',LayoutDashboard)}
      {item('/members','Members',Users)}
-    {item('/ministry-applications','Ministry applications',ClipboardList)}
+     {item('/ministry-applications','Ministry applications',ClipboardList)}
      <button className={'nav-item nav-button '+(active('/events')?'active':'')} onClick={()=>setOpen({...open,events:!open.events})}><CalendarDays size={17}/><span>Events</span><ChevronDown size={15} className={open.events?'':'rotated'}/></button>
      {open.events && <div className="subnav">{item('/events','All Events',CalendarDays)}{item('/events/registrations','Registrations',ClipboardList)}{item('/events/forms','Forms',FormInput)}</div>}
      <button className={'nav-item nav-button '+(active('/messages')?'active':'')} onClick={()=>setOpen({...open,messages:!open.messages})}><MessageSquare size={17}/><span>Messages</span><ChevronDown size={15} className={open.messages?'':'rotated'}/></button>
-    {open.messages && <div className="subnav">{item('/messages','All Messages',MessageSquare)}{item('/messages/scheduled','Scheduled',Clock3)}{item('/messages/drafts','Drafts',FileText)}{item('/messages/sent','Sent',Send)}</div>}
-    <button className={'nav-item nav-button '+(active('/settings')?'active':'')} onClick={()=>setOpen({...open,settings:!open.settings})}><SettingsIcon size={17}/><span>Settings</span><ChevronDown size={15} className={open.settings?'':'rotated'}/></button>
-    {open.settings && <div className="subnav">{item('/settings','General',SettingsIcon)}</div>}
+     {open.messages && <div className="subnav">{item('/messages','All Messages',MessageSquare)}{item('/messages/scheduled','Scheduled',Clock3)}{item('/messages/drafts','Drafts',FileText)}{item('/messages/sent','Sent',Send)}</div>}
+     <button className={'nav-item nav-button '+(active('/settings')?'active':'')} onClick={()=>setOpen({...open,settings:!open.settings})}><SettingsIcon size={17}/><span>Settings</span><ChevronDown size={15} className={open.settings?'':'rotated'}/></button>
+     {open.settings && <div className="subnav">{item('/settings','General',SettingsIcon)}</div>}
    </div>
    <div className="other-label">OTHER</div>
-  <div className="nav">{item('/activity','Activity Log',Activity)}</div>
+   <div className="nav">{item('/activity','Activity Log',Activity)}</div>
    <div className="admin-box"><div className="avatar">A</div><div><b>Admin</b><small>Super Admin</small></div><ChevronDown size={14}/></div>
  </aside>
 }
@@ -297,6 +293,32 @@ function MinistryApplications(){
   return <Page title="Ministry applications" subtitle="Review member requests to serve in GIC ministries"><Card className="table-card">{loading&&<div className="empty-message">Loading applications...</div>}{error&&<div className="empty-message">Applications are unavailable right now.</div>}{!loading&&!error&&!applications.length&&<div className="empty-message">No ministry applications yet.</div>}{!loading&&!error&&applications.map((application)=><div className="application-row" key={application.id}><div><b>{application.memberName}</b><small>{application.ministry}</small>{application.message&&<p>{application.message}</p>}</div><span className={'badge '+(application.status==='APPROVED'?'success':application.status==='DECLINED'?'gray':'blue')}>{application.status}</span><div className="application-actions"><button className="tool" onClick={()=>updateStatus(application.id,'APPROVED')}>Approve</button><button className="tool" onClick={()=>updateStatus(application.id,'DECLINED')}>Decline</button></div></div>)}</Card></Page>
 }
 
+function LiveMembers(){
+ const [query,setQuery]=useState('')
+ const [status,setStatus]=useState('All Statuses')
+ const [records,setRecords]=useState([])
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ useEffect(()=>{fetchAdminApi('/api/admin/ministry-applications/members').then(({members=[]})=>setRecords(members)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))},[])
+ const visible=records.filter((member)=>`${member.displayName} ${member.phone||''} ${member.email||''} ${member.ministries||''} ${member.center||''}`.toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||(member.active?'Active':'Inactive')===status))
+ return <Page title="Members" subtitle="Live member records from the GIC platform"><Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Active</option><option>Inactive</option></select></div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable right now.</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries</th><th>Status</th><th>Last seen</th></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}><div className="avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div><b>{member.displayName}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.center||'—'}</td><td>{member.ministries||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>}</Card></Page>
+}
+
+function LiveMemberDetails(){
+ const {id}=useParams()
+ const [member,setMember]=useState(null)
+ useEffect(()=>{fetchAdminApi('/api/admin/ministry-applications/members').then(({members=[]})=>setMember(members.find((item)=>item.id===id)||null)).catch(()=>setMember(null))},[id])
+ if(!member)return <Page title="Member"><Card className="empty-message">Loading live member data...</Card></Page>
+ return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card><div className="member-profile-header"><div className="avatar member-avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div><div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></div></div><div className="profile-section"><h3>Personal information</h3><div className="profile-fields"><div><small>Phone</small><b>{member.phone||'—'}</b></div><div><small>Email</small><b>{member.email||'—'}</b></div><div><small>Centre</small><b>{member.center||'—'}</b></div><div><small>Last seen</small><b>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</b></div></div></div><div className="profile-section"><h3>Groups / Ministries</h3><div className="tag-list">{(member.ministries||'').split(',').map((item)=>item.trim()).filter(Boolean).map((item)=><span className="tag" key={item}>{item}</span>)}</div></div></Card></Page>
+}
+
+function LiveDashboard(){
+ const [summary,setSummary]=useState({members:0,applications:0,messages:0})
+ const [error,setError]=useState('')
+ useEffect(()=>{Promise.all([fetchAdminApi('/api/admin/ministry-applications/members'),fetchAdminApi('/api/admin/ministry-applications'),fetchAdminApi('/api/admin/notifications')]).then(([memberData,applicationData,messageData])=>setSummary({members:memberData.members?.length||0,applications:applicationData.applications?.length||0,messages:messageData.items?.length||0})).catch((requestError)=>setError(requestError.message))},[])
+ return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat label="Members" value={summary.members} change="Live records" icon={Users}/><Stat label="Ministry applications" value={summary.applications} change="Live records" icon={ClipboardList} type="green"/><Stat label="Notifications" value={summary.messages} change="Live records" icon={Bell} type="blue"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}<Card><div className="card-head"><b>Platform data</b><span className="muted">No demo metrics are displayed.</span></div><p className="muted">Use Members, Ministry applications, and Messages to manage current records.</p></Card></Page>
+}
+
 function AdminLogin(){
  const [email,setEmail]=useState('')
  const [password,setPassword]=useState('')
@@ -335,12 +357,12 @@ function AdminGate({children}){
 
 export default function App(){
  return <AdminGate><Shell><Routes>
-   <Route path="/" element={<Dashboard/>}/><Route path="/dashboard" element={<Dashboard/>}/>
-  <Route path="/members" element={<Members/>}/><Route path="/members/:id" element={<MemberDetails/>}/>
-   <Route path="/events" element={<Events/>}/><Route path="/events/youth-conference-2024" element={<EventDetail/>}/>
-  <Route path="/events/registrations" element={<EventRegistrations/>}/><Route path="/events/forms" element={<EventForms/>}/>
+  <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
+  <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<LiveMemberDetails/>}/>
+  <Route path="/events" element={<Placeholder title="Events"/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
+  <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/><Route path="/events/forms" element={<Placeholder title="Event forms"/>}/>
   <Route path="/messages" element={<Messages/>}/><Route path="/messages/1" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/><Route path="/messages/scheduled" element={<Messages initialTab="Scheduled"/>}/><Route path="/messages/drafts" element={<Messages initialTab="Drafts"/>}/><Route path="/messages/sent" element={<Messages initialTab="Sent"/>}/><Route path="/messages/templates" element={<Placeholder title="Message Templates"/>}/>
-  <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<ActivityLog/>}/>
+  <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<Placeholder title="Activity log"/>}/>
     <Route path="/ministry-applications" element={<MinistryApplications/>}/>
  </Routes></Shell></AdminGate>
 }
