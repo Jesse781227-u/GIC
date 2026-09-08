@@ -309,7 +309,9 @@ function AdminLogin(){
   try{
    const credential=await signInWithEmailAndPassword(adminAuth,email,password)
    const tokenResult=await credential.user.getIdTokenResult(true)
-   if(tokenResult.claims.admin!==true&&tokenResult.claims.role!=='ADMIN'){
+   const role=String(tokenResult.claims.role||'').toUpperCase()
+   const isAdmin=tokenResult.claims.admin===true||tokenResult.claims.isAdmin===true||role==='ADMIN'
+   if(!isAdmin){
     await signOut(adminAuth)
     throw new Error('This account is not authorized for the admin dashboard.')
    }

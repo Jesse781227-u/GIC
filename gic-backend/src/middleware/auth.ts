@@ -33,7 +33,8 @@ export async function authMiddleware(c: Context, next: Next) {
   try {
     try {
       const firebaseUser = await getFirebaseAuth().verifyIdToken(token);
-      const isAdmin = firebaseUser.admin === true || firebaseUser.role === "ADMIN";
+      const firebaseRole = String(firebaseUser.role || "").toUpperCase();
+      const isAdmin = firebaseUser.admin === true || firebaseUser.isAdmin === true || firebaseRole === "ADMIN";
       c.set("user", {
         sub: firebaseUser.uid,
         role: isAdmin ? "ADMIN" : "MEMBER",
