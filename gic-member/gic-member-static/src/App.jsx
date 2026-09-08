@@ -406,6 +406,7 @@ function OnboardingFlow() {
   const [stage, setStage] = useState('profile')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
+  const [installedApp, setInstalledApp] = useState(() => isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
 
   useEffect(() => {
     const token = localStorage.getItem('gic_auth_token')
@@ -437,15 +438,28 @@ function OnboardingFlow() {
       event.preventDefault()
       setInstallPrompt(event)
       setInstallMode('browser')
-      setLocalState('gic_pwa_install_prompt_seen', 'true')
     }
 
+    const handleInstalled = () => {
+      setInstalledApp(true)
+      setLocalState('gic_pwa_installed', 'true')
+      setDismissedNotice('GIC is installed. Open GIC from your home screen to continue.')
+    }
+
+    const refreshDisplayMode = () => setInstalledApp(isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
+
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
+    window.addEventListener('appinstalled', handleInstalled)
+    window.addEventListener('pageshow', refreshDisplayMode)
     if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
       setInstallMode('ios')
     }
 
-    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
+      window.removeEventListener('appinstalled', handleInstalled)
+      window.removeEventListener('pageshow', refreshDisplayMode)
+    }
   }, [navigate])
 
   const finishOnboarding = () => {
@@ -508,12 +522,17 @@ function OnboardingFlow() {
   }
 
   const handleInstall = async () => {
+    if (installedApp) {
+      setDismissedNotice('GIC is already installed. Open it from your home screen to continue.')
+      return
+    }
+
     if (installPrompt) {
-      installPrompt.prompt()
+      await installPrompt.prompt()
       const choice = await installPrompt.userChoice
       if (choice.outcome === 'accepted') {
         setLocalState('gic_pwa_installed', 'true')
-        setDismissedNotice('GIC has been added. Open GIC from your home screen to continue.')
+        setDismissedNotice('GIC has been added. Open it from your home screen to continue.')
       }
       return
     }
@@ -523,7 +542,7 @@ function OnboardingFlow() {
       return
     }
 
-    setDismissedNotice('Add GIC to your home screen, then open it there to continue.')
+    setDismissedNotice('Use your browser menu to select “Add to Home Screen”, then open GIC from your home screen.')
   }
 
   const handleMaybeLater = () => {
@@ -535,7 +554,7 @@ function OnboardingFlow() {
     return <div className="onboarding-page"><div className="onboarding-card" style={{ minHeight: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
       <h1 style={{ textAlign: 'center', fontSize: '26px', marginBottom: '10px' }}>Add GIC to your Home Screen</h1>
-      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}>Install Global Impact Church for quick access to your member account, events, registrations and updates.</p>
+      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}></p>
       <div className="stack" style={{ gap: '10px', textAlign: 'left', padding: '10px 8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>1</span><span>Tap the Share button.</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>2</span><span>Select “Add to Home Screen”.</span></div>
@@ -567,10 +586,9 @@ function OnboardingFlow() {
       {permissionState === 'denied' && <p className="sub" style={{ marginTop: '16px', textAlign: 'center' }}>Notifications are currently disabled in your browser or device settings. You can enable them later and still continue to use GIC.</p>}
     </> : <>
       <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Add GIC to your Home Screen</h1>
-      <p className="sub" style={{ textAlign: 'center' }}>Install Global Impact Church for quick access to your member account, events, registrations and updates.</p>
+      <p className="sub" style={{ textAlign: 'center' }}></p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '18px' }}>
-        <button className="btn primary wide" onClick={handleInstall}>Add to Home Screen</button>
-        <button className="btn white wide" style={{ border: '1px solid #e8e2f1' }} onClick={handleMaybeLater}>Maybe Later</button>
+        <button className="btn primary wide" onClick={handleInstall}>{installedApp ? 'Open GIC from Home Screen' : 'Add to Home Screen'}</button>
       </div>
       {permissionState === 'unsupported' && <p className="sub" style={{ marginTop: '16px', textAlign: 'center' }}>This browser does not support notification prompts, but you can still continue to GIC.</p>}
     </>}
