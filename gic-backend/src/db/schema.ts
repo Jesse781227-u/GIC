@@ -47,6 +47,19 @@ export const audienceTypeEnum = pgEnum("audience_type", [
   "members",
 ]);
 
+// ─── members ──────────────────────────────────────────────────────────────────
+// Device-authenticated members are persisted so their identity survives reloads.
+
+export const members = pgTable("members", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull().default("Member"),
+  authMethod: text("auth_method").notNull().default("device_auth"),
+  active: boolean("active").notNull().default(true),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
 // ─── push_devices ─────────────────────────────────────────────────────────────
 // One member can have multiple browser/device registrations.
 

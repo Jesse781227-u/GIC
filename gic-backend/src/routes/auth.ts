@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { SignJWT } from "jose";
 import { getJwtSecret } from "../middleware/auth.js";
+import { db } from "../db/index.js";
+import { members } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 
 const app = new Hono();
 
@@ -29,6 +32,25 @@ app.post("/device", async (c) => {
     const { deviceId, deviceName, platform, name } = parsed.data;
     const memberName = name || deviceName || "Member";
 
+    const [member] = await db
+      .insert(members)
+      .values({
+        id: deviceId,
+        displayName: memberName,
+        authMethod: "device_auth",
+        lastSeenAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: members.id,
+        set: {
+          displayName: memberName,
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
     const secret = getJwtSecret();
     const token = await new SignJWT({
       sub: deviceId,
@@ -44,8 +66,8 @@ app.post("/device", async (c) => {
     return c.json({
       token,
       member: {
-        id: deviceId,
-        name: memberName,
+        id: member.id,
+        name: member.displayName,
         authMethod: "device_auth",
         authenticatedAt: new Date().toISOString(),
       },

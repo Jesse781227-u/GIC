@@ -19,57 +19,6 @@ const ministries = [
   { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
 ]
 
-const announcements = [
-  {
-    id: 'sunday-service-update',
-    category: 'General',
-    title: 'Sunday Service Update',
-    summary: "Join us this Sunday for a powerful time in God's presence.",
-    date: 'September 4, 2026',
-    image: events[0].image,
-    body: [
-      'Join us this Sunday for a powerful time of worship, the Word, and fellowship at Global Impact Church.',
-      'Come expectant and invite someone to experience the presence of God with us.',
-    ],
-  },
-  {
-    id: 'building-project-update',
-    category: 'Notices',
-    title: 'Building Project Update',
-    summary: 'Thank you for your continued support and prayers.',
-    date: 'September 2, 2026',
-    image: events[1].image,
-    body: [
-      'Our building project continues to move forward, and we are grateful for every prayer and contribution.',
-      'We will share the next milestone and ways to get involved during Sunday service.',
-    ],
-  },
-  {
-    id: 'midweek-service',
-    category: 'General',
-    title: 'Midweek Service',
-    summary: 'Our Midweek Service holds this Wednesday.',
-    date: 'September 1, 2026',
-    image: events[2].image,
-    body: [
-      'Make plans to join us for Midweek Service this Wednesday for a refreshing time in the Word and in prayer.',
-      'Service begins at 6:00 PM. Bring a friend and come ready to grow.',
-    ],
-  },
-  {
-    id: 'new-members-class',
-    category: 'Ministries',
-    title: 'New Members Class',
-    summary: 'If you are new here, join our New Members Class.',
-    date: 'August 29, 2026',
-    image: events[3].image,
-    body: [
-      'The New Members Class is a great way to understand our church, meet other members, and discover your place in the GIC family.',
-      'Register at the welcome desk after any service or speak with a member of the team.',
-    ],
-  },
-]
-
 const ministryOptions = [
   'Youth Ministry', 'Ushering Ministry', 'Media Ministry', 'Choir',
   "Children's Ministry", "Men's Fellowship", "Women's Ministry", 'Prayer Ministry'
@@ -112,7 +61,26 @@ const latestMixlrRecording = {
 }
 
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
-const API_BASE = 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
+async function fetchMemberApi(path, options = {}) {
+  const token = localStorage.getItem('gic_auth_token')
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  })
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '')
+    throw new Error(details || `Request failed: ${response.status}`)
+  }
+
+  return response.json()
+}
 
 function getSecureMode() {
   return window.isSecureContext || window.location.hostname === 'localhost'
@@ -193,28 +161,21 @@ export async function performDeviceAuth(memberName = 'Member') {
     name: memberName
   }
   try {
-    const res = await fetch('http://localhost:3001/api/auth/device', {
+    const res = await fetch(`${API_BASE}/api/auth/device`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     })
-    if (res.ok) {
-      const data = await res.json()
-      localStorage.setItem('gic_auth_token', data.token)
-      localStorage.setItem('gic_member_name', data.member.name)
-      localStorage.setItem('gic_auth_method', 'device_auth')
-      return data
-    }
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Device authentication failed')
+    localStorage.setItem('gic_auth_token', data.token)
+    localStorage.setItem('gic_member_name', data.member.name)
+    localStorage.setItem('gic_auth_method', 'device_auth')
+    return data
   } catch (e) {
-    console.warn('Backend offline, using instant local device authentication:', e)
+    console.error('Device authentication failed:', e)
+    throw e
   }
-
-  // Fallback local session if backend unreachable
-  const token = 'dev-jwt-local-' + deviceId
-  localStorage.setItem('gic_auth_token', token)
-  localStorage.setItem('gic_member_name', memberName)
-  localStorage.setItem('gic_auth_method', 'device_auth')
-  return { token, member: { id: deviceId, name: memberName } }
 }
 
 function Logo({ light = false }) {
@@ -305,6 +266,7 @@ function MemberShell({ children, active = 'home', title, backTo }) {
 function Welcome() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   // Auto sign-in on recognized devices
   useEffect(() => {
@@ -316,9 +278,15 @@ function Welcome() {
 
   const handleGetStarted = async () => {
     setLoading(true)
-    await performDeviceAuth('Member')
-    setLoading(false)
-    navigate('/onboarding')
+    setError('')
+    try {
+      await performDeviceAuth('Member')
+      navigate('/onboarding')
+    } catch {
+      setError('We could not connect to the member service. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return <div className="welcome-page">
@@ -332,6 +300,7 @@ function Welcome() {
       </div>
 
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {error && <p className="auth-inline-error" role="alert">{error}</p>}
         <button
           className="btn gold wide"
           onClick={handleGetStarted}
@@ -583,33 +552,65 @@ function EventRow({ event }) {
 
 function Announcements() {
   const [category, setCategory] = useState('All')
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const categories = ['All', 'General', 'Ministries', 'Notices']
   const sundayServiceCopy = getSundayServiceCopy()
+  useEffect(() => {
+    fetchMemberApi('/api/notifications')
+      .then(({ items: notifications = [] }) => setItems(notifications.map((notification) => ({
+        id: notification.id,
+        category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
+        title: notification.title,
+        summary: notification.body,
+        date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
+        body: [notification.body],
+        image: '',
+      }))))
+      .catch((requestError) => setError(requestError.message))
+      .finally(() => setLoading(false))
+  }, [])
   const visibleAnnouncements = category === 'All'
-    ? announcements
-    : announcements.filter((announcement) => announcement.category === category)
+    ? items
+    : items.filter((announcement) => announcement.category === category)
 
   return <MemberShell active="home" title="Announcements" backTo="/home">
     <div className="tabs">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div>
-    <div className="announcement-list">{visibleAnnouncements.map((announcement) => <Link className="list-card" key={announcement.id} to={`/announcements/${announcement.id}`}><img src={announcement.image} alt="" /><div><b>{announcement.title}</b><small>{announcement.id === 'sunday-service-update' ? sundayServiceCopy.summary : announcement.summary}</small><time>{announcement.date}</time></div><ChevronRight size={18} /></Link>)}</div>
-    {!visibleAnnouncements.length && <p className="center muted">No announcements in this category yet.</p>}
+    {loading && <p className="center muted">Loading announcements...</p>}
+    {error && <p className="center muted">Announcements are unavailable right now.</p>}
+    {!loading && !error && <div className="announcement-list">{visibleAnnouncements.map((announcement) => <Link className="list-card" key={announcement.id} to={`/announcements/${announcement.id}`}><div><b>{announcement.title}</b><small>{announcement.summary}</small><time>{announcement.date}</time></div><ChevronRight size={18} /></Link>)}</div>}
+    {!loading && !error && !visibleAnnouncements.length && <p className="center muted">No announcements yet.</p>}
   </MemberShell>
 }
 
 function AnnouncementDetails() {
   const { id } = useParams()
-  const announcement = announcements.find((item) => item.id === id)
+  const [announcement, setAnnouncement] = useState(null)
+  useEffect(() => {
+    fetchMemberApi('/api/notifications')
+      .then(({ items = [] }) => {
+        const notification = items.find((item) => item.id === id)
+        if (notification) setAnnouncement({
+          id: notification.id,
+          category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
+          title: notification.title,
+          date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
+          body: [notification.body],
+        })
+      })
+      .catch(() => {})
+  }, [id])
   const sundayServiceCopy = getSundayServiceCopy()
 
-  if (!announcement) return <Navigate to="/announcements" replace />
+  if (!announcement) return <MemberShell active="home" title="Announcement" backTo="/announcements"><p className="center muted">Loading announcement...</p></MemberShell>
 
   return <MemberShell active="home" title="Announcement" backTo="/announcements">
-    <div className="detail-image" style={{ backgroundImage: `url(${announcement.image})` }} />
     <div className="detail-body">
       <span className="eyebrow">{announcement.category}</span>
       <h1>{announcement.title}</h1>
       <time className="date-line">{announcement.date}</time>
-      {(announcement.id === 'sunday-service-update' ? sundayServiceCopy.body : announcement.body).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+      {announcement.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
       <Link className="btn primary wide" to="/announcements">Back to Announcements</Link>
     </div>
   </MemberShell>

@@ -2,11 +2,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.11.0/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-  apiKey: 'demo-api-key',
-  authDomain: 'gic-demo.firebaseapp.com',
-  projectId: 'gic-demo',
-  messagingSenderId: '000000000000',
-  appId: '1:000000000000:web:demo',
+  apiKey: 'AIzaSyCjxH5M9pHLmXHtBqyPIbOvsv_SGmroucM',
+  authDomain: 'global-impact-church-9b8fd.firebaseapp.com',
+  projectId: 'global-impact-church-9b8fd',
+  storageBucket: 'global-impact-church-9b8fd.firebasestorage.app',
+  messagingSenderId: '320455366678',
+  appId: '1:320455366678:web:b5b41b1528e4df6cf87d37',
 };
 
 firebase.initializeApp(firebaseConfig);

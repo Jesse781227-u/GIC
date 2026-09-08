@@ -30,3 +30,7 @@ export function getFirebaseApp(): admin.app.App {
 export function getMessaging(): admin.messaging.Messaging {
   return getFirebaseApp().messaging();
 }
+
+export function getFirebaseAuth(): admin.auth.Auth {
+  return getFirebaseApp().auth();
+}

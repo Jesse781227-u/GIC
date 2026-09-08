@@ -1,0 +1,92 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'ADMIN'
+      );
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // User/member profiles are private to the member and administrators.
+    match /members/{memberId} {
+      allow read: if isOwner(memberId) || isAdmin();
+      allow create: if isOwner(memberId);
+      allow update: if isOwner(memberId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Device tokens must never be readable by other members.
+    match /pushDevices/{deviceId} {
+      allow read, delete: if isAdmin() ||
+        (signedIn() && resource.data.memberId == request.auth.uid);
+      allow create: if isAdmin() ||
+        (signedIn() && request.resource.data.memberId == request.auth.uid);
+      allow update: if isAdmin() ||
+        (signedIn() && resource.data.memberId == request.auth.uid &&
+          request.resource.data.memberId == request.auth.uid);
+    }
+
+    match /notificationPreferences/{memberId} {
+      allow read, create, update: if isOwner(memberId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update: if isAdmin() ||
+        (signedIn() && resource.data.memberId == request.auth.uid);
+      allow create, delete: if isAdmin();
+    }
+
+    // Public content may be read by signed-in members. Only admins publish it.
+    match /events/{eventId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /ministries/{ministryId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /adminNotifications/{notificationId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Deny every collection not explicitly listed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
