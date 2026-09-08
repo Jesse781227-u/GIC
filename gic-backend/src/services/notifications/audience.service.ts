@@ -16,15 +16,6 @@ export type ResolvedRecipient = {
 
 export class AudienceService {
   async resolve(query: AudienceQuery): Promise<ResolvedRecipient[]> {
-    // Note: Since we don't have the real member/event/ministry tables in this DB 
-    // (they'd be in the real platform DB), we will mock the resolution logic based on 
-    // the devices we know about. In a full system, you would JOIN on the members table
-    // or call an internal API to get member IDs.
-    
-    // For now, we resolve by simply getting all active devices.
-    // If 'members' is specified, we filter by those.
-    // 'ministry' and 'event_registrants' would normally filter by member associations.
-    
     let devices = await db.query.pushDevices.findMany({
       where: eq(pushDevices.active, true),
     });
@@ -33,10 +24,6 @@ export class AudienceService {
       devices = devices.filter(d => query.memberIds!.includes(d.memberId));
     }
     
-    // In a real integration, we'd also filter by ministry/event here.
-    // For now, if we don't have the data, we just assume all active devices 
-    // (or none, depending on the strictness required. Given the context, we'll return all active).
-
     // Group devices by member
     const map = new Map<string, string[]>();
     for (const d of devices) {

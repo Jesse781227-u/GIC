@@ -62,7 +62,7 @@ const messages=[
  ['New Members Class','Join our new members class this Sunday.','Draft','—','New Members'],
 ]
 const messageCategories=['General Announcement','Event','Registration','Reminder','Church Update','Important','New Member','System']
-const messageDestinations=[['No destination',''],['Home','/home'],['Announcements','/announcements'],['Events','/events'],['Profile','/profile'],['My registrations','/my-registrations'],['Youth Conference 2026','/events/youth-conference-2024'],['Sunday Service announcement','/announcements/sunday-service-update']]
+const messageDestinations=[['No destination',''],['Home','/home'],['Announcements','/announcements'],['Events','/events'],['Profile','/profile'],['My registrations','/my-registrations'],['Youth Conference 2026','/events/youth-conference-2024'],['Sunday Service announcement','/announcements/sunday-service-update'],['Paste external link','__external__']]
 const eventOperations={
   logistics:{assemblyPoint:'The Goodland car park',assemblyTime:'7:00 AM',busSeats:120,buses:3,notes:'Registered attendees should assemble at the designated point before departure. Free buses will take attendees to the event location.'},
   registrations:{
@@ -210,6 +210,8 @@ function NewMessage(){
  const [audience,setAudience]=useState('Everyone')
  const [category,setCategory]=useState('General Announcement')
  const [destination,setDestination]=useState('')
+ const [destinationType,setDestinationType]=useState('internal')
+ const [externalDestination,setExternalDestination]=useState('')
  const [delivery,setDelivery]=useState('now')
  const [sent,setSent]=useState(false)
  const [memberSearch,setMemberSearch]=useState('')
@@ -221,12 +223,16 @@ function NewMessage(){
  const [centre,setCentre]=useState('All centres')
  const [push,setPush]=useState('Push-enabled members')
  const destinationOption=messageDestinations.find((item)=>item[1]===destination)
+ const destinationPreview=destinationType==='external'?externalDestination||'No external URL':destinationOption?.[1]||'No in-app destination'
+ useEffect(()=>{if(destination==='__external__'){const pasted=window.prompt('Paste the external destination URL');if(pasted){setDestinationType('external');setExternalDestination(pasted)}else setDestination('')}},[destination])
  const save=async(result)=>{
   if(!title.trim()||!body.trim()){setSent('Title and message are required');return}
   try{
    const type=category==='Event'?'EVENT_PUBLISHED':category==='Reminder'?'EVENT_REMINDER':category==='Registration'?'REGISTRATION_CONFIRMATION':category==='Church Update'?'GENERAL_ANNOUNCEMENT':'GENERAL_ANNOUNCEMENT'
    const targetAudience=audience==='Everyone'?'everyone':audience==='Event registrants'?'event_registrants':audience==='Selected members'?'members':'members'
-   const created=await fetchAdminApi('/api/admin/notifications',{method:'POST',body:JSON.stringify({title:title.trim(),body:body.trim(),type,audience:targetAudience,destinationUrl:destination||undefined})})
+  const destinationUrl=destinationType==='external'?externalDestination.trim():destination
+  if(destinationUrl&&destinationType==='external'&&!/^https?:\/\//i.test(destinationUrl)){setSent('External links must start with http:// or https://');return}
+  const created=await fetchAdminApi('/api/admin/notifications',{method:'POST',body:JSON.stringify({title:title.trim(),body:body.trim(),type,audience:targetAudience,destinationUrl:destinationUrl||undefined})})
    if(result==='Sent') await fetchAdminApi(`/api/admin/notifications/${created.id}/send`,{method:'POST'})
    setSent(result==='Sent'?'Sent':'Draft')
    if(result==='Sent') setTimeout(()=>navigate('/messages'),250)
@@ -292,6 +298,14 @@ function ActivityLog(){
 }
 
 function Placeholder({title}){return <Page title={title}><Card className="empty"><Activity size={30}/><h2>{title}</h2><p>This static screen is included as a navigation placeholder and is ready for backend integration.</p></Card></Page>}
+
+function EventsUnavailable(){
+ const [createOpen,setCreateOpen]=useState(false)
+ return <Page title="Events" subtitle="Manage events from the GIC platform" action={<button className="btn primary" onClick={()=>setCreateOpen(true)}><Plus size={15}/> Create Event</button>}>
+   <Card className="empty"><CalendarDays size={30}/><h2>No live event data</h2><p>Event storage and publishing are not connected to the backend yet.</p></Card>
+   {createOpen&&<div className="quick-modal" role="dialog" aria-modal="true"><div className="quick-modal-card"><div className="quick-modal-head"><div><b>Create Event</b><small>Event creation is not available until the backend event API is connected.</small></div><button className="icon-btn" onClick={()=>setCreateOpen(false)}><X size={17}/></button></div><button className="btn secondary wide" onClick={()=>setCreateOpen(false)}>Close</button></div></div>}
+ </Page>
+}
 
 function MinistryApplications(){
   const [applications,setApplications]=useState([])
@@ -369,7 +383,7 @@ export default function App(){
  return <AdminGate><Shell><Routes>
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<LiveMemberDetails/>}/>
-  <Route path="/events" element={<Placeholder title="Events"/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
+  <Route path="/events" element={<EventsUnavailable/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
   <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/><Route path="/events/forms" element={<Placeholder title="Event forms"/>}/>
   <Route path="/messages" element={<Messages/>}/><Route path="/messages/1" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/><Route path="/messages/scheduled" element={<Messages initialTab="Scheduled"/>}/><Route path="/messages/drafts" element={<Messages initialTab="Drafts"/>}/><Route path="/messages/sent" element={<Messages initialTab="Sent"/>}/><Route path="/messages/templates" element={<Placeholder title="Message Templates"/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<Placeholder title="Activity log"/>}/>

@@ -158,9 +158,11 @@ export class NotificationService {
         })
         .where(eq(adminNotifications.id, adminNotifId));
 
-      // Fire and forget push dispatch
-      this.dispatchPushDeliveries(adminNotifId, adminNotif.title, adminNotif.body, adminNotif.destinationUrl || undefined).catch(
-        (e) => console.error("dispatchPushDeliveries failed:", e)
+      await this.dispatchPushDeliveries(
+        adminNotifId,
+        adminNotif.title,
+        adminNotif.body,
+        adminNotif.destinationUrl || undefined
       );
     } catch (e) {
       console.error(`sendNow failed for ${adminNotifId}:`, e);

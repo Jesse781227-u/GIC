@@ -45,6 +45,7 @@ export class PushService {
       },
       data: {
         ...data,
+        ...(url ? { url, route: url } : {}),
       },
       webpush: url ? {
         fcmOptions: {
