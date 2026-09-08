@@ -510,7 +510,7 @@ function HomePage() {
             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block', boxShadow: '0 0 8px #3b82f6' }}/>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording?.displayTitle || 'Loading latest recording...'}</span>
-              <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.title || 'Fetching from Mixlr'}</small>
+              <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.displayDate || 'Fetching from Mixlr'}</small>
             </div>
           </div>
           <a 

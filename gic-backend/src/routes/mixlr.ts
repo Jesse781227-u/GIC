@@ -22,11 +22,14 @@ app.get("/latest", async (c) => {
     }
 
     const attributes = latest.attributes;
+    const title = attributes.title || "Latest Global Impact Church recording";
+    const cleanTitle = title.split(" | ")[0].replace(/^#\s*/, "").trim();
+    const dateMatch = title.match(/\|\s*(\d{1,2}(?:st|nd|rd|th)?\s+\w+,\s+\d{4})/i);
     return c.json({
       id: latest.id,
-      title: attributes.title || "Latest Global Impact Church recording",
-      displayTitle: (attributes.title || "Latest recording").split(" | ")[0],
-      displayDate: attributes.created_at || null,
+      title,
+      displayTitle: `# ${cleanTitle}`,
+      displayDate: dateMatch?.[1] || attributes.created_at || null,
       audioUrl: attributes.url,
       url: `https://globalimpactng.mixlr.com/recordings/${latest.id}`,
       duration: attributes.duration || null,
