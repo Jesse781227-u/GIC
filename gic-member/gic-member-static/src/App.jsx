@@ -7,8 +7,8 @@ import {
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 const events = [
-  { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1519491050282-cf00c82424b4?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
-  { id: 'midweek-service', title: 'Midweek Service', date: 'Wed, 7 Oct 2026', time: '6:00 PM WAT', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
+  { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://i.ibb.co/zTcjGhTp/Screenshot-2026-09-08-134018.png', tag: 'Service', isService: true },
+  { id: 'midweek-service', title: 'Midweek Service', date: 'Wed, 7 Oct 2026', time: '6:00 PM WAT', location: 'Global Impact Church', image: 'https://i.ibb.co/VYtgTk3b/Screenshot-2026-09-08-131313.png', tag: 'Service', isService: true },
 ]
 
 const ministries = [
@@ -56,6 +56,13 @@ function getSundayServiceCopy() {
 
 function getNextEvent() {
   return [...events].sort((first, second) => new Date(first.date.replace(/^\w+, /, '')).getTime() - new Date(second.date.replace(/^\w+, /, '')).getTime())[0]
+}
+
+function getServiceDisplay(event) {
+  const { center, time } = getSelectedService()
+  return event.id === 'sunday-service'
+    ? { ...event, date: 'Every Sunday', time, location: center }
+    : { ...event, date: 'Every Wednesday', time: '6:00 PM WAT', location: center }
 }
 
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
@@ -496,7 +503,7 @@ function OnboardingFlow() {
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || 'Member'
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
-  const nextEvent = getNextEvent()
+  const nextEvent = getServiceDisplay(getNextEvent())
 
   useEffect(() => {
     fetch(`${API_BASE}/api/mixlr/latest`)
@@ -562,7 +569,7 @@ function HomePage() {
           <small>{nextEvent.title}</small>
           <h3>{nextEvent.date} · {nextEvent.time}</h3>
           <p>{nextEvent.location}</p>
-          <Link to={`/events/${nextEvent.id}`}>View Details</Link>
+          <span className="link-button">Service information</span>
         </div>
       </article>
     </section>
@@ -574,7 +581,9 @@ function HomePage() {
 }
 
 function EventRow({ event }) {
-  return <Link className="event-row" to={`/events/${event.id}`}><img src={event.image} alt="" /><div><b>{event.title}</b><small className="event-meta"><CalendarDays size={13} />{event.date} · {event.time}</small><small className="event-location"><MapPin size={13} />{event.location}</small></div><ChevronRight className="event-chevron" size={19} /></Link>
+  const displayEvent = event.isService ? getServiceDisplay(event) : event
+  const content = <><img src={displayEvent.image} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date} · {displayEvent.time}</small><small className="event-location"><MapPin size={13} />{displayEvent.location}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
+  return displayEvent.isService ? <div className="event-row service-row">{content}</div> : <Link className="event-row" to={`/events/${displayEvent.id}`}>{content}</Link>
 }
 
 function Announcements() {
@@ -652,6 +661,10 @@ function EventsPage() {
 
 function EventDetails() {
   const { id } = useParams(); const e = events.find(x => x.id === id) || events[0]
+  if (e.isService) {
+    const service = getServiceDisplay(e)
+    return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p></div></MemberShell>
+  }
   const isRegistered = Boolean(localStorage.getItem(`gic_registration_${e.id}`))
   return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
 }
