@@ -759,9 +759,44 @@ function MinistryDirectory() {
         <h2>{ministry.title}</h2>
         <p>{ministry.desc}</p>
         <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
-        <Link className="btn primary wide" to={`/profile/edit?ministry=${ministry.id}`}>Choose this ministry</Link>
+        <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>
       </div>
     </article>)}</div>
+  </MemberShell>
+}
+
+function MinistryApplication() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const ministry = ministries.find((item) => item.id === id)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  if (!ministry) return <Navigate to="/ministries/browse" replace />
+
+  const submitApplication = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      await fetchMemberApi('/api/ministry-applications', {
+        method: 'POST',
+        body: JSON.stringify({
+          ministry: ministry.title,
+          message,
+          memberName: localStorage.getItem('gic_member_name') || 'Member',
+        }),
+      })
+      setSubmitted(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application sent</h2><p>Your application to serve in {ministry.title} has been sent to the GIC team for review.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
+
+  return <MemberShell active="ministries" title="Apply to serve" backTo="/ministries/browse">
+    <div className="detail-body"><span className="eyebrow">Ministry application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here? (Optional)</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
   </MemberShell>
 }
 
@@ -988,6 +1023,7 @@ export default function App() {
     <Route path="/forms/prayer-request" element={<PrayerRequest />} />
     <Route path="/ministries" element={<MinistriesPage />} />
     <Route path="/ministries/browse" element={<MinistryDirectory />} />
+    <Route path="/ministries/:id/apply" element={<MinistryApplication />} />
     <Route path="/ministries/:id" element={<MinistryDetails />} />
     <Route path="/profile" element={<Profile />} />
     <Route path="/profile/edit" element={<EditProfile />} />
