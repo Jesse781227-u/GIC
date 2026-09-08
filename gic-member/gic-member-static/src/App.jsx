@@ -352,26 +352,6 @@ function ProtectedRoute({ children }) {
 }
 
 function Welcome() {
-  const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleGetStarted = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const data = await performDeviceAuth()
-      localStorage.removeItem('gic_profile_completed')
-      localStorage.removeItem('gic_onboarding_completed')
-      localStorage.setItem('gic_onboarding_profile', 'true')
-      navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1')
-    } catch {
-      setError('We could not connect to the member service. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return <div className="welcome-page">
     <div className="welcome-overlay">
       <Logo light />
@@ -383,17 +363,8 @@ function Welcome() {
       </div>
 
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {error && <p className="auth-inline-error" role="alert">{error}</p>}
-        <button
-          className="btn gold wide"
-          onClick={handleGetStarted}
-          disabled={loading}
-          style={{ fontSize: '14px', padding: '14px' }}
-        >
-          {loading ? 'Entering Portal...' : 'Get Started'}
-        </button>
         <Link className="btn white wide" to="/signin">Sign In</Link>
-        <Link className="center link-button" to="/recover">Recover account with phone</Link>
+        <Link className="center link-button" style={{ color: '#fff' }} to="/recover">Recover account with phone</Link>
       </div>
     </div>
   </div>
@@ -1195,12 +1166,25 @@ function MyRegistrations() {
 
 function SignIn() {
   const navigate = useNavigate()
-  const handleDemoSignIn = async () => {
-    const data = await performDeviceAuth()
-    localStorage.removeItem('gic_profile_completed')
-    localStorage.removeItem('gic_onboarding_completed')
-    localStorage.setItem('gic_onboarding_profile', 'true')
-    navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSignIn = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      let profile
+      if (localStorage.getItem('gic_auth_token')) {
+        profile = (await fetchMemberApi('/api/auth/profile')).profile
+      } else {
+        profile = (await performDeviceAuth()).member
+      }
+      navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
+    } catch {
+      setError('We could not sign you in. Please recover your account with your phone number.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return <div className="onboarding-page">
@@ -1208,10 +1192,10 @@ function SignIn() {
       <Logo />
       <h1 style={{ textAlign: 'center', fontSize: '20px', marginTop: '16px' }}>Welcome back</h1>
       <p className="sub">Sign in to your account.</p>
+      {error && <p className="auth-inline-error" role="alert">{error}</p>}
       <div className="stack">
-        <Field label="Email Address" value="john.doe@gmail.com" icon={Mail} />
-        <Field label="Password" value="••••••••••" type="password" icon={Lock} />
-        <button className="btn primary wide" onClick={handleDemoSignIn}>Sign In</button>
+        <button className="btn primary wide" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in...' : 'Sign In'}</button>
+        <Link className="center link-button" style={{ color: '#fff' }} to="/recover">Recover account with phone</Link>
         <Link className="center link-button" to="/">Back to Welcome Screen</Link>
       </div>
     </div>
