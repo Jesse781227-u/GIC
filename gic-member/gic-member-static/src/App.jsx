@@ -356,45 +356,6 @@ function Welcome() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Restore and refresh the device session whenever the browser opens the app.
-  // The device ID is persisted separately from the JWT, so an expired token can
-  // be replaced without sending the member through onboarding again.
-  useEffect(() => {
-    let cancelled = false
-    const restoreSession = async () => {
-      const deviceId = localStorage.getItem('gic_device_id')
-      const existingToken = localStorage.getItem('gic_auth_token')
-
-      if (!deviceId && !existingToken) return
-
-      try {
-        if (existingToken) {
-          const { profile } = await fetchMemberApi('/api/auth/profile')
-          if (!cancelled) {
-            localStorage.setItem('gic_member_name', profile.name || '')
-            localStorage.setItem('gic_member_phone', profile.phone || '')
-            navigate(profile.profileComplete ? (localStorage.getItem('gic_onboarding_completed') === 'true' && isStandalonePwa() ? '/home' : '/onboarding') : '/profile/edit?required=1', { replace: true })
-          }
-          return
-        }
-        const data = await performDeviceAuth(localStorage.getItem('gic_member_name'))
-        if (!cancelled) {
-          const onboardingComplete = localStorage.getItem('gic_onboarding_completed') === 'true'
-          if (data.member.profileComplete) {
-            navigate(onboardingComplete && isStandalonePwa() ? '/home' : '/onboarding', { replace: true })
-          }
-        }
-      } catch {
-        if (existingToken && !cancelled && hasCompleteLocalProfile()) {
-          navigate(localStorage.getItem('gic_onboarding_completed') === 'true' && isStandalonePwa() ? '/home' : '/onboarding', { replace: true })
-        }
-      }
-    }
-
-    restoreSession()
-    return () => { cancelled = true }
-  }, [navigate])
-
   const handleGetStarted = async () => {
     setLoading(true)
     setError('')
@@ -431,6 +392,7 @@ function Welcome() {
         >
           {loading ? 'Entering Portal...' : 'Get Started'}
         </button>
+        <Link className="btn white wide" to="/signin">Sign In</Link>
         <Link className="center link-button" to="/recover">Recover account with phone</Link>
       </div>
     </div>
