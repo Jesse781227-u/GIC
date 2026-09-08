@@ -14,19 +14,18 @@ const events = [
 ]
 
 const ministries = [
-  { id: 'youth', title: 'Youth Ministry', desc: 'Equipping and raising young leaders.', requirements: 'Open to young people who want to grow in faith, build friendships, and serve consistently.', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=700&q=80' },
   { id: 'ushering', title: 'Ushering Ministry', desc: 'Serving with excellence and a heart.', requirements: 'A welcoming heart, punctuality, a neat appearance, and willingness to serve during church gatherings.', image: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=700&q=80' },
   { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", requirements: 'Interest or experience in photography, video, graphics, livestreaming, audio, or communications.', image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
   { id: 'choir', title: 'Choir', desc: 'Leading the church in worship through music.', requirements: 'A love for worship, regular attendance, willingness to rehearse, and a teachable spirit.', image: 'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=700&q=80' },
   { id: 'children', title: "Children's Ministry", desc: 'Helping children discover faith and grow with joy.', requirements: 'Patience, care for children, reliability, and willingness to complete the church safeguarding process.', image: 'https://images.unsplash.com/photo-1504159506876-f8338247a14a?auto=format&fit=crop&w=700&q=80' },
-  { id: 'men', title: "Men's Fellowship", desc: 'Building purposeful men through faith and fellowship.', requirements: 'Men who want to grow spiritually, support one another, and participate in fellowship activities.', image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=700&q=80' },
-  { id: 'women', title: "Women's Ministry", desc: 'Growing together in faith, purpose, and community.', requirements: 'Women who want to connect, grow, and contribute to gatherings and support activities.', image: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=700&q=80' },
   { id: 'prayer', title: 'Prayer Ministry', desc: 'Standing together in prayer for the church and community.', requirements: 'A committed prayer life, confidentiality, consistency, and willingness to join prayer gatherings.', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=700&q=80' },
+  { id: 'acts-of-mercy', title: 'Acts Of Mercy', desc: 'Serving people in need through practical charity and compassion.', requirements: 'A compassionate heart, reliability, willingness to serve communities in need, and respect for every person.', image: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=700&q=80' },
+  { id: 'evangelism', title: 'Evangelism', desc: 'Sharing the gospel and helping people encounter the love of Christ.', requirements: 'A growing relationship with Christ, courage to connect with people, and willingness to participate in outreach.', image: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?auto=format&fit=crop&w=700&q=80' },
 ]
 
 const ministryOptions = [
-  'Youth Ministry', 'Ushering Ministry', 'Media Ministry', 'Choir',
-  "Children's Ministry", "Men's Fellowship", "Women's Ministry", 'Prayer Ministry'
+  'Ushering Ministry', 'Media Ministry', 'Choir', "Children's Ministry", 'Prayer Ministry',
+  'Acts Of Mercy', 'Evangelism'
 ]
 
 const serviceCenters = [
@@ -743,12 +742,7 @@ function PrayerRequest() {
 function MinistriesPage() {
   const memberName = localStorage.getItem('gic_member_name') || 'Member'
   const selectedNames = (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean)
-  const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name) || {
-    id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    title: name,
-    desc: 'Your selected ministry.',
-    image: ministries[2].image,
-  })
+  const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
 
   return <MemberShell active="ministries" title="My Ministries" backTo="/home">
     <p className="ministries-subtitle"></p>
@@ -946,7 +940,7 @@ function MyRegistrations() {
         <span className="events-empty-dot dot-two" />
       </div>
       <h1>No events yet</h1>
-      <p>Hey {localStorage.getItem('gic_member_name') || 'there'} 👋<br />You haven't registered for any events.<br />Discover upcoming conferences, special programmes and services, there is always a place for you!</p>
+      <p>Hey {localStorage.getItem('gic_member_name') || 'there'} <br />You haven't registered for any events.<br />Discover upcoming conferences, special programmes and services, there is always a place for you!</p>
       <Link className="btn primary wide events-empty-button" to="/events">Find Events</Link>
     </div>}
   </MemberShell>
