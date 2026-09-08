@@ -9,6 +9,7 @@ import authApp from "./routes/auth.js";
 import mixlrApp from "./routes/mixlr.js";
 import { memberApp as ministryApplicationsApp, adminApp as adminMinistryApplicationsApp } from "./routes/ministry-applications.js";
 import { schedulingService } from "./services/notifications/scheduling.service.js";
+import { ensureDatabaseSchema } from "./db/index.js";
 
 const app = new Hono();
 
@@ -33,13 +34,16 @@ app.route("/api/push-devices", pushDevicesApp);
 app.route("/api/notifications", notificationsApp);
 app.route("/api/admin/notifications", adminNotificationsApp);
 
-// Start cron worker
-schedulingService.start();
-
 const port = parseInt(process.env.PORT || "3001");
-console.log(`Starting server on port ${port}...`);
 
-serve({
-  fetch: app.fetch,
-  port,
+async function start() {
+  await ensureDatabaseSchema();
+  schedulingService.start();
+  console.log(`Starting server on port ${port}...`);
+  serve({ fetch: app.fetch, port });
+}
+
+start().catch((error) => {
+  console.error("Database schema check failed:", error);
+  process.exit(1);
 });

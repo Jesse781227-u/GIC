@@ -13,5 +13,9 @@ const client = postgres(process.env.DATABASE_URL, {
   connect_timeout: 10,
 });
 
+export async function ensureDatabaseSchema() {
+  await client`ALTER TABLE members ADD COLUMN IF NOT EXISTS phone text`;
+}
+
 export const db = drizzle(client, { schema: { ...schema, ...relations } });
 export type DB = typeof db;
