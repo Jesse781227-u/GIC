@@ -523,9 +523,13 @@ function HomePage() {
           </a>
         </div>
 
-        <a href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} target="_blank" rel="noreferrer" className="btn white wide">
-          Listen to recording on Mixlr
-        </a>
+        {latestMixlrRecording?.audioUrl ? <audio
+          controls
+          preload="metadata"
+          src={latestMixlrRecording.audioUrl}
+          aria-label={latestMixlrRecording.title}
+          style={{ width: '100%', height: '42px' }}
+        /> : <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>Latest recording is not available right now.</p>}
       </div>
     </section>
     <section className="section">
