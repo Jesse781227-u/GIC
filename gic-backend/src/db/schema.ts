@@ -53,6 +53,7 @@ export const audienceTypeEnum = pgEnum("audience_type", [
 export const members = pgTable("members", {
   id: text("id").primaryKey(),
   displayName: text("display_name").notNull().default("Member"),
+  phone: text("phone"),
   authMethod: text("auth_method").notNull().default("device_auth"),
   active: boolean("active").notNull().default(true),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow(),
