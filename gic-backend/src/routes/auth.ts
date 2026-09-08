@@ -5,6 +5,7 @@ import { getJwtSecret } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { members } from "../db/schema.js";
 import { eq } from "drizzle-orm";
+import { authMiddleware } from "../middleware/auth.js";
 
 const app = new Hono();
 
@@ -13,6 +14,11 @@ const deviceAuthSchema = z.object({
   deviceName: z.string().optional(),
   platform: z.string().optional(),
   name: z.string().optional(),
+});
+
+const profileSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  phone: z.string().trim().min(1, "Phone number is required"),
 });
 
 app.post("/device", async (c) => {
@@ -30,7 +36,8 @@ app.post("/device", async (c) => {
     }
 
     const { deviceId, deviceName, platform, name } = parsed.data;
-    const memberName = name || deviceName || "Member";
+    const existingMember = await db.query.members.findFirst({ where: eq(members.id, deviceId) });
+    const memberName = name?.trim() || existingMember?.displayName || "Member";
 
     const [member] = await db
       .insert(members)
@@ -44,7 +51,7 @@ app.post("/device", async (c) => {
       .onConflictDoUpdate({
         target: members.id,
         set: {
-          displayName: memberName,
+          ...(name?.trim() ? { displayName: name.trim() } : {}),
           lastSeenAt: new Date(),
           updatedAt: new Date(),
         },
@@ -68,6 +75,9 @@ app.post("/device", async (c) => {
       member: {
         id: member.id,
         name: member.displayName,
+        phone: member.phone,
+        active: member.active,
+        profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
         authMethod: "device_auth",
         authenticatedAt: new Date().toISOString(),
       },
@@ -76,6 +86,40 @@ app.post("/device", async (c) => {
     console.error("Device auth error:", err);
     return c.json({ error: "Internal error", message: err.message }, 500);
   }
+});
+
+app.use("/profile", authMiddleware);
+
+app.get("/profile", async (c) => {
+  const user = c.get("user");
+  const member = await db.query.members.findFirst({ where: eq(members.id, user.sub) });
+  if (!member) return c.json({ error: "Account not found" }, 404);
+
+  return c.json({
+    profile: {
+      id: member.id,
+      name: member.displayName,
+      phone: member.phone || "",
+      active: member.active,
+      profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
+    },
+  });
+});
+
+app.patch("/profile", async (c) => {
+  const user = c.get("user");
+  const parsed = profileSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message || "Invalid profile" }, 400);
+
+  const [member] = await db.update(members)
+    .set({ displayName: parsed.data.name, phone: parsed.data.phone, active: true, updatedAt: new Date(), lastSeenAt: new Date() })
+    .where(eq(members.id, user.sub))
+    .returning();
+  if (!member) return c.json({ error: "Account not found" }, 404);
+
+  return c.json({
+    profile: { id: member.id, name: member.displayName, phone: member.phone, active: member.active, profileComplete: true },
+  });
 });
 
 export default app;

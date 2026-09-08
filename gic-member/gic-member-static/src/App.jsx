@@ -165,21 +165,23 @@ async function registerPushTokenWithBackend(tokenValue) {
 
 // ── Device Auth Utilities ──────────────────────────────────────────────────
 export function getOrCreateDeviceId() {
-  let id = localStorage.getItem('gic_device_id')
+  const cookieId = document.cookie.match(/(?:^|; )gic_device_id=([^;]+)/)?.[1]
+  let id = cookieId || localStorage.getItem('gic_device_id')
   if (!id) {
     id = 'dev-' + Math.random().toString(36).substring(2, 8) + '-' + Date.now().toString(36).slice(-4)
-    localStorage.setItem('gic_device_id', id)
   }
+  localStorage.setItem('gic_device_id', id)
+  document.cookie = `gic_device_id=${encodeURIComponent(id)}; Max-Age=31536000; Path=/; SameSite=Lax`
   return id
 }
 
-export async function performDeviceAuth(memberName = 'Member') {
+export async function performDeviceAuth(memberName) {
   const deviceId = getOrCreateDeviceId()
   const payload = {
     deviceId,
     deviceName: window.navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Browser',
     platform: 'web',
-    name: memberName
+    ...(memberName?.trim() && memberName.trim() !== 'Member' ? { name: memberName.trim() } : {})
   }
   try {
     const res = await fetch(`${API_BASE}/api/auth/device`, {
@@ -191,6 +193,7 @@ export async function performDeviceAuth(memberName = 'Member') {
     if (!res.ok) throw new Error(data.error || 'Device authentication failed')
     localStorage.setItem('gic_auth_token', data.token)
     localStorage.setItem('gic_member_name', data.member.name)
+    localStorage.setItem('gic_member_phone', data.member.phone || '')
     localStorage.setItem('gic_auth_method', 'device_auth')
     return data
   } catch (e) {
@@ -269,19 +272,56 @@ function BottomNav({ active = 'home' }) {
   )}</nav>
 }
 
-function MemberShell({ children, active = 'home', title, backTo }) {
+function MemberShell({ children, active = 'home', title, backTo, lockProfile = false }) {
   return <div className="member-page">
     <header className="mobile-header">
-      {backTo ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
+      {backTo && !lockProfile ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
       {title ? <strong>{title}</strong> : <Logo />}
-      <Link to="/announcements" className="bell-btn" title="Announcements">
-        <Bell size={18} />
-        <span className="bell-badge" />
-      </Link>
+      {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className="bell-btn" title="Announcements"><Bell size={18} /><span className="bell-badge" /></Link>}
     </header>
     <main className="mobile-main">{children}</main>
-    <BottomNav active={active} />
+    {!lockProfile && <BottomNav active={active} />}
   </div>
+}
+
+function hasCompleteLocalProfile() {
+  const name = localStorage.getItem('gic_member_name')?.trim()
+  const phone = localStorage.getItem('gic_member_phone')?.trim()
+  return Boolean(name && name !== 'Member' && phone)
+}
+
+function ProtectedRoute({ children }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    const checkProfile = async () => {
+      if (!localStorage.getItem('gic_auth_token')) {
+        navigate('/', { replace: true })
+        return
+      }
+      try {
+        const { profile } = await fetchMemberApi('/api/auth/profile')
+        if (cancelled) return
+        localStorage.setItem('gic_member_name', profile.name || '')
+        localStorage.setItem('gic_member_phone', profile.phone || '')
+        if (!profile.active || !profile.profileComplete) {
+          if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
+          return
+        }
+        setChecking(false)
+      } catch {
+        navigate('/', { replace: true })
+      }
+    }
+    checkProfile()
+    return () => { cancelled = true }
+  }, [location.pathname, navigate])
+
+  if (checking && location.pathname !== '/profile/edit') return <div className="center muted">Checking your profile...</div>
+  return children
 }
 
 function Welcome() {
@@ -302,11 +342,10 @@ function Welcome() {
       if (!deviceId && !existingToken) return
 
       try {
-        await performDeviceAuth(localStorage.getItem('gic_member_name') || 'Member')
-        if (!cancelled) navigate('/home', { replace: true })
+        const data = await performDeviceAuth(localStorage.getItem('gic_member_name'))
+        if (!cancelled) navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
       } catch {
-        // Keep a still-valid local session usable if the API is temporarily unavailable.
-        if (existingToken && !cancelled) navigate('/home', { replace: true })
+        if (existingToken && !cancelled && hasCompleteLocalProfile()) navigate('/home', { replace: true })
       }
     }
 
@@ -345,7 +384,7 @@ function Welcome() {
 
   const handleOpenApp = async () => {
     if (!installPrompt) {
-      navigate('/home', { replace: true })
+      setError('Please install the GIC home screen app to continue.')
       return
     }
 
@@ -361,11 +400,11 @@ function Welcome() {
     setLoading(true)
     setError('')
     try {
-      await performDeviceAuth('Member')
+      const data = await performDeviceAuth()
       localStorage.removeItem('gic_profile_completed')
       localStorage.removeItem('gic_onboarding_completed')
       localStorage.setItem('gic_onboarding_profile', 'true')
-      navigate('/onboarding')
+      navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1')
     } catch {
       setError('We could not connect to the member service. Please try again.')
     } finally {
@@ -415,7 +454,7 @@ function OnboardingFlow() {
       return
     }
 
-    if (localStorage.getItem('gic_onboarding_completed') === 'true' || isStandalonePwa()) {
+    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile()) {
       navigate('/home', { replace: true })
       return
     }
@@ -529,7 +568,7 @@ function OnboardingFlow() {
 
   const handleMaybeLater = () => {
     setLocalState('gic_pwa_install_prompt_seen', 'true')
-    finishOnboarding()
+    setDismissedNotice('Please install the GIC home screen app before continuing.')
   }
 
   if (stage === 'ios-install') {
@@ -578,7 +617,7 @@ function OnboardingFlow() {
 }
 
 function HomePage() {
-  const memberName = localStorage.getItem('gic_member_name') || 'Member'
+  const memberName = localStorage.getItem('gic_member_name') || ''
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
   const nextEvent = getServiceDisplay(getNextEvent())
 
@@ -750,9 +789,9 @@ function EventRegistration() {
   const navigate = useNavigate()
   const { id } = useParams()
   const event = events.find((item) => item.id === id) || events[0]
-  const memberName = localStorage.getItem('gic_member_name') || 'Member'
-  const email = localStorage.getItem('gic_member_email') || 'member@gic.org'
-  const phone = localStorage.getItem('gic_member_phone') || '+234 801 234 5678'
+  const memberName = localStorage.getItem('gic_member_name') || ''
+  const email = localStorage.getItem('gic_member_email') || ''
+  const phone = localStorage.getItem('gic_member_phone') || ''
   const handleSubmit = (submitEvent) => {
     submitEvent.preventDefault()
     localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({
@@ -820,7 +859,7 @@ function FormsPage() {
 }
 
 function PrayerRequest() {
-  const memberName = localStorage.getItem('gic_member_name') || 'Member'
+  const memberName = localStorage.getItem('gic_member_name') || ''
   return <MemberShell active="home" title="Prayer Request Form" backTo="/forms">
     <p className="center muted">We believe in the power of prayer.<br />Please share your request with us.</p>
     <div className="stack">
@@ -834,7 +873,7 @@ function PrayerRequest() {
 }
 
 function MinistriesPage() {
-  const memberName = localStorage.getItem('gic_member_name') || 'Member'
+  const memberName = localStorage.getItem('gic_member_name') || ''
   const selectedNames = (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean)
   const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
 
@@ -878,7 +917,7 @@ function MinistryApplication() {
         body: JSON.stringify({
           ministry: ministry.title,
           message,
-          memberName: localStorage.getItem('gic_member_name') || 'Member',
+          memberName: localStorage.getItem('gic_member_name') || '',
         }),
       })
       setSubmitted(true)
@@ -970,7 +1009,8 @@ function Profile() {
 function EditProfile() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [name, setName] = useState(localStorage.getItem('gic_member_name') || 'Member')
+  const required = new URLSearchParams(location.search).get('required') === '1'
+  const [name, setName] = useState(localStorage.getItem('gic_member_name') || '')
   const [phone, setPhone] = useState(localStorage.getItem('gic_member_phone') || '')
   const [email, setEmail] = useState(localStorage.getItem('gic_member_email') || '')
   const [ministriesValue, setMinistriesValue] = useState(() => {
@@ -990,12 +1030,20 @@ function EditProfile() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    await performDeviceAuth(name.trim())
+    if (!name.trim() || !phone.trim()) return
+    const authData = await performDeviceAuth(name.trim())
+    const profileResponse = await fetchMemberApi('/api/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify({ name: name.trim(), phone: phone.trim() }),
+    })
+    const savedProfile = profileResponse.profile
+    localStorage.setItem('gic_member_name', savedProfile.name)
+    localStorage.setItem('gic_member_phone', savedProfile.phone)
     const profileFields = { phone, email, ministries: ministriesValue.join(', '), center, serviceTime, birthday, membershipStatus }
     Object.entries(profileFields).forEach(([key, value]) => localStorage.setItem(`gic_member_${key === 'ministries' ? 'ministries' : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`, value.trim()))
     if (avatar) localStorage.setItem('gic_member_avatar', avatar)
     localStorage.setItem('gic_profile_completed', 'true')
-    navigate(localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding' : '/profile')
+    navigate(required || localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding' : '/profile')
   }
 
   const handleAvatarChange = (event) => {
@@ -1006,7 +1054,7 @@ function EditProfile() {
     reader.readAsDataURL(file)
   }
 
-  return <MemberShell active="profile" title="Edit Profile" backTo="/profile">
+  return <MemberShell active="profile" title="Edit Profile" backTo="/profile" lockProfile={required}>
     <div className="profile-head">
       <label className="avatar large avatar-picker">
         {avatar ? <img src={avatar} alt="Profile preview" /> : name.slice(0, 2).toUpperCase()}
@@ -1014,6 +1062,7 @@ function EditProfile() {
         <input type="file" accept="image/*" onChange={handleAvatarChange} />
       </label>
     </div>
+    {required && <p className="auth-inline-error" role="alert">Your account needs a name and phone number before you can continue.</p>}
     <form onSubmit={handleSave} className="stack">
       <label className="field">
         <span>FULL NAME</span>
@@ -1078,11 +1127,11 @@ function MyRegistrations() {
 function SignIn() {
   const navigate = useNavigate()
   const handleDemoSignIn = async () => {
-    await performDeviceAuth('Member')
+    const data = await performDeviceAuth()
     localStorage.removeItem('gic_profile_completed')
     localStorage.removeItem('gic_onboarding_completed')
     localStorage.setItem('gic_onboarding_profile', 'true')
-    navigate('/onboarding')
+    navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1')
   }
 
   return <div className="onboarding-page">
@@ -1105,22 +1154,22 @@ export default function App() {
     <Route path="/" element={<Welcome />} />
     <Route path="/signin" element={<SignIn />} />
     <Route path="/onboarding" element={<OnboardingFlow />} />
-    <Route path="/home" element={<HomePage />} />
-    <Route path="/announcements" element={<Announcements />} />
-    <Route path="/announcements/:id" element={<AnnouncementDetails />} />
-    <Route path="/events" element={<EventsPage />} />
-    <Route path="/events/:id" element={<EventDetails />} />
-    <Route path="/events/:id/register" element={<EventRegistration />} />
-    <Route path="/events/:id/success" element={<RegistrationSuccess />} />
-    <Route path="/my-registrations" element={<MyRegistrations />} />
-    <Route path="/forms" element={<FormsPage />} />
-    <Route path="/forms/prayer-request" element={<PrayerRequest />} />
-    <Route path="/ministries" element={<MinistriesPage />} />
-    <Route path="/ministries/browse" element={<MinistryDirectory />} />
-    <Route path="/ministries/:id/apply" element={<MinistryApplication />} />
-    <Route path="/ministries/:id" element={<MinistryDetails />} />
-    <Route path="/profile" element={<Profile />} />
-    <Route path="/profile/edit" element={<EditProfile />} />
+    <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+    <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
+    <Route path="/announcements/:id" element={<ProtectedRoute><AnnouncementDetails /></ProtectedRoute>} />
+    <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
+    <Route path="/events/:id" element={<ProtectedRoute><EventDetails /></ProtectedRoute>} />
+    <Route path="/events/:id/register" element={<ProtectedRoute><EventRegistration /></ProtectedRoute>} />
+    <Route path="/events/:id/success" element={<ProtectedRoute><RegistrationSuccess /></ProtectedRoute>} />
+    <Route path="/my-registrations" element={<ProtectedRoute><MyRegistrations /></ProtectedRoute>} />
+    <Route path="/forms" element={<ProtectedRoute><FormsPage /></ProtectedRoute>} />
+    <Route path="/forms/prayer-request" element={<ProtectedRoute><PrayerRequest /></ProtectedRoute>} />
+    <Route path="/ministries" element={<ProtectedRoute><MinistriesPage /></ProtectedRoute>} />
+    <Route path="/ministries/browse" element={<ProtectedRoute><MinistryDirectory /></ProtectedRoute>} />
+    <Route path="/ministries/:id/apply" element={<ProtectedRoute><MinistryApplication /></ProtectedRoute>} />
+    <Route path="/ministries/:id" element={<ProtectedRoute><MinistryDetails /></ProtectedRoute>} />
+    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+    <Route path="/profile/edit" element={<ProtectedRoute><EditProfile /></ProtectedRoute>} />
     <Route path="*" element={<Navigate to="/" />} />
   </Routes>
 }
