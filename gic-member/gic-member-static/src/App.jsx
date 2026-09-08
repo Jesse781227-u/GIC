@@ -311,6 +311,10 @@ function ProtectedRoute({ children }) {
           if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
           return
         }
+        if (!isStandalonePwa() && location.pathname !== '/onboarding') {
+          navigate('/onboarding?stage=install', { replace: true })
+          return
+        }
         setChecking(false)
       } catch {
         navigate('/', { replace: true })
@@ -421,6 +425,7 @@ function OnboardingFlow() {
     }
 
     const profileCompleted = localStorage.getItem('gic_profile_completed') === 'true'
+    const requestedStage = new URLSearchParams(window.location.search).get('stage')
     const savedPermission = localStorage.getItem('gic_notification_permission')
     if (savedPermission) {
       setPermissionState(savedPermission)
@@ -428,6 +433,8 @@ function OnboardingFlow() {
 
     if (!profileCompleted) {
       setStage('profile')
+    } else if (requestedStage === 'install' && !isStandalonePwa()) {
+      setStage('pwa')
     } else if (!isStandalonePwa()) {
       setStage('pwa')
     } else {
@@ -1022,7 +1029,7 @@ function EditProfile() {
     Object.entries(profileFields).forEach(([key, value]) => localStorage.setItem(`gic_member_${key === 'ministries' ? 'ministries' : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`, value.trim()))
     if (avatar) localStorage.setItem('gic_member_avatar', avatar)
     localStorage.setItem('gic_profile_completed', 'true')
-    navigate(required || localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding' : '/profile')
+    navigate(required || localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding?stage=install' : '/profile')
   }
 
   const handleAvatarChange = (event) => {
