@@ -11,7 +11,7 @@ memberApp.use("*", authMiddleware);
 memberApp.post("/", async (c) => {
   const parsed = z.object({
     ministry: z.string().min(1),
-    message: z.string().max(1000).optional(),
+    message: z.string().trim().min(10).max(1000),
     memberName: z.string().min(1),
   }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Invalid application" }, 400);
