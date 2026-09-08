@@ -342,9 +342,14 @@ function Welcome() {
 
       try {
         const data = await performDeviceAuth(localStorage.getItem('gic_member_name'))
-        if (!cancelled) navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
+        if (!cancelled) {
+          const onboardingComplete = localStorage.getItem('gic_onboarding_completed') === 'true'
+          navigate(data.member.profileComplete && onboardingComplete && isStandalonePwa() ? '/home' : data.member.profileComplete ? '/onboarding' : '/profile/edit?required=1', { replace: true })
+        }
       } catch {
-        if (existingToken && !cancelled && hasCompleteLocalProfile()) navigate('/home', { replace: true })
+        if (existingToken && !cancelled && hasCompleteLocalProfile()) {
+          navigate(localStorage.getItem('gic_onboarding_completed') === 'true' && isStandalonePwa() ? '/home' : '/onboarding', { replace: true })
+        }
       }
     }
 
@@ -409,7 +414,7 @@ function OnboardingFlow() {
       return
     }
 
-    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile()) {
+    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile() && isStandalonePwa()) {
       navigate('/home', { replace: true })
       return
     }
@@ -422,7 +427,7 @@ function OnboardingFlow() {
 
     if (!profileCompleted) {
       setStage('profile')
-    } else if (savedPermission === 'granted') {
+    } else if (!isStandalonePwa()) {
       setStage('pwa')
     } else {
       setStage('notification')
@@ -457,14 +462,14 @@ function OnboardingFlow() {
       if (!('Notification' in window)) {
         setPermissionState('unsupported')
         setLocalState('gic_notification_permission', 'unsupported')
-        setStage('pwa')
+        finishOnboarding()
         return
       }
 
       if (!getSecureMode()) {
         setPermissionState('unsupported')
         setLocalState('gic_notification_permission', 'unsupported')
-        setStage('pwa')
+        finishOnboarding()
         return
       }
 
@@ -475,14 +480,14 @@ function OnboardingFlow() {
         setPermissionState('granted')
         setLocalState('gic_notification_permission', 'granted')
         setLocalState('gic_notifications_prompted', 'true')
-        setStage('pwa')
+        finishOnboarding()
         return
       }
 
       if (currentPermission === 'denied') {
         setPermissionState('denied')
         setLocalState('gic_notification_permission', 'denied')
-        setStage('pwa')
+        finishOnboarding()
         return
       }
 
@@ -490,13 +495,13 @@ function OnboardingFlow() {
       setPermissionState(permission)
       setLocalState('gic_notification_permission', permission)
       setLocalState('gic_notifications_prompted', 'true')
-      setStage('pwa')
+      finishOnboarding()
     } catch (error) {
       console.error('Notification onboarding error:', error)
       setDismissedNotice('Notifications could not be enabled right now. You can continue and try again later.')
       setPermissionState('denied')
       setLocalState('gic_notification_permission', 'denied')
-      setStage('pwa')
+      finishOnboarding()
     } finally {
       setBusy(false)
     }
@@ -508,8 +513,8 @@ function OnboardingFlow() {
       const choice = await installPrompt.userChoice
       if (choice.outcome === 'accepted') {
         setLocalState('gic_pwa_installed', 'true')
+        setDismissedNotice('GIC has been added. Open GIC from your home screen to continue.')
       }
-      finishOnboarding()
       return
     }
 
@@ -518,7 +523,7 @@ function OnboardingFlow() {
       return
     }
 
-    finishOnboarding()
+    setDismissedNotice('Add GIC to your home screen, then open it there to continue.')
   }
 
   const handleMaybeLater = () => {
@@ -537,8 +542,9 @@ function OnboardingFlow() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>3</span><span>Tap “Add”.</span></div>
       </div>
       <div style={{ display: 'flex', gap: '10px', marginTop: '26px' }}>
-        <button className="btn gold wide" onClick={finishOnboarding}>Continue</button>
+        <button className="btn gold wide" onClick={() => setDismissedNotice('Open GIC from your home screen to continue.')}>I installed GIC</button>
       </div>
+      {dismissedNotice && <p className="sub" style={{ marginTop: '16px', textAlign: 'center', color: '#a61e1e' }}>{dismissedNotice}</p>}
     </div></div>
   }
 
