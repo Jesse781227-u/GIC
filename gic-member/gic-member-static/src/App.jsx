@@ -54,15 +54,31 @@ function getSundayServiceCopy() {
   }
 }
 
+function getNextServiceDate(event, now = new Date()) {
+  if (!event.isService) return new Date(event.date.replace(/^\w+, /, '')).getTime()
+  const targetDay = event.id === 'midweek-service' ? 3 : 0 // Wednesday / Sunday
+  const next = new Date(now)
+  const daysUntilTarget = (targetDay - next.getDay() + 7) % 7
+  next.setDate(next.getDate() + daysUntilTarget)
+  next.setHours(event.id === 'midweek-service' ? 18 : 8, 45, 0, 0)
+  if (daysUntilTarget === 0 && next.getTime() <= now.getTime()) next.setDate(next.getDate() + 7)
+  return next.getTime()
+}
+
+function getUpcomingEvents() {
+  return [...events].sort((first, second) => getNextServiceDate(first) - getNextServiceDate(second))
+}
+
 function getNextEvent() {
-  return [...events].sort((first, second) => new Date(first.date.replace(/^\w+, /, '')).getTime() - new Date(second.date.replace(/^\w+, /, '')).getTime())[0]
+  return getUpcomingEvents()[0]
 }
 
 function getServiceDisplay(event) {
   const { center, time } = getSelectedService()
+  const sundayTime = time.replace(/^Sunday Services?:\s*/i, '')
   return event.id === 'sunday-service'
-    ? { ...event, date: 'Every Sunday', time, location: center }
-    : { ...event, date: 'Every Wednesday', time: '6:00 PM WAT', location: center }
+    ? { ...event, date: 'This Sunday', time: sundayTime, location: center }
+    : { ...event, date: 'This Wednesday', time: '6:00 PM WAT', location: center }
 }
 
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
@@ -575,7 +591,7 @@ function HomePage() {
     </section>
     <section className="section">
       <div className="section-head"><span>Upcoming Events</span><Link to="/events">View All</Link></div>
-      {events.slice(0, 2).map(e => <EventRow key={e.id} event={e} />)}
+      {getUpcomingEvents().slice(0, 2).map(e => <EventRow key={e.id} event={e} />)}
     </section>
   </MemberShell>
 }
@@ -655,7 +671,7 @@ function AnnouncementDetails() {
 function EventsPage() {
   return <MemberShell active="events" title="Events" backTo="/home">
     <div className="segmented"><button className="active">Upcoming</button><Link to="/my-registrations">My Events</Link></div>
-    {events.map(e => <EventRow key={e.id} event={e} />)}
+    {getUpcomingEvents().map(e => <EventRow key={e.id} event={e} />)}
   </MemberShell>
 }
 
