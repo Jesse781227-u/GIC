@@ -766,7 +766,7 @@ function Profile() {
   const profileDetails = [
     ['Phone Number', localStorage.getItem('gic_member_phone') || 'Add info', Phone],
     ['Email Address', localStorage.getItem('gic_member_email') || 'Add info', Mail],
-    ['Ministries', localStorage.getItem('gic_member_ministries') || 'Youth Ministry, Media Ministry, Choir', Users],
+    ['Ministries', localStorage.getItem('gic_member_ministries') || 'Add info', Users],
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
     ['Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
     ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
