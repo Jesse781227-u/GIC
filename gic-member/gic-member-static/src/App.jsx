@@ -52,14 +52,6 @@ function getSundayServiceCopy() {
   }
 }
 
-const latestMixlrRecording = {
-  title: 'Achieve Greatness with Yemi Davids | Escaping The Trap of Bitterness & Offenses | 4th Sept, 2026',
-  displayTitle: 'Achieving Greatness with Yemi Davids',
-  displayDate: '4th September, 2026',
-  url: 'https://globalimpactng.mixlr.com/recordings/3203054',
-  audioUrl: 'https://mixlr-recordings-production.ebf9f54a7fe01f0688daaa8349c0bf72.r2.cloudflarestorage.com/audio/29e52243ee54b04b62ac0ed50c1cfe55/base.mp3?response-content-type=application%2Fmp3&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=050e9225a344b2211fe68e5a9a3e4158%2F20260905%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20260905T002603Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=6c84b9c6251ef8d99d4a27ef1c0a6078c2480bb0caedb4d44583a49c9d935e3d',
-}
-
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
@@ -482,6 +474,18 @@ function OnboardingFlow() {
 
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || 'Member'
+  const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/mixlr/latest`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Mixlr unavailable')))
+      .then(setLatestMixlrRecording)
+      .catch(() => setLatestMixlrRecording({
+        title: 'Latest recording unavailable',
+        displayTitle: 'Listen to the latest recording on Mixlr',
+        url: 'https://globalimpactng.mixlr.com/recordings',
+      }))
+  }, [])
 
   return <MemberShell active="home">
     <section className="hero-card" style={{ padding: '18px', minHeight: 'auto' }}>
@@ -505,12 +509,12 @@ function HomePage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block', boxShadow: '0 0 8px #3b82f6' }}/>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording.displayTitle}</span>
-              <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording.displayDate}</small>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording?.displayTitle || 'Loading latest recording...'}</span>
+              <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.title || 'Fetching from Mixlr'}</small>
             </div>
           </div>
           <a 
-            href="https://globalimpactng.mixlr.com/recordings" 
+            href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} 
             target="_blank" 
             rel="noreferrer"
             style={{ fontSize: '10px', color: '#fff', opacity: 0.85, textDecoration: 'underline' }}
@@ -519,13 +523,9 @@ function HomePage() {
           </a>
         </div>
 
-        <audio
-          controls
-          preload="metadata"
-          src={latestMixlrRecording.audioUrl}
-          aria-label={latestMixlrRecording.title}
-          style={{ width: '100%', height: '42px' }}
-        />
+        <a href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} target="_blank" rel="noreferrer" className="btn white wide">
+          Listen to recording on Mixlr
+        </a>
       </div>
     </section>
     <section className="section">
