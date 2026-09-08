@@ -125,6 +125,30 @@ function setLocalState(key, value) {
   localStorage.setItem(key, value)
 }
 
+function playNotificationsEnabledSound() {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextClass) return
+    const context = new AudioContextClass()
+    const now = context.currentTime
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(880, now)
+    oscillator.frequency.setValueAtTime(1175, now + 0.09)
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24)
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start(now)
+    oscillator.stop(now + 0.24)
+    oscillator.addEventListener('ended', () => context.close())
+  } catch {
+    // Audio is optional and may be unavailable in some browsers.
+  }
+}
+
 function nextStep() {
   if (window.location.pathname !== '/onboarding') {
     return
@@ -576,6 +600,7 @@ function OnboardingFlow() {
         setPermissionState('granted')
         setLocalState('gic_notification_permission', 'granted')
         setLocalState('gic_notifications_prompted', 'true')
+        playNotificationsEnabledSound()
         const token = await getFcmToken()
         if (token) await registerPushTokenWithBackend(token)
         finishOnboarding()
@@ -594,6 +619,7 @@ function OnboardingFlow() {
       setLocalState('gic_notification_permission', permission)
       setLocalState('gic_notifications_prompted', 'true')
       if (permission === 'granted') {
+        playNotificationsEnabledSound()
         const token = await getFcmToken()
         if (token) await registerPushTokenWithBackend(token)
       }
