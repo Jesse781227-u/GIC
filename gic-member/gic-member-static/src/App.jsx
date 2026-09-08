@@ -7,10 +7,8 @@ import {
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 const events = [
-  { id: 'youth-conference-2024', title: 'Youth Conference 2026', date: 'Sat, 24 Oct 2026', time: '10:00 AM', location: 'Global Impact Church, Lekki', image: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=900&q=80', tag: 'Youth' },
-  { id: 'prayer-meeting', title: 'Prayer Meeting', date: 'Wed, 7 Oct 2026', time: '6:00 PM', location: 'Online', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=900&q=80', tag: 'General' },
-  { id: 'women-of-impact', title: 'Women of Impact', date: 'Sat, 7 Nov 2026', time: '10:00 AM', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=900&q=80', tag: 'Women' },
-  { id: 'leadership-seminar', title: 'Leadership Seminar', date: 'Sat, 9 Jan 2027', time: '10:00 AM', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?auto=format&fit=crop&w=900&q=80', tag: 'Leadership' },
+  { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1519491050282-cf00c82424b4?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
+  { id: 'midweek-service', title: 'Midweek Service', date: 'Wed, 7 Oct 2026', time: '6:00 PM WAT', location: 'Global Impact Church', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=900&q=80', tag: 'Service' },
 ]
 
 const ministries = [
@@ -54,6 +52,10 @@ function getSundayServiceCopy() {
       'Come expectant and invite someone to experience the presence of God with us.',
     ],
   }
+}
+
+function getNextEvent() {
+  return [...events].sort((first, second) => new Date(first.date.replace(/^\w+, /, '')).getTime() - new Date(second.date.replace(/^\w+, /, '')).getTime())[0]
 }
 
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
@@ -494,6 +496,7 @@ function OnboardingFlow() {
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || 'Member'
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
+  const nextEvent = getNextEvent()
 
   useEffect(() => {
     fetch(`${API_BASE}/api/mixlr/latest`)
@@ -552,13 +555,14 @@ function HomePage() {
       </div>
     </section>
     <section className="section">
-      <div className="section-head"><span>Latest Announcement</span></div>
+      <div className="section-head"><span>Next Service</span></div>
       <article className="announcement-card">
-        <div className="image-banner" style={{ backgroundImage: `url(${events[0].image})` }} />
+        <div className="image-banner" style={{ backgroundImage: `url(${nextEvent.image})` }} />
         <div className="pad">
-          <small>Sunday Service Update</small>
-          <h3>{getSundayServiceCopy().summary}</h3>
-          <Link to="/announcements">View Details</Link>
+          <small>{nextEvent.title}</small>
+          <h3>{nextEvent.date} · {nextEvent.time}</h3>
+          <p>{nextEvent.location}</p>
+          <Link to={`/events/${nextEvent.id}`}>View Details</Link>
         </div>
       </article>
     </section>
