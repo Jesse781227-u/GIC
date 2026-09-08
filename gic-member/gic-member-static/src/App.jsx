@@ -176,7 +176,18 @@ export function getOrCreateDeviceId() {
   return id
 }
 
+function getAccountId() {
+  return document.cookie.match(/(?:^|; )gic_account_id=([^;]+)/)?.[1] || localStorage.getItem('gic_account_id') || ''
+}
+
+function storeAccountId(accountId) {
+  if (!accountId) return
+  localStorage.setItem('gic_account_id', accountId)
+  document.cookie = `gic_account_id=${encodeURIComponent(accountId)}; Max-Age=31536000; Path=/; SameSite=Lax`
+}
+
 function storeMemberSession(data) {
+  storeAccountId(data.member.id)
   localStorage.setItem('gic_auth_token', data.token)
   localStorage.setItem('gic_member_name', data.member.name)
   localStorage.setItem('gic_member_phone', data.member.phone || '')
@@ -194,6 +205,7 @@ export async function performDeviceAuth(memberName) {
   const deviceId = getOrCreateDeviceId()
   const payload = {
     deviceId,
+    ...(getAccountId() ? { accountId: getAccountId() } : {}),
     deviceName: window.navigator.userAgent.includes('Mobile') ? 'Mobile Device' : 'Desktop Browser',
     platform: 'web',
     ...(memberName?.trim() && memberName.trim() !== 'Member' ? { name: memberName.trim() } : {})
@@ -206,6 +218,7 @@ export async function performDeviceAuth(memberName) {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Device authentication failed')
+    storeAccountId(data.member.id)
     storeMemberSession(data)
     return data
   } catch (e) {
@@ -317,6 +330,7 @@ function ProtectedRoute({ children }) {
       try {
         const { profile } = await fetchMemberApi('/api/auth/profile')
         if (cancelled) return
+        storeAccountId(profile.id)
         localStorage.setItem('gic_member_name', profile.name || '')
         localStorage.setItem('gic_member_phone', profile.phone || '')
         localStorage.setItem('gic_member_email', profile.email || '')
