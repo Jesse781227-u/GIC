@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
@@ -175,6 +176,20 @@ export function getOrCreateDeviceId() {
   return id
 }
 
+function storeMemberSession(data) {
+  localStorage.setItem('gic_auth_token', data.token)
+  localStorage.setItem('gic_member_name', data.member.name)
+  localStorage.setItem('gic_member_phone', data.member.phone || '')
+  localStorage.setItem('gic_member_email', data.member.email || '')
+  localStorage.setItem('gic_member_ministries', data.member.ministries || '')
+  localStorage.setItem('gic_member_center', data.member.center || '')
+  localStorage.setItem('gic_member_service_time', data.member.serviceTime || '')
+  localStorage.setItem('gic_member_birthday', data.member.birthday || '')
+  localStorage.setItem('gic_membership_status', data.member.membershipStatus || '')
+  if (data.member.avatar) localStorage.setItem('gic_member_avatar', data.member.avatar)
+  localStorage.setItem('gic_auth_method', 'device_auth')
+}
+
 export async function performDeviceAuth(memberName) {
   const deviceId = getOrCreateDeviceId()
   const payload = {
@@ -191,10 +206,7 @@ export async function performDeviceAuth(memberName) {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Device authentication failed')
-    localStorage.setItem('gic_auth_token', data.token)
-    localStorage.setItem('gic_member_name', data.member.name)
-    localStorage.setItem('gic_member_phone', data.member.phone || '')
-    localStorage.setItem('gic_auth_method', 'device_auth')
+    storeMemberSession(data)
     return data
   } catch (e) {
     console.error('Device authentication failed:', e)
@@ -216,12 +228,12 @@ function Button({ children, variant = 'primary', className = '', ...props }) {
   return <button className={`btn ${variant} ${className}`} {...props}>{children}</button>
 }
 
-function Field({ label, value, type = 'text', placeholder, onChange, icon: Icon }) {
+function Field({ label, value, type = 'text', placeholder, onChange, icon: Icon, required = false }) {
   return <label className="field">
     <span>{label}</span>
     <div className="field-wrap">
       {Icon && <Icon size={15} />}
-      <input type={type} value={onChange ? value : undefined} defaultValue={onChange ? undefined : value} placeholder={placeholder} onChange={onChange} />
+      <input type={type} value={onChange ? value : undefined} defaultValue={onChange ? undefined : value} placeholder={placeholder} onChange={onChange} required={required} />
     </div>
   </label>
 }
@@ -307,8 +319,23 @@ function ProtectedRoute({ children }) {
         if (cancelled) return
         localStorage.setItem('gic_member_name', profile.name || '')
         localStorage.setItem('gic_member_phone', profile.phone || '')
+        localStorage.setItem('gic_member_email', profile.email || '')
+        localStorage.setItem('gic_member_ministries', profile.ministries || '')
+        localStorage.setItem('gic_member_center', profile.center || '')
+        localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
+        localStorage.setItem('gic_member_birthday', profile.birthday || '')
+        localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
+        if (profile.avatar) localStorage.setItem('gic_member_avatar', profile.avatar)
         if (!profile.active || !profile.profileComplete) {
           if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
+          return
+        }
+        if (!isStandalonePwa() && location.pathname !== '/onboarding') {
+          navigate('/onboarding?stage=install', { replace: true })
+          return
+        }
+        if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding') {
+          navigate('/onboarding?stage=notifications', { replace: true })
           return
         }
         setChecking(false)
@@ -328,73 +355,6 @@ function Welcome() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [installPrompt, setInstallPrompt] = useState(null)
-
-  // Restore and refresh the device session whenever the browser opens the app.
-  // The device ID is persisted separately from the JWT, so an expired token can
-  // be replaced without sending the member through onboarding again.
-  useEffect(() => {
-    let cancelled = false
-    const restoreSession = async () => {
-      const deviceId = localStorage.getItem('gic_device_id')
-      const existingToken = localStorage.getItem('gic_auth_token')
-
-      if (!deviceId && !existingToken) return
-
-      try {
-        const data = await performDeviceAuth(localStorage.getItem('gic_member_name'))
-        if (!cancelled) navigate(data.member.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
-      } catch {
-        if (existingToken && !cancelled && hasCompleteLocalProfile()) navigate('/home', { replace: true })
-      }
-    }
-
-    restoreSession()
-    return () => { cancelled = true }
-  }, [navigate])
-
-  // When the URL is opened in a normal browser, offer the installed PWA entry
-  // point. Browsers may block an automatic prompt, so keep a visible fallback.
-  useEffect(() => {
-    if (isStandalonePwa()) return
-
-    const handleInstallPrompt = (event) => {
-      event.preventDefault()
-      setInstallPrompt(event)
-      if (localStorage.getItem('gic_pwa_install_prompt_seen') === 'true') return
-
-      localStorage.setItem('gic_pwa_install_prompt_seen', 'true')
-      window.setTimeout(async () => {
-        try {
-          await event.prompt()
-          const choice = await event.userChoice
-          if (choice.outcome === 'accepted') {
-            localStorage.setItem('gic_pwa_installed', 'true')
-            window.location.reload()
-          }
-        } catch {
-          // The browser requires the visible fallback button instead.
-        }
-      }, 450)
-    }
-
-    window.addEventListener('beforeinstallprompt', handleInstallPrompt)
-    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
-  }, [])
-
-  const handleOpenApp = async () => {
-    if (!installPrompt) {
-      setError('Please install the GIC home screen app to continue.')
-      return
-    }
-
-    await installPrompt.prompt()
-    const choice = await installPrompt.userChoice
-    if (choice.outcome === 'accepted') {
-      localStorage.setItem('gic_pwa_installed', 'true')
-      window.location.reload()
-    }
-  }
 
   const handleGetStarted = async () => {
     setLoading(true)
@@ -424,7 +384,6 @@ function Welcome() {
 
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {error && <p className="auth-inline-error" role="alert">{error}</p>}
-        {installPrompt && <button className="btn primary wide" onClick={handleOpenApp} style={{ fontSize: '14px', padding: '14px' }}>Open GIC App</button>}
         <button
           className="btn gold wide"
           onClick={handleGetStarted}
@@ -433,9 +392,76 @@ function Welcome() {
         >
           {loading ? 'Entering Portal...' : 'Get Started'}
         </button>
+        <Link className="btn white wide" to="/signin">Sign In</Link>
+        <Link className="center link-button" to="/recover">Recover account with phone</Link>
       </div>
     </div>
   </div>
+}
+
+function Recovery() {
+  const navigate = useNavigate()
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [confirmation, setConfirmation] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const requestCode = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const auth = createPhoneAuth()
+      const verifier = createPhoneRecaptcha('phone-recovery-recaptcha')
+      const result = await signInWithPhoneNumber(auth, phone.trim(), verifier)
+      setConfirmation(result)
+    } catch (recoveryError) {
+      setError(recoveryError.message || 'Unable to send verification code.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const recoverAccount = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const firebaseUser = await confirmation.confirm(code.trim())
+      const response = await fetch(`${API_BASE}/api/auth/recover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firebaseToken: await firebaseUser.user.getIdToken(), deviceId: getOrCreateDeviceId() }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Account recovery failed.')
+      storeMemberSession(data)
+      localStorage.setItem('gic_profile_completed', data.member.profileComplete ? 'true' : 'false')
+      localStorage.setItem('gic_onboarding_profile', 'true')
+      navigate('/onboarding', { replace: true })
+    } catch (recoveryError) {
+      setError(recoveryError.message || 'The verification code was not accepted.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="onboarding-page"><div className="onboarding-card">
+    <Logo />
+    <h1 style={{ textAlign: 'center', fontSize: '20px', marginTop: '16px' }}>Recover your account</h1>
+    <p className="sub">Use the phone number saved on your GIC profile. Include the country code, for example +2348012345678.</p>
+    {error && <p className="auth-inline-error" role="alert">{error}</p>}
+    {!confirmation ? <form className="stack" onSubmit={requestCode}>
+      <Field label="Phone Number" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+234 801 234 5678" icon={Phone} required />
+      <div id="phone-recovery-recaptcha" />
+      <button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending code...' : 'Send verification code'}</button>
+    </form> : <form className="stack" onSubmit={recoverAccount}>
+      <Field label="Verification Code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="123456" required />
+      <button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Recovering account...' : 'Recover account'}</button>
+    </form>}
+    <Link className="center link-button" to="/">Back to welcome</Link>
+  </div></div>
 }
 
 function OnboardingFlow() {
@@ -446,6 +472,7 @@ function OnboardingFlow() {
   const [stage, setStage] = useState('profile')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
+  const [installedApp, setInstalledApp] = useState(() => isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
 
   useEffect(() => {
     const token = localStorage.getItem('gic_auth_token')
@@ -454,12 +481,14 @@ function OnboardingFlow() {
       return
     }
 
-    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile()) {
+    const notificationsAllowed = !('Notification' in window) || Notification.permission !== 'default'
+    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile() && isStandalonePwa() && notificationsAllowed) {
       navigate('/home', { replace: true })
       return
     }
 
     const profileCompleted = localStorage.getItem('gic_profile_completed') === 'true'
+    const requestedStage = new URLSearchParams(window.location.search).get('stage')
     const savedPermission = localStorage.getItem('gic_notification_permission')
     if (savedPermission) {
       setPermissionState(savedPermission)
@@ -467,8 +496,14 @@ function OnboardingFlow() {
 
     if (!profileCompleted) {
       setStage('profile')
-    } else if (savedPermission === 'granted') {
+    } else if (requestedStage === 'install' && !isStandalonePwa()) {
       setStage('pwa')
+    } else if (requestedStage === 'notifications' && isStandalonePwa()) {
+      setStage('notification')
+    } else if (!isStandalonePwa()) {
+      setStage('pwa')
+    } else if (Notification.permission === 'default') {
+      setStage('notification')
     } else {
       setStage('notification')
     }
@@ -477,15 +512,28 @@ function OnboardingFlow() {
       event.preventDefault()
       setInstallPrompt(event)
       setInstallMode('browser')
-      setLocalState('gic_pwa_install_prompt_seen', 'true')
     }
 
+    const handleInstalled = () => {
+      setInstalledApp(true)
+      setLocalState('gic_pwa_installed', 'true')
+      setDismissedNotice('GIC is installed. Open GIC from your home screen to continue.')
+    }
+
+    const refreshDisplayMode = () => setInstalledApp(isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
+
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
+    window.addEventListener('appinstalled', handleInstalled)
+    window.addEventListener('pageshow', refreshDisplayMode)
     if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
       setInstallMode('ios')
     }
 
-    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt)
+      window.removeEventListener('appinstalled', handleInstalled)
+      window.removeEventListener('pageshow', refreshDisplayMode)
+    }
   }, [navigate])
 
   const finishOnboarding = () => {
@@ -502,14 +550,14 @@ function OnboardingFlow() {
       if (!('Notification' in window)) {
         setPermissionState('unsupported')
         setLocalState('gic_notification_permission', 'unsupported')
-        setStage('pwa')
+        finishOnboarding()
         return
       }
 
       if (!getSecureMode()) {
         setPermissionState('unsupported')
         setLocalState('gic_notification_permission', 'unsupported')
-        setStage('pwa')
+        finishOnboarding()
         return
       }
 
@@ -520,14 +568,16 @@ function OnboardingFlow() {
         setPermissionState('granted')
         setLocalState('gic_notification_permission', 'granted')
         setLocalState('gic_notifications_prompted', 'true')
-        setStage('pwa')
+        const token = await getFcmToken()
+        if (token) await registerPushTokenWithBackend(token)
+        finishOnboarding()
         return
       }
 
       if (currentPermission === 'denied') {
         setPermissionState('denied')
         setLocalState('gic_notification_permission', 'denied')
-        setStage('pwa')
+        finishOnboarding()
         return
       }
 
@@ -535,26 +585,35 @@ function OnboardingFlow() {
       setPermissionState(permission)
       setLocalState('gic_notification_permission', permission)
       setLocalState('gic_notifications_prompted', 'true')
-      setStage('pwa')
+      if (permission === 'granted') {
+        const token = await getFcmToken()
+        if (token) await registerPushTokenWithBackend(token)
+      }
+      finishOnboarding()
     } catch (error) {
       console.error('Notification onboarding error:', error)
       setDismissedNotice('Notifications could not be enabled right now. You can continue and try again later.')
       setPermissionState('denied')
       setLocalState('gic_notification_permission', 'denied')
-      setStage('pwa')
+      finishOnboarding()
     } finally {
       setBusy(false)
     }
   }
 
   const handleInstall = async () => {
+    if (installedApp) {
+      setDismissedNotice('GIC is already installed. Open it from your home screen to continue.')
+      return
+    }
+
     if (installPrompt) {
-      installPrompt.prompt()
+      await installPrompt.prompt()
       const choice = await installPrompt.userChoice
       if (choice.outcome === 'accepted') {
         setLocalState('gic_pwa_installed', 'true')
+        setDismissedNotice('GIC has been added. Open it from your home screen to continue.')
       }
-      finishOnboarding()
       return
     }
 
@@ -563,7 +622,7 @@ function OnboardingFlow() {
       return
     }
 
-    finishOnboarding()
+    setDismissedNotice('Use your browser menu to select “Add to Home Screen”, then open GIC from your home screen.')
   }
 
   const handleMaybeLater = () => {
@@ -575,15 +634,16 @@ function OnboardingFlow() {
     return <div className="onboarding-page"><div className="onboarding-card" style={{ minHeight: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
       <h1 style={{ textAlign: 'center', fontSize: '26px', marginBottom: '10px' }}>Add GIC to your Home Screen</h1>
-      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}>Install Global Impact Church for quick access to your member account, events, registrations and updates.</p>
+      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}></p>
       <div className="stack" style={{ gap: '10px', textAlign: 'left', padding: '10px 8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>1</span><span>Tap the Share button.</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>2</span><span>Select “Add to Home Screen”.</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>3</span><span>Tap “Add”.</span></div>
       </div>
       <div style={{ display: 'flex', gap: '10px', marginTop: '26px' }}>
-        <button className="btn gold wide" onClick={finishOnboarding}>Continue</button>
+        <button className="btn gold wide" onClick={() => setDismissedNotice('Open GIC from your home screen to continue.')}>I installed GIC</button>
       </div>
+      {dismissedNotice && <p className="sub" style={{ marginTop: '16px', textAlign: 'center', color: '#a61e1e' }}>{dismissedNotice}</p>}
     </div></div>
   }
 
@@ -606,10 +666,9 @@ function OnboardingFlow() {
       {permissionState === 'denied' && <p className="sub" style={{ marginTop: '16px', textAlign: 'center' }}>Notifications are currently disabled in your browser or device settings. You can enable them later and still continue to use GIC.</p>}
     </> : <>
       <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Add GIC to your Home Screen</h1>
-      <p className="sub" style={{ textAlign: 'center' }}>Install Global Impact Church for quick access to your member account, events, registrations and updates.</p>
+      <p className="sub" style={{ textAlign: 'center' }}></p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '18px' }}>
-        <button className="btn primary wide" onClick={handleInstall}>Add to Home Screen</button>
-        <button className="btn white wide" style={{ border: '1px solid #e8e2f1' }} onClick={handleMaybeLater}>Maybe Later</button>
+        <button className="btn primary wide" onClick={handleInstall}>{installedApp ? 'Open GIC from Home Screen' : 'Add to Home Screen'}</button>
       </div>
       {permissionState === 'unsupported' && <p className="sub" style={{ marginTop: '16px', textAlign: 'center' }}>This browser does not support notification prompts, but you can still continue to GIC.</p>}
     </>}
@@ -1034,7 +1093,17 @@ function EditProfile() {
     const authData = await performDeviceAuth(name.trim())
     const profileResponse = await fetchMemberApi('/api/auth/profile', {
       method: 'PATCH',
-      body: JSON.stringify({ name: name.trim(), phone: phone.trim() }),
+      body: JSON.stringify({
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        ministries: ministriesValue.join(', '),
+        center,
+        serviceTime,
+        birthday,
+        membershipStatus,
+        avatar,
+      }),
     })
     const savedProfile = profileResponse.profile
     localStorage.setItem('gic_member_name', savedProfile.name)
@@ -1043,7 +1112,7 @@ function EditProfile() {
     Object.entries(profileFields).forEach(([key, value]) => localStorage.setItem(`gic_member_${key === 'ministries' ? 'ministries' : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`, value.trim()))
     if (avatar) localStorage.setItem('gic_member_avatar', avatar)
     localStorage.setItem('gic_profile_completed', 'true')
-    navigate(required || localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding' : '/profile')
+    navigate(required || localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding?stage=install' : '/profile')
   }
 
   const handleAvatarChange = (event) => {
@@ -1152,6 +1221,7 @@ function SignIn() {
 export default function App() {
   return <Routes>
     <Route path="/" element={<Welcome />} />
+    <Route path="/recover" element={<Recovery />} />
     <Route path="/signin" element={<SignIn />} />
     <Route path="/onboarding" element={<OnboardingFlow />} />
     <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
