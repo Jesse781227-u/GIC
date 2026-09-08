@@ -1,39 +1,9 @@
 services:
-  # ─── Frontend (TanStack Start / Vite SSR) ───────────────────────────────────
-  - type: web
-    name: gic-frontend
-    runtime: node
-    region: frankfurt
-    buildCommand: npm install && npm run build
-    startCommand: npm run preview -- --port $PORT --host
-    envVars:
-      - key: VITE_API_URL
-        value: https://gic-backend.onrender.com
-      - key: VITE_MEMBER_APP_URL
-        value: https://gic-frontend.onrender.com
-      - key: VITE_ADMIN_APP_URL
-        value: https://gic-frontend.onrender.com
-      # Firebase web config (from your GIC Firebase project)
-      - key: VITE_FIREBASE_API_KEY
-        sync: false
-      - key: VITE_FIREBASE_AUTH_DOMAIN
-        sync: false
-      - key: VITE_FIREBASE_PROJECT_ID
-        sync: false
-      - key: VITE_FIREBASE_STORAGE_BUCKET
-        sync: false
-      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
-        sync: false
-      - key: VITE_FIREBASE_APP_ID
-        sync: false
-      - key: VITE_FIREBASE_VAPID_KEY
-        sync: false
-
-  # ─── Backend API (Hono + Node.js) ───────────────────────────────────────────
   - type: web
     name: gic-backend
     runtime: node
     region: frankfurt
+    branch: main
     rootDir: gic-backend
     buildCommand: npm install && npm run build
     startCommand: npm run start
@@ -45,17 +15,66 @@ services:
           name: gic-postgres
           property: connectionString
       - key: MEMBER_APP_URL
-        value: https://gic-frontend.onrender.com
+        value: https://gic-member-static.onrender.com
       - key: ADMIN_APP_URL
-        value: https://gic-frontend.onrender.com
-      # Firebase Admin SDK service account (paste full JSON as single-line string)
+        value: https://gic-admin-static.onrender.com
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
-      # JWT secret — generate: openssl rand -hex 64
       - key: JWT_SECRET
         sync: false
 
-  # ─── PostgreSQL Database ─────────────────────────────────────────────────────
+  - type: static
+    name: gic-member-static
+    region: frankfurt
+    branch: main
+    rootDir: gic-member/gic-member-static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://gic-backend.onrender.com
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        value: global-impact-church-9b8fd.firebaseapp.com
+      - key: VITE_FIREBASE_PROJECT_ID
+        value: global-impact-church-9b8fd
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        value: global-impact-church-9b8fd.firebasestorage.app
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        value: "320455366678"
+      - key: VITE_FIREBASE_APP_ID
+        value: 1:320455366678:web:b5b41b1528e4df6cf87d37
+      - key: VITE_FIREBASE_MEASUREMENT_ID
+        value: G-2K8DHP787M
+      - key: VITE_FIREBASE_VAPID_KEY
+        sync: false
+
+  - type: static
+    name: gic-admin-static
+    region: frankfurt
+    branch: main
+    rootDir: gic-admin/gic-admin-static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://gic-backend.onrender.com
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        value: global-impact-church-9b8fd.firebaseapp.com
+      - key: VITE_FIREBASE_PROJECT_ID
+        value: global-impact-church-9b8fd
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        value: global-impact-church-9b8fd.firebasestorage.app
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        value: "320455366678"
+      - key: VITE_FIREBASE_APP_ID
+        value: 1:320455366678:web:b5b41b1528e4df6cf87d37
+      - key: VITE_FIREBASE_MEASUREMENT_ID
+        value: G-2K8DHP787M
+
 databases:
   - name: gic-postgres
     region: frankfurt
