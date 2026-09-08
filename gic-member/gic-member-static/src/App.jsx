@@ -352,6 +352,28 @@ function ProtectedRoute({ children }) {
 }
 
 function Welcome() {
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSignIn = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      let profile
+      if (localStorage.getItem('gic_auth_token')) {
+        profile = (await fetchMemberApi('/api/auth/profile')).profile
+      } else {
+        profile = (await performDeviceAuth()).member
+      }
+      navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
+    } catch {
+      setError('We could not sign you in. Please recover your account with your phone number.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return <div className="welcome-page">
     <div className="welcome-overlay">
       <Logo light />
@@ -363,7 +385,8 @@ function Welcome() {
       </div>
 
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <Link className="btn white wide" to="/signin">Sign In</Link>
+        {error && <p className="auth-inline-error" role="alert">{error}</p>}
+        <button className="btn white wide" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in...' : 'Sign In'}</button>
         <Link className="center link-button" style={{ color: '#fff' }} to="/recover">Recover account with phone</Link>
       </div>
     </div>
@@ -1164,49 +1187,10 @@ function MyRegistrations() {
   </MemberShell>
 }
 
-function SignIn() {
-  const navigate = useNavigate()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleSignIn = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      let profile
-      if (localStorage.getItem('gic_auth_token')) {
-        profile = (await fetchMemberApi('/api/auth/profile')).profile
-      } else {
-        profile = (await performDeviceAuth()).member
-      }
-      navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
-    } catch {
-      setError('We could not sign you in. Please recover your account with your phone number.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return <div className="onboarding-page">
-    <div className="onboarding-card">
-      <Logo />
-      <h1 style={{ textAlign: 'center', fontSize: '20px', marginTop: '16px' }}>Welcome back</h1>
-      <p className="sub">Sign in to your account.</p>
-      {error && <p className="auth-inline-error" role="alert">{error}</p>}
-      <div className="stack">
-        <button className="btn primary wide" onClick={handleSignIn} disabled={busy}>{busy ? 'Signing in...' : 'Sign In'}</button>
-        <Link className="center link-button" style={{ color: '#fff' }} to="/recover">Recover account with phone</Link>
-        <Link className="center link-button" to="/">Back to Welcome Screen</Link>
-      </div>
-    </div>
-  </div>
-}
-
 export default function App() {
   return <Routes>
     <Route path="/" element={<Welcome />} />
     <Route path="/recover" element={<Recovery />} />
-    <Route path="/signin" element={<SignIn />} />
     <Route path="/onboarding" element={<OnboardingFlow />} />
     <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
     <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
