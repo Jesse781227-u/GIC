@@ -6,6 +6,7 @@ import pushDevicesApp from "./routes/push-devices.js";
 import notificationsApp from "./routes/notifications.js";
 import adminNotificationsApp from "./routes/admin-notifications.js";
 import authApp from "./routes/auth.js";
+import mixlrApp from "./routes/mixlr.js";
 import { schedulingService } from "./services/notifications/scheduling.service.js";
 
 const app = new Hono();
@@ -24,6 +25,7 @@ app.use(
 app.get("/health", (c) => c.json({ status: "ok" }));
 
 app.route("/api/auth", authApp);
+app.route("/api/mixlr", mixlrApp);
 app.route("/api/push-devices", pushDevicesApp);
 app.route("/api/notifications", notificationsApp);
 app.route("/api/admin/notifications", adminNotificationsApp);
