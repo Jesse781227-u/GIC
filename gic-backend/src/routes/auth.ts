@@ -80,7 +80,11 @@ app.post("/device", async (c) => {
       const existingAccount = await db.query.members.findFirst({ where: eq(members.id, accountId) });
       if (existingAccount) {
         const [member] = await db.update(members)
-          .set({ lastSeenAt: new Date(), updatedAt: new Date() })
+          .set({
+            ...(name?.trim() ? { displayName: name.trim() } : {}),
+            lastSeenAt: new Date(),
+            updatedAt: new Date(),
+          })
           .where(eq(members.id, existingAccount.id))
           .returning();
         return c.json({ token: await issueMemberToken(member, platform || "web"), member: memberResponse(member) });

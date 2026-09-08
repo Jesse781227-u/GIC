@@ -1092,35 +1092,54 @@ function EditProfile() {
   const [birthday, setBirthday] = useState(localStorage.getItem('gic_member_birthday') || '')
   const [membershipStatus, setMembershipStatus] = useState(localStorage.getItem('gic_membership_status') || '')
   const [avatar, setAvatar] = useState(localStorage.getItem('gic_member_avatar') || '')
+  const [saveError, setSaveError] = useState('')
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
   const availableServiceTimes = selectedCenter?.times || []
 
   const handleSave = async (e) => {
     e.preventDefault()
     if (!name.trim() || !phone.trim()) return
-    const authData = await performDeviceAuth(name.trim())
-    const profileResponse = await fetchMemberApi('/api/auth/profile', {
-      method: 'PATCH',
-      body: JSON.stringify({
-        name: name.trim(),
-        phone: phone.trim(),
-        email: email.trim(),
-        ministries: ministriesValue.join(', '),
-        center,
-        serviceTime,
-        birthday,
-        membershipStatus,
-        avatar,
-      }),
-    })
-    const savedProfile = profileResponse.profile
-    localStorage.setItem('gic_member_name', savedProfile.name)
-    localStorage.setItem('gic_member_phone', savedProfile.phone)
-    const profileFields = { phone, email, ministries: ministriesValue.join(', '), center, serviceTime, birthday, membershipStatus }
-    Object.entries(profileFields).forEach(([key, value]) => localStorage.setItem(`gic_member_${key === 'ministries' ? 'ministries' : key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`, value.trim()))
-    if (avatar) localStorage.setItem('gic_member_avatar', avatar)
-    localStorage.setItem('gic_profile_completed', 'true')
-    navigate(required || localStorage.getItem('gic_onboarding_profile') === 'true' ? '/onboarding?stage=install' : '/profile')
+    setSaveError('')
+    try {
+      await performDeviceAuth(name.trim())
+      const profileResponse = await fetchMemberApi('/api/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          ministries: ministriesValue.join(', '),
+          center,
+          serviceTime,
+          birthday,
+          membershipStatus,
+          avatar,
+        }),
+      })
+      const savedProfile = profileResponse.profile
+      localStorage.setItem('gic_member_name', savedProfile.name || '')
+      localStorage.setItem('gic_member_phone', savedProfile.phone || '')
+      localStorage.setItem('gic_member_email', savedProfile.email || '')
+      localStorage.setItem('gic_member_ministries', savedProfile.ministries || '')
+      localStorage.setItem('gic_member_center', savedProfile.center || '')
+      localStorage.setItem('gic_member_service_time', savedProfile.serviceTime || '')
+      localStorage.setItem('gic_member_birthday', savedProfile.birthday || '')
+      localStorage.setItem('gic_membership_status', savedProfile.membershipStatus || '')
+      if (savedProfile.avatar) localStorage.setItem('gic_member_avatar', savedProfile.avatar)
+      localStorage.setItem('gic_profile_completed', 'true')
+      const notificationReady = !('Notification' in window) || Notification.permission !== 'default'
+      if (isStandalonePwa() && notificationReady) {
+        localStorage.setItem('gic_onboarding_completed', 'true')
+        localStorage.removeItem('gic_onboarding_profile')
+        navigate('/home', { replace: true })
+      } else if (required || localStorage.getItem('gic_onboarding_profile') === 'true') {
+        navigate('/onboarding?stage=install', { replace: true })
+      } else {
+        navigate('/profile')
+      }
+    } catch (error) {
+      setSaveError(error.message || 'Profile could not be saved. Please try again.')
+    }
   }
 
   const handleAvatarChange = (event) => {
@@ -1140,6 +1159,7 @@ function EditProfile() {
       </label>
     </div>
     {required && <p className="auth-inline-error" role="alert">Your account needs a name and phone number before you can continue.</p>}
+    {saveError && <p className="auth-inline-error" role="alert">{saveError}</p>}
     <form onSubmit={handleSave} className="stack">
       <label className="field">
         <span>FULL NAME</span>
