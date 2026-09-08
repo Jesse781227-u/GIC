@@ -25,6 +25,7 @@ export async function ensureDatabaseSchema() {
       ADD COLUMN IF NOT EXISTS membership_status text,
       ADD COLUMN IF NOT EXISTS avatar text
   `;
+  await client`CREATE TABLE IF NOT EXISTS events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), title text NOT NULL, description text, starts_at timestamptz NOT NULL, location text, status text NOT NULL DEFAULT 'DRAFT', created_by text NOT NULL, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
 }
 
 export const db = drizzle(client, { schema: { ...schema, ...relations } });

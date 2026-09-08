@@ -86,6 +86,18 @@ export const ministryApplications = pgTable(
   })
 );
 
+export const events = pgTable("events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  description: text("description"),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  location: text("location"),
+  status: text("status").notNull().default("DRAFT"),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
 // ─── push_devices ─────────────────────────────────────────────────────────────
 // One member can have multiple browser/device registrations.
 
