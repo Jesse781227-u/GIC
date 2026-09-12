@@ -79,12 +79,12 @@ function Logo(){
    <span style={{ fontSize: '7px', letterSpacing: '1px', fontWeight: 700, color: '#f5c238' }}>GLOBAL IMPACT CHURCH</span>
  </div>
 }
-function Sidebar(){
+function Sidebar({mobileOpen=false}){
  const loc=useLocation()
  const [open,setOpen]=useState({events:true,messages:true,settings:true})
  const active=(path)=>loc.pathname===path || (path!=='/'&&loc.pathname.startsWith(path))
  const item=(to,label,Icon,extra)=> <Link to={to} className={'nav-item '+(active(to)?'active':'')}><Icon size={17}/><span>{label}</span>{extra}</Link>
- return <aside className="sidebar">
+ return <aside className={'sidebar '+(mobileOpen?'mobile-open':'')}>
    <Logo/>
    <div className="nav">
      {item('/dashboard','Dashboard',LayoutDashboard)}
@@ -103,7 +103,10 @@ function Sidebar(){
 
 function Shell({children}){
  const currentDate=new Intl.DateTimeFormat('en-US',{month:'long',day:'numeric',year:'numeric'}).format(new Date())
- return <div className="app-shell"><Sidebar/><div className="workspace"><header className="topbar"><div className="mobile-brand"><Menu size={20}/><Logo/></div><div className="top-spacer"/><div className="date-picker">{currentDate} <CalendarDays size={15}/></div></header>{children}</div></div>
+ const [mobileOpen,setMobileOpen]=useState(false)
+ const location=useLocation()
+ useEffect(()=>setMobileOpen(false),[location.pathname])
+ return <div className="app-shell"><Sidebar mobileOpen={mobileOpen}/>{mobileOpen&&<button className="mobile-nav-backdrop" aria-label="Close navigation" onClick={()=>setMobileOpen(false)}/>}<div className="workspace"><header className="topbar"><button className="mobile-menu-button" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Menu size={20}/></button><div className="mobile-brand"><Logo/></div><div className="top-spacer"/><div className="date-picker">{currentDate} <CalendarDays size={15}/></div></header>{children}</div></div>
 }
 function Page({title,subtitle,action,children}){
  return <main className="page"><div className="page-head"><div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>{children}</main>
