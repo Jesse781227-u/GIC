@@ -5,6 +5,7 @@ import {
   adminNotifications,
   notifications,
   notificationDeliveries,
+  serviceReminders,
 } from "./schema.js";
 
 export const pushDevicesRelations = relations(pushDevices, ({ many }) => ({
@@ -38,3 +39,5 @@ export const notificationDeliveriesRelations = relations(notificationDeliveries,
     references: [pushDevices.id],
   }),
 }));
+
+export const serviceRemindersRelations = relations(serviceReminders, () => ({}));

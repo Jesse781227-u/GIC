@@ -1,11 +1,19 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useContext, useCallback, createContext } from 'react'
 import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
-  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2
+  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
+
+const MIXLR_CACHE_TTL = 60 * 60 * 1000
+const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
+const SERVICE_CACHE_KEY = 'gic_service_cache'
+
+const notificationCountContext = createContext(null)
+const audioPlayerContext = createContext(null)
 
 const events = [
   { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://i.ibb.co/zTcjGhTp/Screenshot-2026-09-08-134018.png', tag: 'Service', isService: true },
@@ -37,10 +45,22 @@ const serviceCenters = [
   { name: 'GIC, Maryland, USA', times: ['Weekend Service: 04:00PM EST'] },
 ]
 
+function parseServiceTimeString(value = '') {
+  const cleaned = (value || '').replace(/^Sunday Services?:\s*/i, '').replace(/\s+/g, ' ').trim()
+  const match = cleaned.match(/(\d{1,2})(?::?(\d{2}))?\s*(AM|PM)/i)
+  if (!match) return { hours: 8, minutes: 45 }
+  let hours = Number(match[1])
+  const minutes = Number(match[2] || 0)
+  const meridian = match[3].toUpperCase()
+  if (meridian === 'PM' && hours < 12) hours += 12
+  if (meridian === 'AM' && hours === 12) hours = 0
+  return { hours, minutes }
+}
+
 function getSelectedService() {
   return {
     center: localStorage.getItem('gic_member_center') || 'your selected center',
-    time: localStorage.getItem('gic_member_service_time') || 'your selected service time',
+    time: localStorage.getItem('gic_member_service_time') || 'Sunday Services: 08:45AM',
   }
 }
 
@@ -55,31 +75,391 @@ function getSundayServiceCopy() {
   }
 }
 
-function getNextServiceDate(event, now = new Date()) {
-  if (!event.isService) return new Date(event.date.replace(/^\w+, /, '')).getTime()
-  const targetDay = event.id === 'midweek-service' ? 3 : 0 // Wednesday / Sunday
-  const next = new Date(now)
-  const daysUntilTarget = (targetDay - next.getDay() + 7) % 7
-  next.setDate(next.getDate() + daysUntilTarget)
-  next.setHours(event.id === 'midweek-service' ? 18 : 8, 45, 0, 0)
-  if (daysUntilTarget === 0 && next.getTime() <= now.getTime()) next.setDate(next.getDate() + 7)
-  return next.getTime()
+function getServiceOccurrence(serviceType, now = new Date()) {
+  return getNextServiceOccurrence(serviceType, now, getSelectedService().time)
 }
 
-function getUpcomingEvents() {
-  return [...events].sort((first, second) => getNextServiceDate(first) - getNextServiceDate(second))
+function getLagosDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const parts = formatter.formatToParts(date)
+  const values = {}
+  parts.forEach((part) => {
+    if (part.type !== 'literal') values[part.type] = part.value
+  })
+  return {
+    year: Number(values.year || 0),
+    month: Number(values.month || 1),
+    day: Number(values.day || 1),
+    hour: Number(values.hour || 0),
+    minute: Number(values.minute || 0),
+    second: Number(values.second || 0),
+  }
+}
+
+function getNextServiceDate(event, now = new Date()) {
+  if (!event.isService) return new Date(event.date.replace(/^\w+, /, '')).getTime()
+  const next = getServiceOccurrence(event.id, now)
+  return next.getTime()
 }
 
 function getNextEvent() {
   return getUpcomingEvents()[0]
 }
 
+function formatServiceLabel(serviceDate, eventId) {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, month: 'short', day: 'numeric', weekday: 'long' })
+  const nowParts = getLagosDateParts(now)
+  const serviceParts = getLagosDateParts(serviceDate)
+  const nowLagos = new Date(Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day))
+  const serviceLagos = new Date(Date.UTC(serviceParts.year, serviceParts.month - 1, serviceParts.day))
+  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.round((startOfDay(serviceLagos) - startOfDay(nowLagos)) / 86400000)
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long' }).format(serviceDate)
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Tomorrow'
+  if (diffDays > 1 && diffDays < 7) return `This ${weekday}`
+  return `Next ${weekday}`
+}
+
 function getServiceDisplay(event) {
-  const { center, time } = getSelectedService()
-  const sundayTime = time.replace(/^Sunday Services?:\s*/i, '')
+  const { center } = getSelectedService()
+  const serviceDate = getServiceOccurrence(event.id)
+  const label = formatServiceLabel(serviceDate, event.id)
+  const sundayTime = getSelectedService().time.replace(/^Sunday Services?:\s*/i, '')
   return event.id === 'sunday-service'
-    ? { ...event, date: 'This Sunday', time: sundayTime, location: center }
-    : { ...event, date: 'This Wednesday', time: '6:00 PM WAT', location: center }
+    ? { ...event, date: label, time: sundayTime, location: center, startAt: serviceDate }
+    : { ...event, date: label, time: '6:00 PM WAT', location: center, startAt: serviceDate }
+}
+
+function getUpcomingEvents() {
+  const nextSundayService = getServiceOccurrence('sunday-service')
+  const nextMidweekService = getServiceOccurrence('midweek-service')
+  return [
+    {
+      id: 'sunday-service',
+      title: 'Sunday Service',
+      date: nextSundayService.toDateString(),
+      time: getSelectedService().time.replace(/^Sunday Services?:\s*/i, ''),
+      location: getSelectedService().center,
+      image: 'https://i.ibb.co/zTcjGhTp/Screenshot-2026-09-08-134018.png',
+      tag: 'Service',
+      isService: true,
+      startAt: nextSundayService.toISOString(),
+    },
+    {
+      id: 'midweek-service',
+      title: 'Midweek Service',
+      date: nextMidweekService.toDateString(),
+      time: '6:00 PM WAT',
+      location: getSelectedService().center,
+      image: 'https://i.ibb.co/VYtgTk3b/Screenshot-2026-09-08-131313.png',
+      tag: 'Service',
+      isService: true,
+      startAt: nextMidweekService.toISOString(),
+    },
+  ].sort((first, second) => new Date(first.startAt).getTime() - new Date(second.startAt).getTime())
+}
+
+function getMixlrCache() {
+  try {
+    const raw = localStorage.getItem(MIXLR_CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+let mixlrRequestPromise = null
+
+async function getMixlrData(forceRefresh = false) {
+  const cached = getMixlrCache()
+  const cacheFresh = Boolean(cached && cached.fetchedAt && Date.now() - cached.fetchedAt < MIXLR_CACHE_TTL)
+  if (!forceRefresh && cacheFresh) return cached.data
+  if (!forceRefresh && mixlrRequestPromise) return mixlrRequestPromise
+
+  mixlrRequestPromise = fetch(`${API_BASE}/api/mixlr/latest`)
+    .then(async (response) => {
+      if (!response.ok) {
+        if (cached?.data) return cached.data
+        throw new Error('Mixlr unavailable')
+      }
+      const payload = await response.json()
+      const nextCache = {
+        data: payload,
+        fetchedAt: Date.now(),
+        expiresAt: Date.now() + MIXLR_CACHE_TTL,
+      }
+      localStorage.setItem(MIXLR_CACHE_KEY, JSON.stringify(nextCache))
+      return payload
+    })
+    .catch((error) => {
+      if (cached?.data) return cached.data
+      throw error
+    })
+    .finally(() => {
+      mixlrRequestPromise = null
+    })
+
+  return mixlrRequestPromise
+}
+
+function readPersistedServiceCache() {
+  try {
+    const raw = localStorage.getItem(SERVICE_CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function useNotificationCount() {
+  const context = useContext(notificationCountContext)
+  if (!context) {
+    return { unreadCount: 0, refreshUnreadCount: async () => 0, updateUnreadCount: () => {} }
+  }
+  return context
+}
+
+function useAudioPlayer() {
+  const context = useContext(audioPlayerContext)
+  if (!context) {
+    return {
+      playing: false,
+      loading: false,
+      minimized: false,
+      setMinimized: () => {},
+      error: '',
+      volume: 0.85,
+      streamUrl: '',
+      title: 'Global Impact Church',
+      togglePlayback: () => {},
+      setStream: () => {},
+      pause: () => {},
+      resume: () => {},
+      close: () => {},
+      setVolume: () => {},
+    }
+  }
+  return context
+}
+
+function NotificationProvider({ children }) {
+  const [unreadCount, setUnreadCount] = useState(() => {
+    const savedValue = Number(localStorage.getItem('gic_notification_unread_count') || 0)
+    return Number.isFinite(savedValue) ? savedValue : 0
+  })
+
+  const refreshUnreadCount = useCallback(async () => {
+    try {
+      const { count = 0 } = await fetchMemberApi('/api/notifications/unread-count')
+      const nextValue = Number(count || 0)
+      setUnreadCount(nextValue)
+      localStorage.setItem('gic_notification_unread_count', String(nextValue))
+      return nextValue
+    } catch {
+      return unreadCount
+    }
+  }, [unreadCount])
+
+  useEffect(() => {
+    refreshUnreadCount()
+    const interval = window.setInterval(() => {
+      refreshUnreadCount()
+    }, 60000)
+    return () => window.clearInterval(interval)
+  }, [refreshUnreadCount])
+
+  const value = useMemo(() => ({
+    unreadCount,
+    setUnreadCount,
+    refreshUnreadCount,
+  }), [unreadCount, refreshUnreadCount])
+
+  return <notificationCountContext.Provider value={value}>{children}</notificationCountContext.Provider>
+}
+
+function AudioPlayerProvider({ children }) {
+  const audioRef = useRef(null)
+  const [streamUrl, setStreamUrl] = useState('https://globalimpactng.mixlr.com')
+  const [title, setTitle] = useState('Global Impact Church')
+  const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [minimized, setMinimized] = useState(false)
+  const [volume, setVolume] = useState(0.85)
+
+  const ensureAudio = useCallback(() => {
+    if (!audioRef.current) return null
+    audioRef.current.volume = volume
+    return audioRef.current
+  }, [volume])
+
+  const setStream = useCallback((nextUrl, nextTitle, options = {}) => {
+    const safeUrl = nextUrl || streamUrl
+    setStreamUrl(safeUrl)
+    setTitle(nextTitle || title)
+    setLoading(Boolean(options.loading) || Boolean(nextUrl))
+    setError('')
+    setMinimized(Boolean(options.minimized))
+    const audio = ensureAudio()
+    if (audio && safeUrl && audio.src !== safeUrl) {
+      audio.src = safeUrl
+    }
+  }, [ensureAudio, streamUrl, title])
+
+  const pause = useCallback(() => {
+    const audio = ensureAudio()
+    if (!audio) return
+    audio.pause()
+    setPlaying(false)
+  }, [ensureAudio])
+
+  const resume = useCallback(async () => {
+    const audio = ensureAudio()
+    if (!audio || !streamUrl) return
+    try {
+      setLoading(true)
+      setError('')
+      await audio.play()
+    } catch {
+      setError('Playback requires a tap to begin. Please tap Play to continue.')
+      setPlaying(false)
+    } finally {
+      setLoading(false)
+    }
+  }, [ensureAudio, streamUrl])
+
+  const close = useCallback(() => {
+    setMinimized(true)
+  }, [])
+
+  const stop = useCallback(() => {
+    pause()
+    setMinimized(true)
+  }, [pause])
+
+  const togglePlayback = useCallback(async () => {
+    if (!streamUrl) return
+    if (playing) {
+      pause()
+      return
+    }
+    await resume()
+  }, [pause, playing, resume, streamUrl])
+
+  useEffect(() => {
+    const audio = ensureAudio()
+    if (!audio) return
+    audio.volume = volume
+    audio.preload = 'auto'
+    audio.setAttribute('playsinline', 'true')
+    audio.muted = false
+    const handleLoadedData = () => {
+      setLoading(false)
+      setError('')
+      setPlaying(!audio.paused)
+    }
+    const handlePlay = () => {
+      setPlaying(true)
+      setLoading(false)
+      setError('')
+    }
+    const handlePause = () => {
+      setPlaying(false)
+    }
+    const handleError = () => {
+      setError('Mixlr is unavailable right now. Please try again in a moment.')
+      setPlaying(false)
+      setLoading(false)
+    }
+    audio.addEventListener('loadeddata', handleLoadedData)
+    audio.addEventListener('play', handlePlay)
+    audio.addEventListener('pause', handlePause)
+    audio.addEventListener('error', handleError)
+    return () => {
+      audio.removeEventListener('loadeddata', handleLoadedData)
+      audio.removeEventListener('play', handlePlay)
+      audio.removeEventListener('pause', handlePause)
+      audio.removeEventListener('error', handleError)
+    }
+  }, [ensureAudio, streamUrl, volume])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return undefined
+    navigator.mediaSession.metadata = new MediaMetadata({ title, artist: 'Global Impact Church', album: 'Mixlr Live Audio' })
+    navigator.mediaSession.setActionHandler('play', resume)
+    navigator.mediaSession.setActionHandler('pause', pause)
+    return () => {
+      try {
+        navigator.mediaSession.setActionHandler('play', null)
+        navigator.mediaSession.setActionHandler('pause', null)
+      } catch {}
+    }
+  }, [pause, resume, title])
+
+  const value = useMemo(() => ({
+    playing,
+    loading,
+    minimized,
+    setMinimized,
+    error,
+    volume,
+    streamUrl,
+    title,
+    togglePlayback,
+    setStream,
+    pause,
+    resume,
+    close,
+    stop,
+    setVolume,
+  }), [close, error, loading, minimized, pause, playing, resume, setMinimized, setStream, stop, streamUrl, title, togglePlayback, volume])
+
+  return <audioPlayerContext.Provider value={value}>
+    {children}
+    <audio ref={audioRef} src={streamUrl} preload="auto" playsInline aria-label="Global Impact Church Mixlr audio" />
+    <PersistentAudioPlayer />
+  </audioPlayerContext.Provider>
+}
+
+function PersistentAudioPlayer() {
+  const { playing, loading, minimized, setMinimized, error, streamUrl, title, pause, resume, stop, close, setVolume, volume } = useAudioPlayer()
+  const shouldRender = Boolean(streamUrl) && (!minimized || playing || loading)
+  if (!shouldRender) return null
+
+  return <div className="persistent-audio-player" style={{ opacity: minimized ? 0.96 : 1 }}>
+    <div className="persistent-audio-main">
+      <div className="persistent-audio-meta">
+        <span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'READY'}</span>
+        <div>
+          <strong>{title}</strong>
+          <small>{error || (playing ? 'Playing now' : 'Tap play to listen')}</small>
+        </div>
+      </div>
+      <div className="persistent-audio-actions">
+        <button type="button" className="player-toggle" onClick={playing ? pause : resume}>{playing ? 'Pause' : 'Play'}</button>
+        <button type="button" className="player-link" onClick={() => (minimized ? setMinimized(false) : setMinimized(true))}>{minimized ? 'Open' : 'Minimize'}</button>
+      </div>
+    </div>
+    <div className="persistent-audio-toolbar">
+      <label className="volume-control">
+        {volume > 0 ? <Volume2 size={14} /> : <VolumeX size={14} />}
+        <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+      </label>
+      <button type="button" className="player-link" onClick={stop}>Stop</button>
+    </div>
+    {error && <div className="player-status">{error}</div>}
+  </div>
 }
 
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
@@ -322,11 +702,12 @@ function BottomNav({ active = 'home' }) {
 }
 
 function MemberShell({ children, active = 'home', title, backTo, lockProfile = false }) {
+  const { unreadCount } = useNotificationCount()
   return <div className="member-page">
     <header className="mobile-header">
       {backTo && !lockProfile ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
       {title ? <strong>{title}</strong> : <Logo />}
-      {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className="bell-btn" title="Announcements"><Bell size={18} /><span className="bell-badge" /></Link>}
+      {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className="bell-btn" title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
     <main className="mobile-main">{children}</main>
     {!lockProfile && <BottomNav active={active} />}
@@ -375,6 +756,11 @@ function ProtectedRoute({ children }) {
         if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding') {
           navigate('/onboarding?stage=notifications', { replace: true })
           return
+        }
+        if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+          await navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => null)
+          const token = await getFcmToken()
+          if (token) await registerPushTokenWithBackend(token)
         }
         setChecking(false)
       } catch {
@@ -712,87 +1098,103 @@ function OnboardingFlow() {
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
+  const { setStream, togglePlayback } = useAudioPlayer()
+  const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
   const nextEvent = getServiceDisplay(getNextEvent())
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/mixlr/latest`)
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Mixlr unavailable')))
-      .then(setLatestMixlrRecording)
-      .catch(() => setLatestMixlrRecording({
-        title: 'Latest recording unavailable',
-        displayTitle: 'Listen to the latest recording on Mixlr',
-        url: 'https://globalimpactng.mixlr.com/recordings',
-      }))
-  }, [])
+    let cancelled = false
+    const loadMixlr = async () => {
+      try {
+        const mixlrData = await getMixlrData()
+        if (cancelled) return
+        setLatestMixlrRecording(mixlrData)
+        const streamUrl = mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com'
+        setStream(streamUrl, mixlrData?.title || 'Global Impact Church', { loading: true })
+      } catch {
+        const fallback = {
+          title: 'Latest recording unavailable',
+          displayTitle: 'Listen to the latest recording on Mixlr',
+          url: 'https://globalimpactng.mixlr.com/recordings',
+          audioUrl: 'https://globalimpactng.mixlr.com',
+        }
+        if (!cancelled) setLatestMixlrRecording(fallback)
+      }
+    }
+    loadMixlr()
+    return () => { cancelled = true }
+  }, [setStream])
 
-  return <MemberShell active="home">
-    <section className="hero-card" style={{ padding: '18px', minHeight: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <div>
-          <small style={{ color: '#e0d6fc', fontSize: '11px', display: 'block' }}>Welcome home,</small>
-          <h2 style={{ margin: '2px 0 0', fontSize: '20px', fontWeight: 700 }}>{memberName} </h2>
-        </div>
-        <Logo light />
-      </div>
-
-      <div style={{
-        background: 'rgba(10, 4, 34, 0.65)',
-        borderRadius: '14px',
-        padding: '12px',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        marginTop: '8px'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block', boxShadow: '0 0 8px #3b82f6' }}/>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording?.displayTitle || 'Loading latest recording...'}</span>
-              <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.displayDate || 'Fetching from Mixlr'}</small>
-            </div>
+  return <>
+    <MemberShell active="home">
+      <section className="hero-card" style={{ padding: '18px', minHeight: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div>
+            <small style={{ color: '#e0d6fc', fontSize: '11px', display: 'block' }}>Welcome home,</small>
+            <h2 style={{ margin: '2px 0 0', fontSize: '20px', fontWeight: 700 }}>{memberName} </h2>
           </div>
-          <a 
-            href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} 
-            target="_blank" 
-            rel="noreferrer"
-            style={{ fontSize: '10px', color: '#fff', opacity: 0.85, textDecoration: 'underline' }}
-          >
-            Mixlr↗
-          </a>
+          <Logo light />
         </div>
 
-        {latestMixlrRecording?.audioUrl ? <audio
-          controls
-          preload="metadata"
-          src={latestMixlrRecording.audioUrl}
-          aria-label={latestMixlrRecording.title}
-          style={{ width: '100%', height: '42px' }}
-        /> : <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>Latest recording is not available right now.</p>}
-      </div>
-    </section>
-    <section className="section">
-      <div className="section-head"><span>Next Service</span></div>
-      <article className="announcement-card">
-        <div className="image-banner" style={{ backgroundImage: `url(${nextEvent.image})` }} />
-        <div className="pad">
-          <small>{nextEvent.title}</small>
-          <h3>{nextEvent.date} · {nextEvent.time}</h3>
-          <p>{nextEvent.location}</p>
-          <span className="link-button"></span>
+        <div style={{
+          background: 'rgba(10, 4, 34, 0.65)',
+          borderRadius: '14px',
+          padding: '12px',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          marginTop: '8px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block', boxShadow: '0 0 8px #3b82f6' }}/>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording?.displayTitle || 'Loading latest recording...'}</span>
+                <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.displayDate || 'Fetching from Mixlr'}</small>
+              </div>
+            </div>
+            <a 
+              href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} 
+              target="_blank" 
+              rel="noreferrer"
+              style={{ fontSize: '10px', color: '#fff', opacity: 0.85, textDecoration: 'underline' }}
+            >
+              Mixlr↗
+            </a>
+          </div>
+
+          {latestMixlrRecording?.audioUrl ? <button type="button" className="btn primary wide" onClick={togglePlayback}>Listen live</button> : <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>Latest recording is not available right now.</p>}
         </div>
-      </article>
-    </section>
-    <section className="section">
-      <div className="section-head"><span>Upcoming Events</span><Link to="/events">View All</Link></div>
-      {getUpcomingEvents().slice(0, 2).map(e => <EventRow key={e.id} event={e} />)}
-    </section>
-  </MemberShell>
+      </section>
+      <section className="section">
+        <div className="section-head"><span>Next Service</span></div>
+        <article className="announcement-card" onClick={() => setSelectedServiceEvent(getNextEvent())} style={{ cursor: 'pointer' }}>
+          <div className="image-banner" style={{ backgroundImage: `url(${nextEvent.image})` }} />
+          <div className="pad">
+            <small>{nextEvent.title}</small>
+            <h3>{nextEvent.date} · {nextEvent.time}</h3>
+            <p>{nextEvent.location}</p>
+            <span className="link-button"></span>
+          </div>
+        </article>
+      </section>
+      <section className="section">
+        <div className="section-head"><span>Upcoming Events</span><Link to="/events">View All</Link></div>
+        {getUpcomingEvents().slice(0, 2).map((event) => (
+          <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />
+        ))}
+      </section>
+    </MemberShell>
+    {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
+  </>
 }
 
-function EventRow({ event }) {
+function EventRow({ event, onOpenService }) {
   const displayEvent = event.isService ? getServiceDisplay(event) : event
   const content = <><img src={displayEvent.image} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date} · {displayEvent.time}</small><small className="event-location"><MapPin size={13} />{displayEvent.location}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
-  return displayEvent.isService ? <div className="event-row service-row">{content}</div> : <Link className="event-row" to={`/events/${displayEvent.id}`}>{content}</Link>
+  if (displayEvent.isService) {
+    return <button type="button" className="event-row service-row" onClick={() => onOpenService?.(event)}>{content}</button>
+  }
+  return <Link className="event-row" to={`/events/${displayEvent.id}`}>{content}</Link>
 }
 
 function Announcements() {
@@ -831,11 +1233,13 @@ function Announcements() {
 
 function AnnouncementDetails() {
   const { id } = useParams()
+  const { refreshUnreadCount } = useNotificationCount()
   const [announcement, setAnnouncement] = useState(null)
   useEffect(() => {
     fetchMemberApi('/api/notifications')
       .then(({ items = [] }) => {
         const notification = items.find((item) => item.id === id)
+        fetchMemberApi(`/api/notifications/${id}/read`, { method: 'PATCH' }).then(() => refreshUnreadCount()).catch(() => {})
         if (notification) setAnnouncement({
           id: notification.id,
           category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
@@ -862,10 +1266,78 @@ function AnnouncementDetails() {
 }
 
 function EventsPage() {
-  return <MemberShell active="events" title="Events" backTo="/home">
-    <div className="segmented"><button className="active">Upcoming</button><Link to="/my-registrations">My Events</Link></div>
-    {getUpcomingEvents().map(e => <EventRow key={e.id} event={e} />)}
-  </MemberShell>
+  const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
+  return <>
+    <MemberShell active="events" title="Events" backTo="/home">
+      <div className="segmented"><button className="active">Upcoming</button><Link to="/my-registrations">My Events</Link></div>
+      {getUpcomingEvents().map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
+    </MemberShell>
+    {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
+  </>
+}
+
+function ServiceModal({ event, onClose }) {
+  const serviceEvent = getServiceDisplay(event)
+  const startDate = getServiceOccurrence(event.id)
+  const endDate = new Date(startDate.getTime() + (event.id === 'midweek-service' ? 90 : 120) * 60000)
+  const reminderOptions = [60, 30]
+  const occurrenceKey = startDate.toISOString()
+  const [activeReminders, setActiveReminders] = useState([])
+  const [reminderMessage, setReminderMessage] = useState('')
+  const [calendarMessage, setCalendarMessage] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}`)
+      .then(({ reminders = [] }) => { if (!cancelled) setActiveReminders(reminders.map((reminder) => Number(reminder.offsetMinutes))) })
+      .catch(() => { if (!cancelled) setActiveReminders(reminderOptions.filter((offset) => localStorage.getItem(`gic_reminder_${event.id}_${offset}`) === 'true')) })
+    return () => { cancelled = true }
+  }, [event.id, occurrenceKey])
+
+  const toggleReminder = async (minutes) => {
+    const enabled = !activeReminders.includes(minutes)
+    const scheduledFor = new Date(startDate.getTime() - minutes * 60000)
+    try {
+      if (enabled) await fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
+      else await fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
+      localStorage.setItem(`gic_reminder_${event.id}_${minutes}`, String(enabled))
+      setActiveReminders((current) => enabled ? [...current, minutes].sort((a, b) => a - b) : current.filter((value) => value !== minutes))
+      setReminderMessage(enabled ? 'Reminder saved.' : 'Reminder removed.')
+    } catch { setReminderMessage('Reminders require an active signed-in connection.') }
+  }
+
+  const addToCalendar = () => {
+    const title = event.title || 'Service'
+    const start = startDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const end = endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Global Impact Church//GIC//EN',
+      'BEGIN:VEVENT',
+      `UID:${event.id}-${startDate.toISOString()}`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${title}`,
+      `LOCATION:${serviceEvent.location}`,
+      `DESCRIPTION:${title} at Global Impact Church. Reminders: ${activeReminders.length ? activeReminders.join(', ') + ' minutes before' : 'No reminders selected'}.`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ]
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${event.id}-service.ics`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setCalendarMessage('Calendar invite downloaded. Your device may show it in the default calendar app.')
+  }
+
+  return <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><div className="service-modal-header"><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2></div><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'short', day: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label></div><div className="service-modal-actions"><button type="button" className="btn primary wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{calendarMessage && <p className="center muted">{calendarMessage}</p>}</div></div>
 }
 
 function EventDetails() {
@@ -1260,26 +1732,30 @@ function MyRegistrations() {
 }
 
 export default function App() {
-  return <Routes>
-    <Route path="/" element={<Welcome />} />
-    <Route path="/recover" element={<Recovery />} />
-    <Route path="/onboarding" element={<OnboardingFlow />} />
-    <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
-    <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
-    <Route path="/announcements/:id" element={<ProtectedRoute><AnnouncementDetails /></ProtectedRoute>} />
-    <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
-    <Route path="/events/:id" element={<ProtectedRoute><EventDetails /></ProtectedRoute>} />
-    <Route path="/events/:id/register" element={<ProtectedRoute><EventRegistration /></ProtectedRoute>} />
-    <Route path="/events/:id/success" element={<ProtectedRoute><RegistrationSuccess /></ProtectedRoute>} />
-    <Route path="/my-registrations" element={<ProtectedRoute><MyRegistrations /></ProtectedRoute>} />
-    <Route path="/forms" element={<ProtectedRoute><FormsPage /></ProtectedRoute>} />
-    <Route path="/forms/prayer-request" element={<ProtectedRoute><PrayerRequest /></ProtectedRoute>} />
-    <Route path="/ministries" element={<ProtectedRoute><MinistriesPage /></ProtectedRoute>} />
-    <Route path="/ministries/browse" element={<ProtectedRoute><MinistryDirectory /></ProtectedRoute>} />
-    <Route path="/ministries/:id/apply" element={<ProtectedRoute><MinistryApplication /></ProtectedRoute>} />
-    <Route path="/ministries/:id" element={<ProtectedRoute><MinistryDetails /></ProtectedRoute>} />
-    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-    <Route path="/profile/edit" element={<ProtectedRoute><EditProfile /></ProtectedRoute>} />
-    <Route path="*" element={<Navigate to="/" />} />
-  </Routes>
+  return <NotificationProvider>
+    <AudioPlayerProvider>
+      <Routes>
+        <Route path="/" element={<Welcome />} />
+        <Route path="/recover" element={<Recovery />} />
+        <Route path="/onboarding" element={<OnboardingFlow />} />
+        <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+        <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
+        <Route path="/announcements/:id" element={<ProtectedRoute><AnnouncementDetails /></ProtectedRoute>} />
+        <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
+        <Route path="/events/:id" element={<ProtectedRoute><EventDetails /></ProtectedRoute>} />
+        <Route path="/events/:id/register" element={<ProtectedRoute><EventRegistration /></ProtectedRoute>} />
+        <Route path="/events/:id/success" element={<ProtectedRoute><RegistrationSuccess /></ProtectedRoute>} />
+        <Route path="/my-registrations" element={<ProtectedRoute><MyRegistrations /></ProtectedRoute>} />
+        <Route path="/forms" element={<ProtectedRoute><FormsPage /></ProtectedRoute>} />
+        <Route path="/forms/prayer-request" element={<ProtectedRoute><PrayerRequest /></ProtectedRoute>} />
+        <Route path="/ministries" element={<ProtectedRoute><MinistriesPage /></ProtectedRoute>} />
+        <Route path="/ministries/browse" element={<ProtectedRoute><MinistryDirectory /></ProtectedRoute>} />
+        <Route path="/ministries/:id/apply" element={<ProtectedRoute><MinistryApplication /></ProtectedRoute>} />
+        <Route path="/ministries/:id" element={<ProtectedRoute><MinistryDetails /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/profile/edit" element={<ProtectedRoute><EditProfile /></ProtectedRoute>} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </AudioPlayerProvider>
+  </NotificationProvider>
 }

@@ -86,6 +86,18 @@ export const ministryApplications = pgTable(
   })
 );
 
+export const events = pgTable("events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  description: text("description"),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  location: text("location"),
+  status: text("status").notNull().default("DRAFT"),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
 // ─── push_devices ─────────────────────────────────────────────────────────────
 // One member can have multiple browser/device registrations.
 
@@ -193,6 +205,27 @@ export const notifications = pgTable(
     memberIdx: index("notifications_member_id_idx").on(t.memberId),
     readIdx: index("notifications_read_at_idx").on(t.readAt),
     messageIdx: index("notifications_message_id_idx").on(t.messageId),
+  })
+);
+
+export const serviceReminders = pgTable(
+  "service_reminders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: text("member_id").notNull(),
+    serviceType: text("service_type").notNull(),
+    occurrenceKey: text("occurrence_key").notNull(),
+    serviceStartsAt: timestamp("service_starts_at", { withTimezone: true }).notNull(),
+    offsetMinutes: text("offset_minutes").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    memberIdx: index("service_reminders_member_id_idx").on(t.memberId),
+    dueIdx: index("service_reminders_due_idx").on(t.status, t.scheduledFor),
+    uniqueReminder: unique("service_reminders_member_occurrence_offset_unique").on(t.memberId, t.occurrenceKey, t.offsetMinutes),
   })
 );
 

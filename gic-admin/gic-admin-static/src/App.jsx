@@ -62,7 +62,7 @@ const messages=[
  ['New Members Class','Join our new members class this Sunday.','Draft','—','New Members'],
 ]
 const messageCategories=['General Announcement','Event','Registration','Reminder','Church Update','Important','New Member','System']
-const messageDestinations=[['No destination',''],['Home','/home'],['Announcements','/announcements'],['Events','/events'],['Profile','/profile'],['My registrations','/my-registrations'],['Youth Conference 2026','/events/youth-conference-2024'],['Sunday Service announcement','/announcements/sunday-service-update']]
+const messageDestinations=[['No destination',''],['Home','/home'],['Announcements','/announcements'],['Events','/events'],['Profile','/profile'],['My registrations','/my-registrations'],['Youth Conference 2026','/events/youth-conference-2024'],['Sunday Service announcement','/announcements/sunday-service-update'],['Paste external link','__external__']]
 const eventOperations={
   logistics:{assemblyPoint:'The Goodland car park',assemblyTime:'7:00 AM',busSeats:120,buses:3,notes:'Registered attendees should assemble at the designated point before departure. Free buses will take attendees to the event location.'},
   registrations:{
@@ -188,7 +188,8 @@ function Messages({initialTab='All'}){
  const [error,setError]=useState('')
  useEffect(()=>{
   fetchAdminApi('/api/admin/notifications')
-   .then(({items=[]})=>setMessageRecords(items.map((item)=>[
+  .then(({items=[]})=>setMessageRecords(items.map((item)=>[
+   item.id,
     item.title,
     item.body,
     item.status==='SENT'?'Sent':item.status==='SCHEDULED'?'Scheduled':item.status==='DRAFT'?'Draft':item.status,
@@ -199,8 +200,8 @@ function Messages({initialTab='All'}){
    .finally(()=>setLoading(false))
  },[])
  const tabStatuses={Scheduled:'Scheduled',Drafts:'Draft',Sent:'Sent'}
- const visible=messageRecords.filter((message)=>{const matchesTab=tab==='All'||message[2]===tabStatuses[tab];const matchesQuery=`${message[0]} ${message[1]} ${message[4]}`.toLowerCase().includes(query.toLowerCase());return matchesTab&&matchesQuery&&(category==='All Categories'||(message[0].toLowerCase().includes(category.toLowerCase().split(' ')[0])))} )
- return <Page title="Messages" subtitle="Create, schedule, target, and analyze push notifications" action={<Link className="btn primary" to="/messages/new"><Plus size={15}/> New Message</Link>}><Card className="table-card"><div className="tabs message-tabs">{['All','Scheduled','Drafts','Sent'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item==='All'?'All Messages':item}</button>)}</div><div className="message-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search messages..."/></div><select value={category} onChange={(event)=>setCategory(event.target.value)}><option>All Categories</option>{messageCategories.map((item)=><option key={item}>{item}</option>)}</select><button className="tool"><Filter size={14}/> Filters</button></div>{loading&&<div className="empty-message">Loading messages...</div>}{error&&<div className="empty-message">Messages are unavailable right now.</div>} {!loading&&!error&&<div className="message-list">{visible.map((m,i)=><Link className="message-row" to="#" key={`${m[0]}-${i}`}><div className={'message-icon '+(m[2]==='Sent'?'sent':'')}>{m[2]==='Sent'?<Send size={16}/>:m[2]==='Scheduled'?<CalendarDays size={16}/>:<FileText size={16}/>}</div><div className="message-main"><b>{m[0]}</b><small>{m[1]}</small></div><span className={'badge '+(m[2]==='Sent'?'success':m[2]==='Scheduled'?'blue':'gray')}>{m[2]}</span><time>{m[3]}</time><small>To: {m[4]}</small><MoreHorizontal size={17}/></Link>)}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No messages match these filters.</div>}</Card></Page>
+ const visible=messageRecords.filter((message)=>{const matchesTab=tab==='All'||message[3]===tabStatuses[tab];const matchesQuery=`${message[1]} ${message[2]} ${message[5]}`.toLowerCase().includes(query.toLowerCase());return matchesTab&&matchesQuery&&(category==='All Categories'||(message[1].toLowerCase().includes(category.toLowerCase().split(' ')[0])))} )
+ return <Page title="Messages" subtitle="Create, schedule, target, and analyze push notifications" action={<Link className="btn primary" to="/messages/new"><Plus size={15}/> New Message</Link>}><Card className="table-card"><div className="tabs message-tabs">{['All','Scheduled','Drafts','Sent'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item==='All'?'All Messages':item}</button>)}</div><div className="message-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search messages..."/></div><select value={category} onChange={(event)=>setCategory(event.target.value)}><option>All Categories</option>{messageCategories.map((item)=><option key={item}>{item}</option>)}</select><button className="tool"><Filter size={14}/> Filters</button></div>{loading&&<div className="empty-message">Loading messages...</div>}{error&&<div className="empty-message">Messages are unavailable right now.</div>} {!loading&&!error&&<div className="message-list">{visible.map((m,i)=><Link className="message-row" to={`/messages/${m[0]}`} key={`${m[0]}-${i}`}><div className={'message-icon '+(m[3]==='Sent'?'sent':'')}>{m[3]==='Sent'?<Send size={16}/>:m[3]==='Scheduled'?<CalendarDays size={16}/>:<FileText size={16}/>}</div><div className="message-main"><b>{m[1]}</b><small>{m[2]}</small></div><span className={'badge '+(m[3]==='Sent'?'success':m[3]==='Scheduled'?'blue':'gray')}>{m[3]}</span><time>{m[4]}</time><small>To: {m[5]}</small><MoreHorizontal size={17}/></Link>)}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No messages match these filters.</div>}</Card></Page>
 }
 
 function NewMessage(){
@@ -210,6 +211,8 @@ function NewMessage(){
  const [audience,setAudience]=useState('Everyone')
  const [category,setCategory]=useState('General Announcement')
  const [destination,setDestination]=useState('')
+ const [destinationType,setDestinationType]=useState('internal')
+ const [externalDestination,setExternalDestination]=useState('')
  const [delivery,setDelivery]=useState('now')
  const [sent,setSent]=useState(false)
  const [memberSearch,setMemberSearch]=useState('')
@@ -221,12 +224,16 @@ function NewMessage(){
  const [centre,setCentre]=useState('All centres')
  const [push,setPush]=useState('Push-enabled members')
  const destinationOption=messageDestinations.find((item)=>item[1]===destination)
+ const destinationPreview=destinationType==='external'?externalDestination||'No external URL':destinationOption?.[1]||'No in-app destination'
+ useEffect(()=>{if(destination==='__external__'){const pasted=window.prompt('Paste the external destination URL');if(pasted){setDestinationType('external');setExternalDestination(pasted)}else setDestination('')}},[destination])
  const save=async(result)=>{
   if(!title.trim()||!body.trim()){setSent('Title and message are required');return}
   try{
    const type=category==='Event'?'EVENT_PUBLISHED':category==='Reminder'?'EVENT_REMINDER':category==='Registration'?'REGISTRATION_CONFIRMATION':category==='Church Update'?'GENERAL_ANNOUNCEMENT':'GENERAL_ANNOUNCEMENT'
    const targetAudience=audience==='Everyone'?'everyone':audience==='Event registrants'?'event_registrants':audience==='Selected members'?'members':'members'
-   const created=await fetchAdminApi('/api/admin/notifications',{method:'POST',body:JSON.stringify({title:title.trim(),body:body.trim(),type,audience:targetAudience,destinationUrl:destination||undefined})})
+  const destinationUrl=destinationType==='external'?externalDestination.trim():destination
+  if(destinationUrl&&destinationType==='external'&&!/^https?:\/\//i.test(destinationUrl)){setSent('External links must start with http:// or https://');return}
+  const created=await fetchAdminApi('/api/admin/notifications',{method:'POST',body:JSON.stringify({title:title.trim(),body:body.trim(),type,audience:targetAudience,destinationUrl:destinationUrl||undefined})})
    if(result==='Sent') await fetchAdminApi(`/api/admin/notifications/${created.id}/send`,{method:'POST'})
    setSent(result==='Sent'?'Sent':'Draft')
    if(result==='Sent') setTimeout(()=>navigate('/messages'),250)
@@ -258,7 +265,14 @@ function NewMessageLegacy(){
 }
 
 function MessageDetail(){
- return <Page title="Sunday Service Update" subtitle="Message details"><div className="detail-toolbar"><Link to="/messages"><ArrowLeft size={16}/> Back to Messages</Link><div><Link className="btn secondary" to="/messages/new"><Edit3 size={14}/> Duplicate</Link><button className="btn primary"><Send size={14}/> Send Again</button></div></div><div className="message-detail-grid"><Card><div className="message-status"><span className="badge success">Sent</span><span>September 5, 2026 · 7:00 AM</span></div><h2>Sunday Service Update</h2><p>Join us this Sunday for a powerful time in God's presence.</p><div className="audience"><Users size={15}/> Sent to <b>All Members</b></div><div className="detail-content"><h3>Content</h3><div><small>Category</small><b>General Announcement</b></div><div><small>Destination</small><b>Home</b></div><div><small>Created by</small><b>Admin</b></div></div></Card><div className="message-metrics"><Stat label="Recipients" value="4,821" change="Audience size" icon={Users}/><Stat label="Accepted by FCM" value="4,763" change="98.8% accepted" icon={CheckCircle2} type="green"/><Stat label="Delivered" value="4,521" change="Where available" icon={Send} type="blue"/><Stat label="Failed" value="58" change="Invalid or unavailable devices" icon={X} type="orange"/></div></div><Card className="delivery-section"><div className="card-head"><b>Delivery activity</b><a>View recipients</a></div><div className="delivery-timeline"><div><b>7:00 AM</b><span>Message send started</span></div><div><b>7:00 AM</b><span>4,763 messages accepted by FCM</span></div><div><b>7:01 AM</b><span>Delivery processing completed</span></div></div></Card></Page>
+ const {id}=useParams()
+ const [message,setMessage]=useState(null)
+ const [error,setError]=useState('')
+ useEffect(()=>{fetchAdminApi(`/api/admin/notifications/${id}`).then(({notification})=>setMessage(notification)).catch((requestError)=>setError(requestError.message))},[id])
+ if(error)return <Page title="Message details"><Card className="empty-message">{error}</Card></Page>
+ if(!message)return <Page title="Message details"><Card className="empty-message">Loading message details...</Card></Page>
+ const statusLabel=message.status==='SENT'?'Sent':message.status==='SCHEDULED'?'Scheduled':message.status==='DRAFT'?'Draft':message.status
+ return <Page title={message.title} subtitle="Live notification details"><div className="detail-toolbar"><Link to="/messages"><ArrowLeft size={16}/> Back to Messages</Link><div><Link className="btn secondary" to="/messages/new"><Edit3 size={14}/> New Message</Link></div></div><div className="message-detail-grid"><Card><div className="message-status"><span className={'badge '+(statusLabel==='Sent'?'success':'blue')}>{statusLabel}</span><span>{message.sentAt||message.scheduledAt||message.createdAt||'—'}</span></div><h2>{message.title}</h2><p>{message.body}</p><div className="audience"><Users size={15}/> Audience <b>{message.audience}</b></div><div className="detail-content"><h3>Content</h3><div><small>Destination</small><b>{message.destinationUrl||'No destination'}</b></div><div><small>Created by</small><b>{message.createdBy}</b></div></div></Card><div className="message-metrics"><Stat label="Recipients" value={message.recipientCount||'0'} change="Resolved recipients" icon={Users}/><Stat label="Sent" value={message.sentCount||'0'} change="Accepted by FCM" icon={CheckCircle2} type="green"/><Stat label="Failed" value={message.failedCount||'0'} change="Delivery failures" icon={X} type="orange"/></div></div></Page>
 }
 
 function Settings(){
@@ -293,6 +307,22 @@ function ActivityLog(){
 
 function Placeholder({title}){return <Page title={title}><Card className="empty"><Activity size={30}/><h2>{title}</h2><p>This static screen is included as a navigation placeholder and is ready for backend integration.</p></Card></Page>}
 
+function EventsUnavailable(){
+ const [createOpen,setCreateOpen]=useState(false)
+ const [title,setTitle]=useState('')
+ const [description,setDescription]=useState('')
+ const [startsAt,setStartsAt]=useState('')
+ const [location,setLocation]=useState('')
+ const [status,setStatus]=useState('DRAFT')
+ const [saving,setSaving]=useState(false)
+ const [notice,setNotice]=useState('')
+ const createEvent=async(event)=>{event.preventDefault();setSaving(true);setNotice('');try{await fetchAdminApi('/api/admin/events',{method:'POST',body:JSON.stringify({title,description,startsAt:new Date(startsAt).toISOString(),location,status})});setNotice('Event created successfully.');setCreateOpen(false);setTitle('');setDescription('');setStartsAt('');setLocation('')}catch(error){setNotice(error.message||'Event could not be created.')}finally{setSaving(false)}}
+ return <Page title="Events" subtitle="Manage events from the GIC platform" action={<button className="btn primary" onClick={()=>setCreateOpen(true)}><Plus size={15}/> Create Event</button>}>
+   {notice&&<Card className="empty-message">{notice}</Card>}<Card className="empty"><CalendarDays size={30}/><h2>No live event data</h2><p>Create the first event to add it to the platform.</p></Card>
+   {createOpen&&<div className="quick-modal" role="dialog" aria-modal="true"><form className="quick-modal-card" onSubmit={createEvent}><div className="quick-modal-head"><div><b>Create Event</b><small>Add a real event to the GIC platform.</small></div><button type="button" className="icon-btn" onClick={()=>setCreateOpen(false)}><X size={17}/></button></div><label className="form-field">Title<input value={title} onChange={(event)=>setTitle(event.target.value)} required /></label><label className="form-field">Description<textarea value={description} onChange={(event)=>setDescription(event.target.value)} rows="3" /></label><label className="form-field">Start date and time<input type="datetime-local" value={startsAt} onChange={(event)=>setStartsAt(event.target.value)} required /></label><label className="form-field">Location<input value={location} onChange={(event)=>setLocation(event.target.value)} /></label><label className="form-field">Status<select value={status} onChange={(event)=>setStatus(event.target.value)}><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option></select></label><button className="btn primary wide" type="submit" disabled={saving}>{saving?'Creating...':'Create Event'}</button></form></div>}
+ </Page>
+}
+
 function MinistryApplications(){
   const [applications,setApplications]=useState([])
   const [loading,setLoading]=useState(true)
@@ -326,7 +356,7 @@ function LiveDashboard(){
  const [summary,setSummary]=useState({members:0,applications:0,messages:0})
  const [error,setError]=useState('')
  useEffect(()=>{Promise.all([fetchAdminApi('/api/admin/ministry-applications/members'),fetchAdminApi('/api/admin/ministry-applications'),fetchAdminApi('/api/admin/notifications')]).then(([memberData,applicationData,messageData])=>setSummary({members:memberData.members?.length||0,applications:applicationData.applications?.length||0,messages:messageData.items?.length||0})).catch((requestError)=>setError(requestError.message))},[])
- return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat label="Members" value={summary.members} change="Live records" icon={Users}/><Stat label="Ministry applications" value={summary.applications} change="Live records" icon={ClipboardList} type="green"/><Stat label="Notifications" value={summary.messages} change="Live records" icon={Bell} type="blue"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}<Card><div className="card-head"><b>Platform data</b><span className="muted">No demo metrics are displayed.</span></div><p className="muted">Use Members, Ministry applications, and Messages to manage current records.</p></Card></Page>
+ return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat label="Members" value={summary.members} change="Live records" icon={Users}/><Stat label="Ministry applications" value={summary.applications} change="Live records" icon={ClipboardList} type="green"/><Stat label="Notifications" value={summary.messages} change="Live records" icon={Bell} type="blue"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
 }
 
 function AdminLogin(){
@@ -369,7 +399,7 @@ export default function App(){
  return <AdminGate><Shell><Routes>
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<LiveMemberDetails/>}/>
-  <Route path="/events" element={<Placeholder title="Events"/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
+  <Route path="/events" element={<EventsUnavailable/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
   <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/><Route path="/events/forms" element={<Placeholder title="Event forms"/>}/>
   <Route path="/messages" element={<Messages/>}/><Route path="/messages/1" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/><Route path="/messages/scheduled" element={<Messages initialTab="Scheduled"/>}/><Route path="/messages/drafts" element={<Messages initialTab="Drafts"/>}/><Route path="/messages/sent" element={<Messages initialTab="Sent"/>}/><Route path="/messages/templates" element={<Placeholder title="Message Templates"/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<Placeholder title="Activity log"/>}/>
