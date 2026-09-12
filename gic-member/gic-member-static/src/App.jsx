@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useContext, useCallback, createContext } from 'react'
+import { createPortal } from 'react-dom'
+import './bugfix.css'
 import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
-  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX
+  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX,
+  Play, Pause, Minimize2, Maximize2
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
@@ -254,10 +257,7 @@ function useAudioPlayer() {
 }
 
 function NotificationProvider({ children }) {
-  const [unreadCount, setUnreadCount] = useState(() => {
-    const savedValue = Number(localStorage.getItem('gic_notification_unread_count') || 0)
-    return Number.isFinite(savedValue) ? savedValue : 0
-  })
+  const [unreadCount, setUnreadCount] = useState(0)
 
   const refreshUnreadCount = useCallback(async () => {
     try {
@@ -433,6 +433,15 @@ function AudioPlayerProvider({ children }) {
 }
 
 function PersistentAudioPlayer() {
+  const { playing, loading, minimized, setMinimized, error, title, pause, resume, setVolume, volume } = useAudioPlayer()
+  if (!title) return null
+  return <aside className={`persistent-audio-player ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
+    <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? 'Playing live audio' : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button><button type="button" className="player-icon-button secondary" onClick={() => setMinimized(!minimized)} aria-label={minimized ? 'Expand player' : 'Minimize player'}>{minimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}</button></div></div>
+    {!minimized && <div className="persistent-audio-toolbar"><label className="volume-control" title="Volume"><Volume2 size={15} /><span>Volume</span><input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label></div>}
+  </aside>
+}
+
+function PersistentAudioPlayerLegacy() {
   const { playing, loading, minimized, setMinimized, error, streamUrl, title, pause, resume, stop, close, setVolume, volume } = useAudioPlayer()
   const shouldRender = Boolean(streamUrl) && (!minimized || playing || loading)
   if (!shouldRender) return null
@@ -440,7 +449,7 @@ function PersistentAudioPlayer() {
   return <div className="persistent-audio-player" style={{ opacity: minimized ? 0.96 : 1 }}>
     <div className="persistent-audio-main">
       <div className="persistent-audio-meta">
-        <span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'READY'}</span>
+        <span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span>
         <div>
           <strong>{title}</strong>
           <small>{error || (playing ? 'Playing now' : 'Tap play to listen')}</small>
@@ -456,7 +465,7 @@ function PersistentAudioPlayer() {
         {volume > 0 ? <Volume2 size={14} /> : <VolumeX size={14} />}
         <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
       </label>
-      <button type="button" className="player-link" onClick={stop}>Stop</button>
+      <button type="button" className="player-link" onClick={stop} aria-hidden="true" hidden>Stop</button>
     </div>
     {error && <div className="player-status">{error}</div>}
   </div>
@@ -771,7 +780,7 @@ function ProtectedRoute({ children }) {
     return () => { cancelled = true }
   }, [location.pathname, navigate])
 
-  if (checking && location.pathname !== '/profile/edit') return <div className="center muted">Checking your profile...</div>
+  if (checking && location.pathname !== '/profile/edit') return <div className="app-loading-state"><span className="loading-spinner" aria-hidden="true" /><span>Loading your account…</span></div>
   return children
 }
 
@@ -1203,7 +1212,14 @@ function Announcements() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const categories = ['All', 'General', 'Ministries', 'Notices']
+  const { setUnreadCount, refreshUnreadCount } = useNotificationCount()
   const sundayServiceCopy = getSundayServiceCopy()
+  const markAllAsRead = async () => {
+    await fetchMemberApi('/api/notifications/read-all', { method: 'PATCH' })
+    setUnreadCount(0)
+    localStorage.setItem('gic_notification_unread_count', '0')
+    await refreshUnreadCount()
+  }
   useEffect(() => {
     fetchMemberApi('/api/notifications')
       .then(({ items: notifications = [] }) => setItems(notifications.map((notification) => ({
@@ -1223,7 +1239,7 @@ function Announcements() {
     : items.filter((announcement) => announcement.category === category)
 
   return <MemberShell active="home" title="Announcements" backTo="/home">
-    <div className="tabs">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div>
+    <div className="announcement-toolbar"><div className="tabs">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><button type="button" className="mark-read-button" onClick={markAllAsRead}>Mark all as read</button></div>
     {loading && <p className="center muted">Loading announcements...</p>}
     {error && <p className="center muted">Announcements are unavailable right now.</p>}
     {!loading && !error && <div className="announcement-list">{visibleAnnouncements.map((announcement) => <Link className="list-card" key={announcement.id} to={`/announcements/${announcement.id}`}><div><b>{announcement.title}</b><small>{announcement.summary}</small><time>{announcement.date}</time></div><ChevronRight size={18} /></Link>)}</div>}
@@ -1283,6 +1299,55 @@ function ServiceModal({ event, onClose }) {
   const reminderOptions = [60, 30]
   const occurrenceKey = startDate.toISOString()
   const [activeReminders, setActiveReminders] = useState([])
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}`)
+      .then(({ reminders = [] }) => { if (!cancelled) setActiveReminders(reminders.map((reminder) => Number(reminder.offsetMinutes))) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [occurrenceKey])
+
+  const toggleReminder = (minutes) => setActiveReminders((current) => current.includes(minutes) ? current.filter((value) => value !== minutes) : [...current, minutes].sort((a, b) => a - b))
+  const saveReminders = async () => {
+    try {
+      await Promise.all(reminderOptions.map((minutes) => {
+        const scheduledFor = new Date(startDate.getTime() - minutes * 60000)
+        return activeReminders.includes(minutes)
+          ? fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
+          : fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
+      }))
+      setMessage(activeReminders.length ? 'Reminder saved.' : 'Reminders removed.')
+    } catch { setMessage('Reminders require an active signed-in connection.') }
+  }
+  const addToCalendar = () => {
+    const params = new URLSearchParams({ action: 'TEMPLATE', text: event.title, dates: `${startDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z/${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, details: `Global Impact Church service (${TIME_ZONE}).`, location: serviceEvent.location })
+    const calendarUrl = `https://calendar.google.com/calendar/render?${params.toString()}`
+    if (window.open(calendarUrl, '_blank', 'noopener,noreferrer')) {
+      setMessage('Opening your calendar…')
+      return
+    }
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Global Impact Church//GIC//EN', 'BEGIN:VEVENT', `UID:${event.id}-${occurrenceKey}`, `DTSTART:${startDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, `DTEND:${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, `SUMMARY:${event.title}`, `LOCATION:${serviceEvent.location}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n')
+    const blobUrl = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = `${event.id}-service.ics`
+    link.click()
+    URL.revokeObjectURL(blobUrl)
+    setMessage('Calendar app unavailable; calendar file downloaded.')
+  }
+
+  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(eventClick) => eventClick.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(startDate)}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
+}
+
+function ServiceModalLegacy({ event, onClose }) {
+  const serviceEvent = getServiceDisplay(event)
+  const startDate = getServiceOccurrence(event.id)
+  const endDate = new Date(startDate.getTime() + (event.id === 'midweek-service' ? 90 : 120) * 60000)
+  const reminderOptions = [60, 30]
+  const occurrenceKey = startDate.toISOString()
+  const [activeReminders, setActiveReminders] = useState([])
   const [reminderMessage, setReminderMessage] = useState('')
   const [calendarMessage, setCalendarMessage] = useState('')
 
@@ -1294,15 +1359,18 @@ function ServiceModal({ event, onClose }) {
     return () => { cancelled = true }
   }, [event.id, occurrenceKey])
 
-  const toggleReminder = async (minutes) => {
-    const enabled = !activeReminders.includes(minutes)
-    const scheduledFor = new Date(startDate.getTime() - minutes * 60000)
+  const toggleReminder = (minutes) => {
+    setActiveReminders((current) => current.includes(minutes) ? current.filter((value) => value !== minutes) : [...current, minutes].sort((a, b) => a - b))
+  }
+
+  const saveReminders = async () => {
     try {
-      if (enabled) await fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
-      else await fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
-      localStorage.setItem(`gic_reminder_${event.id}_${minutes}`, String(enabled))
-      setActiveReminders((current) => enabled ? [...current, minutes].sort((a, b) => a - b) : current.filter((value) => value !== minutes))
-      setReminderMessage(enabled ? 'Reminder saved.' : 'Reminder removed.')
+      await Promise.all(reminderOptions.map((minutes) => {
+        const scheduledFor = new Date(startDate.getTime() - minutes * 60000)
+        if (activeReminders.includes(minutes)) return fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
+        return fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
+      }))
+      setReminderMessage(activeReminders.length ? 'Reminder saved.' : 'Reminders removed.')
     } catch { setReminderMessage('Reminders require an active signed-in connection.') }
   }
 
@@ -1453,7 +1521,7 @@ function MinistriesPage() {
 
   return <MemberShell active="ministries" title="My Ministries" backTo="/home">
     <p className="ministries-subtitle"></p>
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need to talk to someone about finding the right ministry? Contact details will be available here soon.</span></div></div>}
+    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a ministry? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
   </MemberShell>
 }
 

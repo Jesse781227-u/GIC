@@ -1,0 +1,10 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    { "idx": 0, "version": "7", "when": 1725750000000, "tag": "0000_add_members", "breakpoints": true },
+    { "idx": 1, "version": "7", "when": 1725750100000, "tag": "0001_add_member_phone", "breakpoints": true },
+    { "idx": 2, "version": "7", "when": 1725750200000, "tag": "0002_add_member_profile_settings", "breakpoints": true },
+    { "idx": 3, "version": "7", "when": 1725750300000, "tag": "0003_production_schema", "breakpoints": true }
+  ]
+}
