@@ -6,6 +6,7 @@ import {
   notifications,
   notificationDeliveries,
   serviceReminders,
+  birthdayNotificationSends,
 } from "./schema.js";
 
 export const pushDevicesRelations = relations(pushDevices, ({ many }) => ({
@@ -41,3 +42,4 @@ export const notificationDeliveriesRelations = relations(notificationDeliveries,
 }));
 
 export const serviceRemindersRelations = relations(serviceReminders, () => ({}));
+export const birthdayNotificationSendsRelations = relations(birthdayNotificationSends, () => ({}));

@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
-import { notificationPreferences, notifications } from "../db/schema.js";
+import { members, notificationPreferences, notifications } from "../db/schema.js";
 import { eq, isNull, desc, count, and } from "drizzle-orm";
 import { z } from "zod";
+import { birthdayCelebration, getLagosDateParts } from "../services/notifications/birthday.service.js";
 
 const preferencesSchema = z.object({
   pushEnabled: z.boolean().optional(),
@@ -18,6 +19,13 @@ const preferencesSchema = z.object({
 const app = new Hono();
 
 app.use("*", authMiddleware);
+
+app.get("/birthday", async (c) => {
+  const user = c.get("user");
+  const member = await db.query.members.findFirst({ where: eq(members.id, user.sub) });
+  if (!member) return c.json({ celebration: null }, 404);
+  return c.json({ celebration: birthdayCelebration(member, getLagosDateParts()) });
+});
 
 app.get("/preferences", async (c) => {
   const user = c.get("user");

@@ -258,11 +258,18 @@ function useAudioPlayer() {
 
 function NotificationProvider({ children }) {
   const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationPulse, setNotificationPulse] = useState(false)
+  const previousUnreadCount = useRef(0)
 
   const refreshUnreadCount = useCallback(async () => {
     try {
       const { count = 0 } = await fetchMemberApi('/api/notifications/unread-count')
       const nextValue = Number(count || 0)
+      if (previousUnreadCount.current === 0 && nextValue > 0) {
+        setNotificationPulse(true)
+        window.setTimeout(() => setNotificationPulse(false), 850)
+      }
+      previousUnreadCount.current = nextValue
       setUnreadCount(nextValue)
       localStorage.setItem('gic_notification_unread_count', String(nextValue))
       return nextValue
@@ -281,9 +288,10 @@ function NotificationProvider({ children }) {
 
   const value = useMemo(() => ({
     unreadCount,
+    notificationPulse,
     setUnreadCount,
     refreshUnreadCount,
-  }), [unreadCount, refreshUnreadCount])
+  }), [unreadCount, notificationPulse, refreshUnreadCount])
 
   return <notificationCountContext.Provider value={value}>{children}</notificationCountContext.Provider>
 }
@@ -770,12 +778,12 @@ function BottomNav({ active = 'home' }) {
 }
 
 function MemberShell({ children, active = 'home', title, backTo, lockProfile = false }) {
-  const { unreadCount } = useNotificationCount()
+  const { unreadCount, notificationPulse } = useNotificationCount()
   return <div className="member-page">
     <header className="mobile-header">
       {backTo && !lockProfile ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
       {title ? <strong>{title}</strong> : <Logo />}
-      {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className="bell-btn" title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
+      {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className={`bell-btn ${notificationPulse ? 'notification-pulse' : ''}`} title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
     <main className="mobile-main">{children}</main>
     <PersistentAudioPlayer />
@@ -829,7 +837,7 @@ function ProtectedRoute({ children }) {
           return
         }
         if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
-          await navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => null)
+          await navigator.serviceWorker.register('/sw.js').catch(() => null)
           const token = await getFcmToken()
           if (token) await registerPushTokenWithBackend(token)
         }
@@ -1298,6 +1306,7 @@ function Announcements() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [birthday, setBirthday] = useState(null)
   const categories = ['All', 'General', 'Ministries', 'Notices']
   const { setUnreadCount, refreshUnreadCount } = useNotificationCount()
   const sundayServiceCopy = getSundayServiceCopy()
@@ -1320,6 +1329,9 @@ function Announcements() {
       }))))
       .catch((requestError) => setError(requestError.message))
       .finally(() => setLoading(false))
+    fetchMemberApi('/api/notifications/birthday')
+      .then(({ celebration }) => setBirthday(celebration || null))
+      .catch(() => setBirthday(null))
   }, [])
   const visibleAnnouncements = category === 'All'
     ? items
@@ -1329,8 +1341,25 @@ function Announcements() {
     <div className="announcement-toolbar"><div className="tabs">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><button type="button" className="mark-read-button" onClick={markAllAsRead}>Mark all as read</button></div>
     {loading && <p className="center muted">Loading announcements...</p>}
     {error && <p className="center muted">Announcements are unavailable right now.</p>}
+    {birthday && <Link className="birthday-banner" to="/announcements/birthday"><div className="birthday-sparkle">✦</div><div><small>Just for you</small><b>{birthday.title}</b><span>Open your birthday message from the GIC family</span></div><ChevronRight size={18} /></Link>}
     {!loading && !error && <div className="announcement-list">{visibleAnnouncements.map((announcement) => <Link className="list-card" key={announcement.id} to={`/announcements/${announcement.id}`}><div><b>{announcement.title}</b><small>{announcement.summary}</small><time>{announcement.date}</time></div><ChevronRight size={18} /></Link>)}</div>}
     {!loading && !error && !visibleAnnouncements.length && <p className="center muted">No announcements yet.</p>}
+  </MemberShell>
+}
+
+function BirthdayPage() {
+  const [birthday, setBirthday] = useState(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    fetchMemberApi('/api/notifications/birthday')
+      .then(({ celebration }) => setBirthday(celebration || null))
+      .catch(() => setBirthday(null))
+      .finally(() => setLoading(false))
+  }, [])
+  return <MemberShell active="home" title="Your Birthday" backTo="/announcements">
+    {loading && <p className="center muted">Preparing your birthday message...</p>}
+    {!loading && birthday && <section className="birthday-page-card"><div className="birthday-confetti" aria-hidden="true">✦　✧　✦</div>{birthday.avatar ? <img className="birthday-avatar" src={birthday.avatar} alt="" /> : <div className="birthday-avatar birthday-avatar-fallback">{birthday.name.charAt(0)}</div>}<span className="eyebrow">A message just for you</span><h1>{birthday.title}</h1><p>{birthday.message}</p><div className="birthday-seal">With love from the GIC family</div></section>}
+    {!loading && !birthday && <div className="empty"><h2>This birthday message is private</h2><p>There is no birthday celebration available today.</p><Link className="btn primary wide" to="/announcements">Back to Announcements</Link></div>}
   </MemberShell>
 }
 
@@ -1962,6 +1991,7 @@ export default function App() {
         <Route path="/onboarding" element={<OnboardingFlow />} />
         <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
         <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
+        <Route path="/announcements/birthday" element={<ProtectedRoute><BirthdayPage /></ProtectedRoute>} />
         <Route path="/announcements/:id" element={<ProtectedRoute><AnnouncementDetails /></ProtectedRoute>} />
         <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
         <Route path="/events/:id" element={<ProtectedRoute><EventDetails /></ProtectedRoute>} />

@@ -26,3 +26,20 @@ messaging.onBackgroundMessage((payload) => {
     tag: 'gic-fcm-bg',
   });
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || event.notification.data?.route || '/home';
+  let targetUrl;
+  try {
+    const parsed = new URL(url, self.location.origin);
+    targetUrl = ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : new URL('/home', self.location.origin).href;
+  } catch {
+    targetUrl = new URL('/home', self.location.origin).href;
+  }
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    const matchingClient = clients.find((client) => 'focus' in client);
+    if (matchingClient) return matchingClient.navigate(targetUrl).then((client) => client?.focus());
+    return self.clients.openWindow(targetUrl);
+  }));
+});

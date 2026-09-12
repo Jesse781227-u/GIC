@@ -270,6 +270,25 @@ export const serviceReminders = pgTable(
 // ─── notification_deliveries ──────────────────────────────────────────────────
 // FCM delivery attempt per device. Idempotency via unique(notification_id, device_id).
 
+export const birthdayNotificationSends = pgTable(
+  "birthday_notification_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: text("member_id").notNull(),
+    birthdayDate: text("birthday_date").notNull(),
+    status: text("status").notNull().default("processing"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    memberDateUnique: unique("birthday_notification_sends_member_date_unique").on(t.memberId, t.birthdayDate),
+    memberIdx: index("birthday_notification_sends_member_id_idx").on(t.memberId),
+    dateIdx: index("birthday_notification_sends_date_idx").on(t.birthdayDate),
+  })
+);
+
 export const notificationDeliveries = pgTable(
   "notification_deliveries",
   {

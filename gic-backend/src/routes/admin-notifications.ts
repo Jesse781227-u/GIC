@@ -72,6 +72,29 @@ app.get("/:id", async (c) => {
   return c.json({ notification: notif });
 });
 
+app.delete("/:id", async (c) => {
+  const id = c.req.param("id");
+  const notification = await db.query.adminNotifications.findFirst({
+    where: eq(adminNotifications.id, id),
+  });
+
+  if (!notification) return c.json({ error: "Not found" }, 404);
+
+  await db.delete(adminNotifications).where(eq(adminNotifications.id, id));
+
+  const user = c.get("user");
+  await recordActivity({
+    actorId: user.sub,
+    actorName: user.name,
+    action: "Deleted message",
+    target: notification.title,
+    targetId: id,
+    metadata: { audience: notification.audience },
+  }).catch((error) => console.error("Failed to record message deletion activity", error));
+
+  return c.json({ success: true, deletedId: id });
+});
+
 app.post("/:id/send", async (c) => {
   const id = c.req.param("id");
   try {
