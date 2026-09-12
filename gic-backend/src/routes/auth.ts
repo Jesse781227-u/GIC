@@ -36,6 +36,10 @@ function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
 async function issueMemberToken(member: typeof members.$inferSelect, platform = "web") {
   return new SignJWT({ sub: member.id, role: "MEMBER", name: member.displayName, platform })
     .setProtectedHeader({ alg: "HS256" })
@@ -184,6 +188,15 @@ app.patch("/profile", async (c) => {
   const user = c.get("user");
   const parsed = profileSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message || "Invalid profile" }, 400);
+
+  const submittedPhone = normalizePhone(parsed.data.phone);
+  const submittedEmail = parsed.data.email ? normalizeEmail(parsed.data.email) : "";
+  const candidates = await db.query.members.findMany();
+  const duplicate = candidates.find((candidate) => candidate.id !== c.get("user").sub && (
+    (candidate.phone && normalizePhone(candidate.phone) === submittedPhone) ||
+    (submittedEmail && candidate.email && normalizeEmail(candidate.email) === submittedEmail)
+  ));
+  if (duplicate) return c.json({ error: "A member account already exists for this phone number or email address", memberId: duplicate.id }, 409);
 
   const [member] = await db.update(members)
     .set({
