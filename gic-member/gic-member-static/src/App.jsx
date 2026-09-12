@@ -463,7 +463,6 @@ function AudioPlayerProvider({ children }) {
   return <audioPlayerContext.Provider value={value}>
     {children}
     <audio ref={audioRef} src={streamUrl} preload="auto" playsInline aria-label="Global Impact Church Mixlr audio" />
-    <PersistentAudioPlayer />
   </audioPlayerContext.Provider>
 }
 
@@ -476,7 +475,7 @@ function PersistentAudioPlayer({ embedded = false }) {
     return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`
   }
   if (!title) return null
-  return <aside className={`persistent-audio-player ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
+  return <aside className={`persistent-audio-player ${embedded ? 'is-embedded' : ''} ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
     <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? 'Playing live audio' : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button></div></div>
     {!minimized && <div className="persistent-audio-toolbar"><div className="audio-seek-row"><span>{formatTime(elapsedSeconds)}</span><input type="range" min="0" max={durationSeconds || Math.max(elapsedSeconds, 1)} step="1" value={Math.min(elapsedSeconds, durationSeconds || Math.max(elapsedSeconds, 1))} onChange={(event) => seek(event.target.value)} disabled={!seekable} aria-label={seekable ? 'Seek audio' : 'Seeking unavailable for this live stream'} /><span>{durationSeconds ? formatTime(durationSeconds) : 'LIVE'}</span></div><small className="audio-seek-note">{seekable ? 'Seek within the available playback window' : 'Live stream · seeking unavailable'}</small><label className="volume-control" title="Volume"><Volume2 size={15} /><span>Volume</span><input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label></div>}
   </aside>
@@ -761,6 +760,7 @@ function MemberShell({ children, active = 'home', title, backTo, lockProfile = f
       {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className="bell-btn" title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
     <main className="mobile-main">{children}</main>
+    <PersistentAudioPlayer />
     {!lockProfile && <BottomNav active={active} />}
   </div>
 }
@@ -1148,7 +1148,7 @@ function OnboardingFlow() {
   </div></div>
 }
 
-function HomePage() {
+function LegacyHomePage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
   const { setStream } = useAudioPlayer()
@@ -1161,17 +1161,10 @@ function HomePage() {
       try {
         const mixlrData = await getMixlrData()
         if (cancelled) return
-        setLatestMixlrRecording(mixlrData)
         const streamUrl = mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com'
         setStream(streamUrl, mixlrData?.title || 'Global Impact Church', { loading: true })
       } catch {
-        const fallback = {
-          title: 'Latest recording unavailable',
-          displayTitle: 'Listen to the latest recording on Mixlr',
-          url: 'https://globalimpactng.mixlr.com/recordings',
-          audioUrl: 'https://globalimpactng.mixlr.com',
-        }
-        if (!cancelled) setLatestMixlrRecording(fallback)
+        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', { loading: true })
       }
     }
     loadMixlr()
@@ -1189,7 +1182,7 @@ function HomePage() {
           <Logo light />
         </div>
 
-        <div style={{
+        <div className="hero-audio-console" style={{
           background: 'rgba(10, 4, 34, 0.65)',
           borderRadius: '14px',
           padding: '12px',
@@ -1197,24 +1190,6 @@ function HomePage() {
           border: '1px solid rgba(255, 255, 255, 0.12)',
           marginTop: '8px'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block', boxShadow: '0 0 8px #3b82f6' }}/>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording?.displayTitle || 'Loading latest recording...'}</span>
-                <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.displayDate || 'Fetching from Mixlr'}</small>
-              </div>
-            </div>
-            <a 
-              href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} 
-              target="_blank" 
-              rel="noreferrer"
-              style={{ fontSize: '10px', color: '#fff', opacity: 0.85, textDecoration: 'underline' }}
-            >
-              Mixlr↗
-            </a>
-          </div>
-
           <PersistentAudioPlayer embedded />
         </div>
       </section>
@@ -1235,6 +1210,53 @@ function HomePage() {
         {getUpcomingEvents().slice(0, 2).map((event) => (
           <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />
         ))}
+      </section>
+    </MemberShell>
+    {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
+  </>
+}
+
+function HomePage() {
+  const memberName = localStorage.getItem('gic_member_name') || ''
+  const { setStream } = useAudioPlayer()
+  const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
+  const nextEvent = getServiceDisplay(getNextEvent())
+
+  useEffect(() => {
+    let cancelled = false
+    getMixlrData()
+      .then((mixlrData) => {
+        if (cancelled) return
+        setStream(mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com', mixlrData?.title || 'Global Impact Church', { loading: true })
+      })
+      .catch(() => {
+        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', { loading: true })
+      })
+    return () => { cancelled = true }
+  }, [setStream])
+
+  return <>
+    <MemberShell active="home">
+      <section className="hero-card home-hero">
+        <div className="home-hero-heading">
+          <div>
+            <small>Welcome home,</small>
+            <h2>{memberName}</h2>
+          </div>
+          <Logo light />
+        </div>
+        <div className="hero-audio-console"><PersistentAudioPlayer embedded /></div>
+      </section>
+      <section className="section">
+        <div className="section-head"><span>Next Service</span></div>
+        <article className="announcement-card" onClick={() => setSelectedServiceEvent(getNextEvent())} style={{ cursor: 'pointer' }}>
+          <div className="image-banner" style={{ backgroundImage: `url(${nextEvent.image})` }} />
+          <div className="pad"><small>{nextEvent.title}</small><h3>{nextEvent.date} · {nextEvent.time}</h3><p>{nextEvent.location}</p></div>
+        </article>
+      </section>
+      <section className="section">
+        <div className="section-head"><span>Upcoming Events</span><Link to="/events">View All</Link></div>
+        {getUpcomingEvents().slice(0, 2).map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
       </section>
     </MemberShell>
     {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
