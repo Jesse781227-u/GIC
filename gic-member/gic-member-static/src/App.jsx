@@ -6,7 +6,7 @@ import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX,
-  Play, Pause, Minimize2, Maximize2
+  Play, Pause, Minimize2, Maximize2, CheckCircle2
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
@@ -251,6 +251,10 @@ function useAudioPlayer() {
       resume: () => {},
       close: () => {},
       setVolume: () => {},
+      elapsedSeconds: 0,
+      durationSeconds: null,
+      seekable: false,
+      seek: () => {},
     }
   }
   return context
@@ -297,6 +301,9 @@ function AudioPlayerProvider({ children }) {
   const [error, setError] = useState('')
   const [minimized, setMinimized] = useState(false)
   const [volume, setVolume] = useState(0.85)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [durationSeconds, setDurationSeconds] = useState(null)
+  const [seekable, setSeekable] = useState(false)
 
   const ensureAudio = useCallback(() => {
     if (!audioRef.current) return null
@@ -348,6 +355,18 @@ function AudioPlayerProvider({ children }) {
     setMinimized(true)
   }, [pause])
 
+  const seek = useCallback((nextTime) => {
+    const audio = ensureAudio()
+    if (!audio || !seekable) return
+    const next = Number(nextTime)
+    if (!Number.isFinite(next)) return
+    const range = audio.seekable
+    const minimum = range.length ? range.start(0) : 0
+    const maximum = range.length ? range.end(range.length - 1) : (Number.isFinite(audio.duration) ? audio.duration : next)
+    audio.currentTime = Math.min(Math.max(next, minimum), maximum)
+    setElapsedSeconds(audio.currentTime)
+  }, [ensureAudio, seekable])
+
   const togglePlayback = useCallback(async () => {
     if (!streamUrl) return
     if (playing) {
@@ -368,7 +387,15 @@ function AudioPlayerProvider({ children }) {
       setLoading(false)
       setError('')
       setPlaying(!audio.paused)
+      setDurationSeconds(Number.isFinite(audio.duration) ? audio.duration : null)
+      setSeekable(Number.isFinite(audio.duration) || audio.seekable.length > 0)
     }
+    const handleDurationChange = () => {
+      setDurationSeconds(Number.isFinite(audio.duration) ? audio.duration : null)
+      setSeekable(Number.isFinite(audio.duration) || audio.seekable.length > 0)
+    }
+    const handleProgress = () => setSeekable(Number.isFinite(audio.duration) || audio.seekable.length > 0)
+    const handleTimeUpdate = () => setElapsedSeconds(Number.isFinite(audio.currentTime) ? audio.currentTime : 0)
     const handlePlay = () => {
       setPlaying(true)
       setLoading(false)
@@ -383,16 +410,32 @@ function AudioPlayerProvider({ children }) {
       setLoading(false)
     }
     audio.addEventListener('loadeddata', handleLoadedData)
+    audio.addEventListener('durationchange', handleDurationChange)
+    audio.addEventListener('progress', handleProgress)
+    audio.addEventListener('timeupdate', handleTimeUpdate)
     audio.addEventListener('play', handlePlay)
     audio.addEventListener('pause', handlePause)
     audio.addEventListener('error', handleError)
     return () => {
       audio.removeEventListener('loadeddata', handleLoadedData)
+      audio.removeEventListener('durationchange', handleDurationChange)
+      audio.removeEventListener('progress', handleProgress)
+      audio.removeEventListener('timeupdate', handleTimeUpdate)
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('pause', handlePause)
       audio.removeEventListener('error', handleError)
     }
   }, [ensureAudio, streamUrl, volume])
+
+  useEffect(() => {
+    if (!playing) return undefined
+    const interval = window.setInterval(() => {
+      const audio = audioRef.current
+      if (audio && Number.isFinite(audio.currentTime)) setElapsedSeconds(audio.currentTime)
+      else setElapsedSeconds((value) => value + 1)
+    }, 1000)
+    return () => window.clearInterval(interval)
+  }, [playing])
 
   useEffect(() => {
     if (!('mediaSession' in navigator)) return undefined
@@ -423,7 +466,11 @@ function AudioPlayerProvider({ children }) {
     close,
     stop,
     setVolume,
-  }), [close, error, loading, minimized, pause, playing, resume, setMinimized, setStream, stop, streamUrl, title, togglePlayback, volume])
+    elapsedSeconds,
+    durationSeconds,
+    seekable,
+    seek,
+  }), [close, durationSeconds, elapsedSeconds, error, loading, minimized, pause, playing, resume, seek, seekable, setMinimized, setStream, stop, streamUrl, title, togglePlayback, volume])
 
   return <audioPlayerContext.Provider value={value}>
     {children}
@@ -433,11 +480,15 @@ function AudioPlayerProvider({ children }) {
 }
 
 function PersistentAudioPlayer() {
-  const { playing, loading, minimized, setMinimized, error, title, pause, resume, setVolume, volume } = useAudioPlayer()
+  const { playing, loading, minimized, setMinimized, error, title, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
+  const formatTime = (seconds) => {
+    const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
+    return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`
+  }
   if (!title) return null
   return <aside className={`persistent-audio-player ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
     <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? 'Playing live audio' : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button><button type="button" className="player-icon-button secondary" onClick={() => setMinimized(!minimized)} aria-label={minimized ? 'Expand player' : 'Minimize player'}>{minimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}</button></div></div>
-    {!minimized && <div className="persistent-audio-toolbar"><label className="volume-control" title="Volume"><Volume2 size={15} /><span>Volume</span><input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label></div>}
+    {!minimized && <div className="persistent-audio-toolbar"><div className="audio-seek-row"><span>{formatTime(elapsedSeconds)}</span><input type="range" min="0" max={durationSeconds || Math.max(elapsedSeconds, 1)} step="1" value={Math.min(elapsedSeconds, durationSeconds || Math.max(elapsedSeconds, 1))} onChange={(event) => seek(event.target.value)} disabled={!seekable} aria-label={seekable ? 'Seek audio' : 'Seeking unavailable for this live stream'} /><span>{durationSeconds ? formatTime(durationSeconds) : 'LIVE'}</span></div><small className="audio-seek-note">{seekable ? 'Seek within the available playback window' : 'Live stream · seeking unavailable'}</small><label className="volume-control" title="Volume"><Volume2 size={15} /><span>Volume</span><input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label></div>}
   </aside>
 }
 
@@ -610,6 +661,8 @@ function storeMemberSession(data) {
   localStorage.setItem('gic_member_service_time', data.member.serviceTime || '')
   localStorage.setItem('gic_member_birthday', data.member.birthday || '')
   localStorage.setItem('gic_membership_status', data.member.membershipStatus || '')
+  localStorage.setItem('gic_member_joined_month', data.member.joinedMonth || '')
+  localStorage.setItem('gic_member_joined_year', data.member.joinedYear || '')
   if (data.member.avatar) localStorage.setItem('gic_member_avatar', data.member.avatar)
   localStorage.setItem('gic_auth_method', 'device_auth')
 }
@@ -753,6 +806,8 @@ function ProtectedRoute({ children }) {
         localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
         localStorage.setItem('gic_member_birthday', profile.birthday || '')
         localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
+        localStorage.setItem('gic_member_joined_month', profile.joinedMonth || '')
+        localStorage.setItem('gic_member_joined_year', profile.joinedYear || '')
         if (profile.avatar) localStorage.setItem('gic_member_avatar', profile.avatar)
         if (!profile.active || !profile.profileComplete) {
           if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
@@ -1107,7 +1162,7 @@ function OnboardingFlow() {
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
-  const { setStream, togglePlayback } = useAudioPlayer()
+  const { setStream } = useAudioPlayer()
   const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
   const nextEvent = getServiceDisplay(getNextEvent())
 
@@ -1171,7 +1226,7 @@ function HomePage() {
             </a>
           </div>
 
-          {latestMixlrRecording?.audioUrl ? <button type="button" className="btn primary wide" onClick={togglePlayback}>Listen live</button> : <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>Latest recording is not available right now.</p>}
+          <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>{latestMixlrRecording?.audioUrl ? 'Use the player console below to play audio.' : 'Latest recording is not available right now.'}</p>
         </div>
       </section>
       <section className="section">
@@ -1295,17 +1350,46 @@ function EventsPage() {
 function ServiceModal({ event, onClose }) {
   const serviceEvent = getServiceDisplay(event)
   const startDate = getServiceOccurrence(event.id)
+  const occurrenceKey = startDate.toISOString()
+  const [activeReminders, setActiveReminders] = useState([])
+  const [loaded, setLoaded] = useState(false)
+  const [message, setMessage] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}`)
+      .then(({ reminders = [] }) => { if (!cancelled) { setActiveReminders(reminders.map((item) => Number(item.offsetMinutes))); setLoaded(true) } })
+      .catch(() => { if (!cancelled) setLoaded(true) })
+    return () => { cancelled = true }
+  }, [occurrenceKey])
+  const toggleReminder = (minutes) => setActiveReminders((current) => current.includes(minutes) ? current.filter((value) => value !== minutes) : [...current, minutes].sort((a, b) => a - b))
+  const saveReminders = async () => {
+    try {
+      await Promise.all([60, 30].map((minutes) => activeReminders.includes(minutes)
+        ? fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: new Date(startDate.getTime() - minutes * 60000).toISOString() }) })
+        : fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })))
+      setLoaded(true)
+      setMessage('Reminder saved.')
+    } catch { setMessage('Reminders require an active signed-in connection.') }
+  }
+  const labels = activeReminders.map((minutes) => minutes === 60 ? '1 hour' : `${minutes} minutes`)
+  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{serviceEvent.date}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p><div className="reminder-panel">{!loaded ? <b>Loading reminders...</b> : activeReminders.length ? <div className="reminder-confirmation"><CheckCircle2 size={18} /><span><b>Reminder{activeReminders.length > 1 ? 's' : ''} set</b><small>{labels.join(', ')} before</small></span></div> : <><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></>}</div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
+}
+
+function ServiceModalLegacyCurrent({ event, onClose }) {
+  const serviceEvent = getServiceDisplay(event)
+  const startDate = getServiceOccurrence(event.id)
   const endDate = new Date(startDate.getTime() + (event.id === 'midweek-service' ? 90 : 120) * 60000)
   const reminderOptions = [60, 30]
   const occurrenceKey = startDate.toISOString()
   const [activeReminders, setActiveReminders] = useState([])
   const [message, setMessage] = useState('')
+  const [remindersLoaded, setRemindersLoaded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}`)
-      .then(({ reminders = [] }) => { if (!cancelled) setActiveReminders(reminders.map((reminder) => Number(reminder.offsetMinutes))) })
-      .catch(() => {})
+      .then(({ reminders = [] }) => { if (!cancelled) { setActiveReminders(reminders.map((reminder) => Number(reminder.offsetMinutes))); setRemindersLoaded(true) } })
+      .catch(() => { if (!cancelled) setRemindersLoaded(true) })
     return () => { cancelled = true }
   }, [occurrenceKey])
 
@@ -1595,6 +1679,7 @@ function Profile() {
     ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
     ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
     ['New member?', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
+    ...(localStorage.getItem('gic_member_joined_year') ? [['Member since', [localStorage.getItem('gic_member_joined_month') && new Date(2000, Number(localStorage.getItem('gic_member_joined_month')) - 1).toLocaleString('en-US', { month: 'long' }), localStorage.getItem('gic_member_joined_year')].filter(Boolean).join(' '), CalendarDays]] : []),
   ]
   const deviceId = getOrCreateDeviceId()
 
@@ -1666,6 +1751,8 @@ function EditProfile() {
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
   const [birthday, setBirthday] = useState(localStorage.getItem('gic_member_birthday') || '')
   const [membershipStatus, setMembershipStatus] = useState(localStorage.getItem('gic_membership_status') || '')
+  const [joinedMonth, setJoinedMonth] = useState(localStorage.getItem('gic_member_joined_month') || '')
+  const [joinedYear, setJoinedYear] = useState(localStorage.getItem('gic_member_joined_year') || '')
   const [avatar, setAvatar] = useState(localStorage.getItem('gic_member_avatar') || '')
   const [saveError, setSaveError] = useState('')
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
@@ -1688,6 +1775,8 @@ function EditProfile() {
           serviceTime,
           birthday,
           membershipStatus,
+          joinedMonth: joinedMonth ? Number(joinedMonth) : null,
+          joinedYear: joinedYear ? Number(joinedYear) : null,
           avatar,
         }),
       })
@@ -1700,6 +1789,8 @@ function EditProfile() {
       localStorage.setItem('gic_member_service_time', savedProfile.serviceTime || '')
       localStorage.setItem('gic_member_birthday', savedProfile.birthday || '')
       localStorage.setItem('gic_membership_status', savedProfile.membershipStatus || '')
+      localStorage.setItem('gic_member_joined_month', savedProfile.joinedMonth || '')
+      localStorage.setItem('gic_member_joined_year', savedProfile.joinedYear || '')
       if (savedProfile.avatar) localStorage.setItem('gic_member_avatar', savedProfile.avatar)
       localStorage.setItem('gic_profile_completed', 'true')
       const notificationReady = !('Notification' in window) || Notification.permission !== 'default'
@@ -1754,6 +1845,11 @@ function EditProfile() {
         <option value="Yes">Yes</option>
         <option value="No">No</option>
       </SelectField>
+      <SelectField label="Month joined (Optional)" value={joinedMonth} onChange={(e) => setJoinedMonth(e.target.value)}>
+        <option value="">I'm not sure</option>
+        {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}
+      </SelectField>
+      <label className="field"><span>YEAR JOINED</span><input type="number" min="1900" max={new Date().getFullYear()} value={joinedYear} onChange={(e) => setJoinedYear(e.target.value)} required={required || !localStorage.getItem('gic_profile_completed')} /></label>
       <Button type="submit" className="wide">Save Changes & Sync Device</Button>
     </form>
   </MemberShell>
