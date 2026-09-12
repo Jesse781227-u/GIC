@@ -6,10 +6,10 @@ import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX,
-  Play, Pause, Minimize2, Maximize2, CheckCircle2
+  Play, Pause, CheckCircle2
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
+import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -119,19 +119,7 @@ function getNextEvent() {
 }
 
 function formatServiceLabel(serviceDate, eventId) {
-  const now = new Date()
-  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, month: 'short', day: 'numeric', weekday: 'long' })
-  const nowParts = getLagosDateParts(now)
-  const serviceParts = getLagosDateParts(serviceDate)
-  const nowLagos = new Date(Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day))
-  const serviceLagos = new Date(Date.UTC(serviceParts.year, serviceParts.month - 1, serviceParts.day))
-  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const diffDays = Math.round((startOfDay(serviceLagos) - startOfDay(nowLagos)) / 86400000)
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long' }).format(serviceDate)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Tomorrow'
-  if (diffDays > 1 && diffDays < 7) return `This ${weekday}`
-  return `Next ${weekday}`
+  return formatServiceOccurrenceLabel(serviceDate)
 }
 
 function getServiceDisplay(event) {
@@ -479,7 +467,9 @@ function AudioPlayerProvider({ children }) {
   </audioPlayerContext.Provider>
 }
 
-function PersistentAudioPlayer() {
+function PersistentAudioPlayer({ embedded = false }) {
+  const location = useLocation()
+  if (location.pathname === '/home' && !embedded) return null
   const { playing, loading, minimized, setMinimized, error, title, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
   const formatTime = (seconds) => {
     const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
@@ -487,7 +477,7 @@ function PersistentAudioPlayer() {
   }
   if (!title) return null
   return <aside className={`persistent-audio-player ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
-    <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? 'Playing live audio' : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button><button type="button" className="player-icon-button secondary" onClick={() => setMinimized(!minimized)} aria-label={minimized ? 'Expand player' : 'Minimize player'}>{minimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}</button></div></div>
+    <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? 'Playing live audio' : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button></div></div>
     {!minimized && <div className="persistent-audio-toolbar"><div className="audio-seek-row"><span>{formatTime(elapsedSeconds)}</span><input type="range" min="0" max={durationSeconds || Math.max(elapsedSeconds, 1)} step="1" value={Math.min(elapsedSeconds, durationSeconds || Math.max(elapsedSeconds, 1))} onChange={(event) => seek(event.target.value)} disabled={!seekable} aria-label={seekable ? 'Seek audio' : 'Seeking unavailable for this live stream'} /><span>{durationSeconds ? formatTime(durationSeconds) : 'LIVE'}</span></div><small className="audio-seek-note">{seekable ? 'Seek within the available playback window' : 'Live stream · seeking unavailable'}</small><label className="volume-control" title="Volume"><Volume2 size={15} /><span>Volume</span><input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label></div>}
   </aside>
 }
@@ -508,7 +498,6 @@ function PersistentAudioPlayerLegacy() {
       </div>
       <div className="persistent-audio-actions">
         <button type="button" className="player-toggle" onClick={playing ? pause : resume}>{playing ? 'Pause' : 'Play'}</button>
-        <button type="button" className="player-link" onClick={() => (minimized ? setMinimized(false) : setMinimized(true))}>{minimized ? 'Open' : 'Minimize'}</button>
       </div>
     </div>
     <div className="persistent-audio-toolbar">
@@ -1226,7 +1215,7 @@ function HomePage() {
             </a>
           </div>
 
-          <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>{latestMixlrRecording?.audioUrl ? 'Use the player console below to play audio.' : 'Latest recording is not available right now.'}</p>
+          <PersistentAudioPlayer embedded />
         </div>
       </section>
       <section className="section">
@@ -1371,8 +1360,14 @@ function ServiceModal({ event, onClose }) {
       setMessage('Reminder saved.')
     } catch { setMessage('Reminders require an active signed-in connection.') }
   }
+  const addToCalendar = () => {
+    const endDate = new Date(startDate.getTime() + (event.id === 'midweek-service' ? 90 : 120) * 60000)
+    const params = new URLSearchParams({ action: 'TEMPLATE', text: event.title, dates: `${startDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z/${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, details: `Global Impact Church service (${TIME_ZONE}).`, location: serviceEvent.location })
+    window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, '_blank', 'noopener,noreferrer')
+    setMessage('Opening your calendar…')
+  }
   const labels = activeReminders.map((minutes) => minutes === 60 ? '1 hour' : `${minutes} minutes`)
-  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{serviceEvent.date}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p><div className="reminder-panel">{!loaded ? <b>Loading reminders...</b> : activeReminders.length ? <div className="reminder-confirmation"><CheckCircle2 size={18} /><span><b>Reminder{activeReminders.length > 1 ? 's' : ''} set</b><small>{labels.join(', ')} before</small></span></div> : <><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></>}</div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
+  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{serviceEvent.date}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p><div className="reminder-panel">{!loaded ? <b>Loading reminders...</b> : activeReminders.length ? <div className="reminder-confirmation"><CheckCircle2 size={18} /><span><b>Reminder{activeReminders.length > 1 ? 's' : ''} set</b><small>{labels.join(', ')} before</small></span></div> : <><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></>}</div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
 }
 
 function ServiceModalLegacyCurrent({ event, onClose }) {
@@ -1591,13 +1586,22 @@ function PrayerRequest() {
 
 function MinistriesPage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
-  const selectedNames = (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean)
+  const [selectedNames, setSelectedNames] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
   const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
   const [applications, setApplications] = useState([])
 
   useEffect(() => {
     fetchMemberApi('/api/ministry-applications')
-      .then((response) => setApplications(response.applications || []))
+      .then((response) => {
+        const records = response.applications || []
+        setApplications(records)
+        const approved = records.filter((application) => application.status === 'APPROVED').map((application) => application.ministry)
+        const merged = [...new Set([...selectedNames, ...approved])]
+        if (merged.length !== selectedNames.length) {
+          localStorage.setItem('gic_member_ministries', merged.join(', '))
+          setSelectedNames(merged)
+        }
+      })
       .catch(() => setApplications([]))
   }, [])
 
@@ -1605,7 +1609,8 @@ function MinistriesPage() {
 
   return <MemberShell active="ministries" title="My Ministries" backTo="/home">
     <p className="ministries-subtitle"></p>
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>God has gifted you for a reason - come serve the Lord and make an impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a ministry? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
+    {pendingMinistries.size > 0 && <section className="ministries-list"><b>Pending requests</b>{[...pendingMinistries].map((name) => { const ministry = ministries.find((item) => item.title === name); return ministry ? <div className="ministry-row" key={`pending-${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>Pending approval</small></div><span className="badge blue">Pending</span></div> : null })}</section>}
+    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>You have been blessed to be a blessing. Come serve the Lord and make impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a ministry? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
   </MemberShell>
 }
 
@@ -1647,6 +1652,8 @@ function MinistryApplication() {
         }),
       })
       setSubmitted(true)
+    } catch (error) {
+      setMessage(error.message || 'This ministry request could not be submitted.')
     } finally {
       setBusy(false)
     }
@@ -1742,10 +1749,7 @@ function EditProfile() {
   const [email, setEmail] = useState(localStorage.getItem('gic_member_email') || '')
   const [ministriesValue, setMinistriesValue] = useState(() => {
     const savedMinistries = localStorage.getItem('gic_member_ministries') || ''
-    const selectedMinistries = savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
-    const ministryId = new URLSearchParams(location.search).get('ministry')
-    const chosenMinistry = ministries.find((ministry) => ministry.id === ministryId)?.title
-    return chosenMinistry && !selectedMinistries.includes(chosenMinistry) ? [...selectedMinistries, chosenMinistry] : selectedMinistries
+    return savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
   })
   const [center, setCenter] = useState(localStorage.getItem('gic_member_center') || '')
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
@@ -1770,7 +1774,7 @@ function EditProfile() {
           name: name.trim(),
           phone: phone.trim(),
           email: email.trim(),
-          ministries: ministriesValue.join(', '),
+          ministries: localStorage.getItem('gic_member_ministries') || '',
           center,
           serviceTime,
           birthday,
@@ -1833,7 +1837,7 @@ function EditProfile() {
       </label>
       <Field label="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
       <Field label="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
-      <MultiSelectField label="Ministries (Optional)" values={ministriesValue} options={ministryOptions} onChange={setMinistriesValue} />
+      <div className="field"><span>MINISTRIES</span><p className="muted">Ministry membership is added after admin approval. Apply from Browse Ministries to request to join.</p></div>
       <SelectField label="Center You Attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
         {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
       </SelectField>

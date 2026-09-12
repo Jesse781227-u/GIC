@@ -80,6 +80,8 @@ export const ministryApplications = pgTable(
     ministry: text("ministry").notNull(),
     message: text("message"),
     status: text("status").notNull().default("PENDING"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: text("decided_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
