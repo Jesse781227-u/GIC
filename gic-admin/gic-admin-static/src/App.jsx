@@ -4,7 +4,7 @@ import {
   Activity, ChevronDown, ChevronRight, Plus, Search, Filter, Download,
   MoreHorizontal, UserPlus, Send, Bell, CalendarPlus, ClipboardList,
   BarChart3, Shield, Database, Globe, Lock, CheckCircle2,
-  Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut
+  Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut, ImagePlus
 } from 'lucide-react'
 import {Link, Routes, Route, useLocation, useNavigate, useParams} from 'react-router-dom'
 import {ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell} from 'recharts'
@@ -346,6 +346,47 @@ function LiveActivityLog(){
  return <Page title="Activity Log" subtitle="Recorded administrator and member actions"><Card className="table-card">{loading&&<div className="empty-message">Loading activity...</div>}{error&&<div className="empty-message">Activity log is unavailable right now.</div>}{!loading&&!error&&!items.length&&<div className="empty-message">No activity has been recorded yet.</div>}{!loading&&!error&&items.length>0&&<div className="activity-list">{items.map((item)=><div className="activity-row" key={item.id}><div className="activity-type"><Activity size={14}/></div><div className="activity-main"><b>{item.actorName||item.actorId} {item.action.toLowerCase()}</b><small>{item.target}</small></div><span className="badge gray">Recorded</span><time>{item.createdAt?new Date(item.createdAt).toLocaleString():'—'}</time></div>)}</div>}</Card></Page>
 }
 
+function CreateEventModal({ onClose, onCreated }){
+ const [title,setTitle]=useState('')
+ const [description,setDescription]=useState('')
+ const [startsAt,setStartsAt]=useState('')
+ const [endsAt,setEndsAt]=useState('')
+ const [location,setLocation]=useState('')
+ const [isPaid,setIsPaid]=useState(false)
+ const [price,setPrice]=useState('')
+ const [imageUrl,setImageUrl]=useState('')
+ const [notifyOnPublish,setNotifyOnPublish]=useState(true)
+ const [status,setStatus]=useState('DRAFT')
+ const [saving,setSaving]=useState(false)
+ const [error,setError]=useState('')
+ const chooseImage=(event)=>{const file=event.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>setImageUrl(String(reader.result));reader.readAsDataURL(file)}
+ const submit=async(event)=>{event.preventDefault();setError('');if(endsAt&&new Date(endsAt)<=new Date(startsAt)){setError('End time must be after start time.');return}setSaving(true);try{await fetchAdminApi('/api/admin/events',{method:'POST',body:JSON.stringify({title,description,startsAt:new Date(startsAt).toISOString(),endsAt:endsAt?new Date(endsAt).toISOString():undefined,location,isPaid,price:isPaid?Number(price):undefined,imageUrl,notifyOnPublish,status})});onCreated()}catch(requestError){setError(requestError.message||'Event could not be created.')}finally{setSaving(false)}}
+ return <div className="event-modal-backdrop" role="dialog" aria-modal="true" onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose()}}><form className="event-modal" onSubmit={submit}><div className="event-modal-header"><div><h2>Create Event</h2><p>Add a new event to the GIC platform</p></div><button type="button" className="event-modal-close" aria-label="Close create event" onClick={onClose}><X size={18}/></button></div><div className="event-modal-body"><label className="modern-field full"><span>Title</span><input value={title} onChange={(event)=>setTitle(event.target.value)} placeholder="e.g. Sunday Service" required /></label><label className="modern-field full"><span>Description</span><textarea value={description} onChange={(event)=>setDescription(event.target.value)} placeholder="Share the key details members should know..." rows="4" /></label><label className="modern-field full"><span>Event image</span><span className="upload-zone">{imageUrl?<img src={imageUrl} alt="Event preview"/>:<><ImagePlus size={24}/><b>Upload image or drag & drop</b><small>PNG, JPG up to 5MB</small></>}<input type="file" accept="image/*" onChange={chooseImage}/></span></label><div className="modern-field-grid"><label className="modern-field"><span>Start date & time</span><input type="datetime-local" value={startsAt} onChange={(event)=>setStartsAt(event.target.value)} required /></label><label className="modern-field"><span>End date & time</span><input type="datetime-local" value={endsAt} onChange={(event)=>setEndsAt(event.target.value)} /></label></div><label className="modern-field full"><span>Location</span><select value={location} onChange={(event)=>setLocation(event.target.value)}><option value="">Choose a location</option><option>Main Auditorium</option><option>Conference Room</option><option>Fellowship Hall</option><option>Online</option><option value="__custom__">Custom location</option></select></label>{location==='__custom__'&&<label className="modern-field full"><span>Custom location</span><input onChange={(event)=>setLocation(event.target.value)} placeholder="Enter venue" required /></label>}<div className="modern-toggle-row"><label className="modern-toggle"><span><b>Paid event</b><small>Require payment to register</small></span><input type="checkbox" checked={isPaid} onChange={(event)=>setIsPaid(event.target.checked)}/><i/></label><label className="modern-toggle"><span><b>Send notification on publish</b><small>Notify members when live</small></span><input type="checkbox" checked={notifyOnPublish} onChange={(event)=>setNotifyOnPublish(event.target.checked)}/><i/></label></div>{isPaid&&<label className="modern-field full"><span>Ticket price</span><input type="number" min="0" value={price} onChange={(event)=>setPrice(event.target.value)} placeholder="0" required /></label>}<label className="modern-field full"><span>Status</span><select value={status} onChange={(event)=>setStatus(event.target.value)}><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="CANCELLED">Cancelled</option></select></label>{error&&<div className="event-form-error">{error}</div>}</div><div className="event-modal-footer"><button type="submit" className="btn primary wide" disabled={saving}>{saving?'Creating event...':'Create Event'}</button></div></form></div>
+}
+
+function ModernEvents(){
+ const [events,setEvents]=useState([])
+ const [query,setQuery]=useState('')
+ const [status,setStatus]=useState('All Statuses')
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const [createOpen,setCreateOpen]=useState(false)
+ const load=()=>fetchAdminApi('/api/admin/events').then(({events:items=[]})=>setEvents(items)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
+ useEffect(()=>{load()},[])
+ const created=()=>{setCreateOpen(false);setLoading(true);load()}
+ const visible=events.filter((event)=>event.title.toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||event.status===status))
+ return <Page title="Events" subtitle="Manage church events, registrations, forms, attendance, and reminders" action={<button className="btn primary" onClick={()=>setCreateOpen(true)}><Plus size={15}/> Create Event</button>}>{error&&<Card className="empty-message">Events are unavailable right now.</Card>}<Card className="table-card modern-events-card"><div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>PUBLISHED</option><option>DRAFT</option><option>CANCELLED</option></select><button className="tool"><CalendarDays size={14}/> Calendar</button></div>{loading?<div className="empty-message">Loading events...</div>:visible.length?<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.imageUrl?<img src={event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={18}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{new Date(event.startsAt).toLocaleString()} <span>•</span>{event.location||'Location to be announced'}</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':event.status==='CANCELLED'?'gray':'draft')}>{event.status}</span><ChevronRight size={16}/></Link>)}</div>:<div className="empty"><CalendarDays size={30}/><h2>No matching events</h2><p>Create or publish an event to see it here.</p></div>}{createOpen&&<CreateEventModal onClose={()=>setCreateOpen(false)} onCreated={created}/>}</Card></Page>
+}
+
+function ModernMemberDetails(){
+ const {id}=useParams()
+ const [member,setMember]=useState(null)
+ useEffect(()=>{fetchAdminApi('/api/admin/ministry-applications/members').then(({members=[]})=>setMember(members.find((item)=>item.id===id)||null)).catch(()=>setMember(null))},[id])
+ if(!member)return <Page title="Member"><Card className="empty-message">Loading live member data...</Card></Page>
+ const joined=member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'Not provided'
+ return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar modern-detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card className="modern-member-card"><div className="modern-member-head"><div className="modern-member-identity">{member.avatar?<img className="modern-member-avatar" src={member.avatar} alt=""/>:<div className="modern-member-avatar avatar-fallback">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><small>Member since {joined}</small></div></div></div><div className="modern-profile-section"><h3>Personal information</h3><div className="modern-profile-grid"><div><small>Phone</small><b>{member.phone||'—'}</b></div><div><small>Email</small><b>{member.email||'—'}</b></div><div><small>Centre</small><b>{member.center||'—'}</b></div><div><small>Birthday</small><b>{member.birthday||'—'}</b></div><div><small>Service time</small><b>{member.serviceTime||'—'}</b></div><div><small>Last seen</small><b>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</b></div><div><small>Membership status</small><b>{member.membershipStatus||'No'}</b></div></div></div><div className="modern-profile-section"><h3>Groups / Ministries</h3><div className="tag-list">{(member.ministries||'').split(',').map((item)=>item.trim()).filter(Boolean).map((item)=><span className="tag" key={item}>{item}</span>)}</div>{!member.ministries&&<span className="modern-empty-label">Not provided</span>}</div><div className="modern-member-actions"><button className="btn secondary" onClick={()=>window.alert('Profile editing will be connected to the member editor next.') }><Edit3 size={14}/> Edit Profile</button><Link className="btn primary" to="/messages/new"><Send size={14}/> Send Message</Link><Link className="btn secondary" to="/activity"><Activity size={14}/> View Activity</Link></div></Card></Page>
+}
+
 function EventsUnavailable(){
  const [createOpen,setCreateOpen]=useState(false)
  const [title,setTitle]=useState('')
@@ -442,9 +483,9 @@ function AdminGate({children}){
 export default function App(){
  return <AdminGate><Shell><Routes>
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
-  <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<LiveMemberDetails/>}/>
-  <Route path="/events" element={<EventsUnavailable/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
-  <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/>
+  <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<ModernMemberDetails/>}/>
+  <Route path="/events" element={<ModernEvents/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
+  <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/><Route path="/events/:id" element={<Placeholder title="Event details"/>}/>
   <Route path="/messages" element={<MessagesWithDelete/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<LiveActivityLog/>}/>
     <Route path="/ministry-applications" element={<MinistryApplications/>}/>

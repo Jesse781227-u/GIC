@@ -11,7 +11,7 @@ const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
 app.get("/", async (c) => c.json({ events: await db.query.events.findMany({ orderBy: [desc(events.startsAt)] }) }));
 app.post("/", async (c) => {
-  const parsed = z.object({ title: z.string().trim().min(1), description: z.string().optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime().optional(), location: z.string().optional(), imageUrl: z.string().optional(), isPaid: z.boolean().default(false), price: z.number().int().nonnegative().optional(), notifyOnPublish: z.boolean().default(false), status: z.enum(["DRAFT", "PUBLISHED"]).default("DRAFT") }).superRefine((value, ctx) => {
+  const parsed = z.object({ title: z.string().trim().min(1), description: z.string().optional(), startsAt: z.string().datetime(), endsAt: z.string().datetime().optional(), location: z.string().optional(), imageUrl: z.string().optional(), isPaid: z.boolean().default(false), price: z.number().int().nonnegative().optional(), notifyOnPublish: z.boolean().default(false), status: z.enum(["DRAFT", "PUBLISHED", "CANCELLED"]).default("DRAFT") }).superRefine((value, ctx) => {
     if (value.endsAt && new Date(value.endsAt) <= new Date(value.startsAt)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "End time must be after start time" });
     if (value.isPaid && value.price === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["price"], message: "Price is required for paid events" });
   }).safeParse(await c.req.json());
