@@ -258,11 +258,18 @@ function useAudioPlayer() {
 
 function NotificationProvider({ children }) {
   const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationPulse, setNotificationPulse] = useState(false)
+  const previousUnreadCount = useRef(0)
 
   const refreshUnreadCount = useCallback(async () => {
     try {
       const { count = 0 } = await fetchMemberApi('/api/notifications/unread-count')
       const nextValue = Number(count || 0)
+      if (previousUnreadCount.current === 0 && nextValue > 0) {
+        setNotificationPulse(true)
+        window.setTimeout(() => setNotificationPulse(false), 850)
+      }
+      previousUnreadCount.current = nextValue
       setUnreadCount(nextValue)
       localStorage.setItem('gic_notification_unread_count', String(nextValue))
       return nextValue
@@ -281,9 +288,10 @@ function NotificationProvider({ children }) {
 
   const value = useMemo(() => ({
     unreadCount,
+    notificationPulse,
     setUnreadCount,
     refreshUnreadCount,
-  }), [unreadCount, refreshUnreadCount])
+  }), [unreadCount, notificationPulse, refreshUnreadCount])
 
   return <notificationCountContext.Provider value={value}>{children}</notificationCountContext.Provider>
 }
@@ -770,12 +778,12 @@ function BottomNav({ active = 'home' }) {
 }
 
 function MemberShell({ children, active = 'home', title, backTo, lockProfile = false }) {
-  const { unreadCount } = useNotificationCount()
+  const { unreadCount, notificationPulse } = useNotificationCount()
   return <div className="member-page">
     <header className="mobile-header">
       {backTo && !lockProfile ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
       {title ? <strong>{title}</strong> : <Logo />}
-      {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className="bell-btn" title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
+      {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className={`bell-btn ${notificationPulse ? 'notification-pulse' : ''}`} title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
     <main className="mobile-main">{children}</main>
     <PersistentAudioPlayer />
