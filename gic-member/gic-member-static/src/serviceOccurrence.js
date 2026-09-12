@@ -53,4 +53,13 @@ export function formatServiceTime(date) {
   return new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(date)
 }
 
+export function formatServiceOccurrenceLabel(serviceDate, now = new Date()) {
+  const nowParts = getLagosParts(now)
+  const serviceParts = getLagosParts(serviceDate)
+  const nowDay = Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day)
+  const serviceDay = Date.UTC(serviceParts.year, serviceParts.month - 1, serviceParts.day)
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long' }).format(serviceDate)
+  return serviceDay === nowDay ? `This ${weekday}` : `Next ${weekday}`
+}
+
 export { TIME_ZONE }
