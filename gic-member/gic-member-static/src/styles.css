@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+@import './motion.css';
 
 .directory-list{display:flex;flex-direction:column;gap:14px}.directory-card{overflow:hidden;background:#fff;border:1px solid #eeeaf4;border-radius:14px;box-shadow:0 7px 19px rgba(46,25,87,.06)}.directory-card>img{display:block;width:100%;height:130px;object-fit:cover}.directory-card-body{padding:14px}.directory-card h2{font-size:16px;color:#30204c;margin:0 0 5px}.directory-card p{font-size:11px;line-height:1.5;color:#686274;margin:0 0 12px}.directory-requirements{display:flex;flex-direction:column;gap:4px;padding:10px;background:#faf8fd;border-radius:8px;margin-bottom:12px}.directory-requirements b{font-size:9px;color:#5b2c8a}.directory-requirements span{font-size:9px;line-height:1.45;color:#686274}
 
