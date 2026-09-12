@@ -666,6 +666,13 @@ function storeMemberSession(data) {
   localStorage.setItem('gic_auth_method', 'device_auth')
 }
 
+function clearStaleMemberSession() {
+  for (const key of ['gic_auth_token', 'gic_account_id', 'gic_auth_method', 'gic_profile_completed', 'gic_onboarding_profile', 'gic_onboarding_completed']) {
+    localStorage.removeItem(key)
+  }
+  document.cookie = 'gic_account_id=; Max-Age=0; Path=/; SameSite=Lax'
+}
+
 export async function performDeviceAuth(memberName) {
   const deviceId = getOrCreateDeviceId()
   const payload = {
@@ -850,10 +857,13 @@ function Welcome() {
     try {
       let profile
       if (localStorage.getItem('gic_auth_token')) {
-        profile = (await fetchMemberApi('/api/auth/profile')).profile
-      } else {
-        profile = (await performDeviceAuth()).member
-      }
+        try {
+          profile = (await fetchMemberApi('/api/auth/profile')).profile
+        } catch {
+          clearStaleMemberSession()
+          profile = (await performDeviceAuth()).member
+        }
+      } else profile = (await performDeviceAuth()).member
       navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
     } catch {
       setError('We could not sign you in. Please recover your account with your phone number.')

@@ -91,10 +91,8 @@ function Sidebar(){
      {item('/ministry-applications','Ministry applications',ClipboardList)}
      <button className={'nav-item nav-button '+(active('/events')?'active':'')} onClick={()=>setOpen({...open,events:!open.events})}><CalendarDays size={17}/><span>Events</span><ChevronDown size={15} className={open.events?'':'rotated'}/></button>
      {open.events && <div className="subnav">{item('/events','All Events',CalendarDays)}{item('/events/registrations','Registrations',ClipboardList)}</div>}
-     <button className={'nav-item nav-button '+(active('/messages')?'active':'')} onClick={()=>setOpen({...open,messages:!open.messages})}><MessageSquare size={17}/><span>Messages</span><ChevronDown size={15} className={open.messages?'':'rotated'}/></button>
-     {open.messages && <div className="subnav">{item('/messages','Messages',MessageSquare)}</div>}
-     <button className={'nav-item nav-button '+(active('/settings')?'active':'')} onClick={()=>setOpen({...open,settings:!open.settings})}><SettingsIcon size={17}/><span>Settings</span><ChevronDown size={15} className={open.settings?'':'rotated'}/></button>
-     {open.settings && <div className="subnav">{item('/settings','General',SettingsIcon)}</div>}
+     {item('/messages','Messages',MessageSquare)}
+     {item('/settings','Settings',SettingsIcon)}
    </div>
    <div className="other-label">OTHER</div>
    <div className="nav">{item('/activity','Activity Log',Activity)}</div>
@@ -288,7 +286,7 @@ function MessageDetail(){
 }
 
 function Settings(){
- const [section,setSection]=useState('Church Information')
+ const [section,setSection]=useState('General')
  const [saved,setSaved]=useState(false)
  const sections=[['General',SettingsIcon],['Church Information',Globe],['Branding',Edit3],['Permissions',Shield],['Security',Lock],['Integrations',Database],['Danger Zone',Trash2]]
  const saveChanges=()=>setSaved(true)
