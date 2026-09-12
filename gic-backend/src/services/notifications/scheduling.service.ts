@@ -1,8 +1,9 @@
 import cron from "node-cron";
 import { db } from "../../db/index.js";
-import { adminNotifications, serviceReminders } from "../../db/schema.js";
+import { adminNotifications, birthdayNotificationSends, members, serviceReminders } from "../../db/schema.js";
 import { notificationService } from "./notification.service.js";
 import { lte, and, eq } from "drizzle-orm";
+import { birthdayService, birthdayCelebration, getBirthdayDateKey, getLagosDateParts } from "./birthday.service.js";
 
 export class SchedulingService {
   private task: cron.ScheduledTask | null = null;
@@ -63,6 +64,41 @@ export class SchedulingService {
       } catch (error) {
         console.error(`Failed to process service reminder ${reminder.id}:`, error);
         await db.update(serviceReminders).set({ status: "failed", updatedAt: new Date() }).where(eq(serviceReminders.id, reminder.id));
+      }
+    }
+
+    await this.processBirthdays();
+  }
+
+  private async processBirthdays() {
+    const today = getLagosDateParts();
+    const birthdayDate = getBirthdayDateKey(today);
+    const candidates = await db.query.members.findMany();
+
+    for (const member of candidates) {
+      if (!birthdayCelebration(member, today)) continue;
+
+      let [claim] = await db.insert(birthdayNotificationSends).values({
+        memberId: member.id,
+        birthdayDate,
+        status: "processing",
+      }).onConflictDoNothing().returning();
+
+      // A pre-existing claim means this member has already been handled today.
+      // Never retry it here: retrying after a partial FCM response could send a
+      // duplicate birthday push to one of the member's devices.
+      if (!claim) continue;
+
+      try {
+        await birthdayService.sendToMember(member, birthdayDate);
+        await db.update(birthdayNotificationSends)
+          .set({ status: "sent", sentAt: new Date(), updatedAt: new Date() })
+          .where(eq(birthdayNotificationSends.id, claim.id));
+      } catch (error: any) {
+        console.error(`Failed to process birthday notification for ${member.id}:`, error);
+        await db.update(birthdayNotificationSends)
+          .set({ status: "failed", error: error?.message || "Unknown error", updatedAt: new Date() })
+          .where(eq(birthdayNotificationSends.id, claim.id));
       }
     }
   }
