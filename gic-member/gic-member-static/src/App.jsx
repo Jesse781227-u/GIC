@@ -1648,6 +1648,17 @@ function MinistriesPage() {
 }
 
 function MinistryDirectory() {
+  const [approvedMinistries, setApprovedMinistries] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
+
+  useEffect(() => {
+    fetchMemberApi('/api/ministry-applications')
+      .then((response) => {
+        const approved = response.applications?.filter((application) => application.status === 'APPROVED').map((application) => application.ministry) || []
+        setApprovedMinistries((current) => [...new Set([...current, ...approved])])
+      })
+      .catch(() => {})
+  }, [])
+
   return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
     <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
     <div className="directory-list">{ministries.map((ministry) => <article className="directory-card" key={ministry.id}>
@@ -1656,7 +1667,7 @@ function MinistryDirectory() {
         <h2>{ministry.title}</h2>
         <p>{ministry.desc}</p>
         <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
-        <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>
+        {approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
       </div>
     </article>)}</div>
   </MemberShell>
