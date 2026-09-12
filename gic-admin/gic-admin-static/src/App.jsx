@@ -202,6 +202,27 @@ function Messages({initialTab='All'}){
  return <Page title="Messages" subtitle="Create, schedule, target, and analyze push notifications" action={<Link className="btn primary" to="/messages/new"><Plus size={15}/> New Message</Link>}><Card className="table-card"><div className="tabs message-tabs">{['All','Scheduled','Drafts','Sent'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item==='All'?'All Messages':item}</button>)}</div><div className="message-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search messages..."/></div><select value={category} onChange={(event)=>setCategory(event.target.value)}><option>All Categories</option>{messageCategories.map((item)=><option key={item}>{item}</option>)}</select><button className="tool"><Filter size={14}/> Filters</button></div>{loading&&<div className="empty-message">Loading messages...</div>}{error&&<div className="empty-message">Messages are unavailable right now.</div>} {!loading&&!error&&<div className="message-list">{visible.map((m,i)=><Link className="message-row" to={`/messages/${m[0]}`} key={`${m[0]}-${i}`}><div className={'message-icon '+(m[3]==='Sent'?'sent':'')}>{m[3]==='Sent'?<Send size={16}/>:m[3]==='Scheduled'?<CalendarDays size={16}/>:<FileText size={16}/>}</div><div className="message-main"><b>{m[1]}</b><small>{m[2]}</small></div><span className={'badge '+(m[3]==='Sent'?'success':m[3]==='Scheduled'?'blue':'gray')}>{m[3]}</span><time>{m[4]}</time><small>To: {m[5]}</small><MoreHorizontal size={17}/></Link>)}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No messages match these filters.</div>}</Card></Page>
 }
 
+function MessagesWithDelete(){
+ const [tab,setTab]=useState('All')
+ const [items,setItems]=useState([])
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const load=()=>fetchAdminApi('/api/admin/notifications').then((data)=>setItems(data.items||[])).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
+ useEffect(()=>{load()},[])
+ const statusLabel=(item)=>['SENT','PARTIALLY_FAILED','FAILED'].includes(item.status)?'Sent':item.status==='SCHEDULED'?'Scheduled':'Draft'
+ const visible=items.filter((item)=>tab==='All'||statusLabel(item)===tab)
+ const remove=async(event,id)=>{
+  event.preventDefault()
+  event.stopPropagation()
+  if(!window.confirm('Delete this message and remove it from member accounts?')) return
+  try{
+   await fetchAdminApi(`/api/admin/notifications/${id}`,{method:'DELETE'})
+   setItems((current)=>current.filter((item)=>item.id!==id))
+  }catch(requestError){setError(requestError.message)}
+ }
+ return <Page title="Messages" subtitle="Create, schedule, target, and analyze push notifications" action={<Link className="btn primary" to="/messages/new"><Plus size={15}/> New Message</Link>}><Card className="table-card"><div className="tabs message-tabs">{['All','Scheduled','Draft','Sent'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item==='All'?'All Messages':item}</button>)}</div>{loading&&<div className="empty-message">Loading messages...</div>}{error&&<div className="empty-message">{error}</div>}{!loading&&!error&&<div className="message-list">{visible.map((item)=><div className="message-row" key={item.id}><Link className="message-row-link" to={`/messages/${item.id}`}><div className={'message-icon '+(statusLabel(item)==='Sent'?'sent':'')}>{statusLabel(item)==='Sent'?<Send size={16}/>:statusLabel(item)==='Scheduled'?<CalendarDays size={16}/>:<FileText size={16}/>}</div><div className="message-main"><b>{item.title}</b><small>{item.body}</small></div><span className={'badge '+(statusLabel(item)==='Sent'?'success':statusLabel(item)==='Scheduled'?'blue':'gray')}>{statusLabel(item)}</span><time>{item.sentAt||item.scheduledAt||item.createdAt||'—'}</time><small>To: {item.audience}</small></Link><button className="icon-btn delete-message" aria-label={`Delete ${item.title}`} onClick={(event)=>remove(event,item.id)}><Trash2 size={16}/></button></div>)}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No messages match this filter.</div>}</Card></Page>
+}
+
 function NewMessage(){
  const navigate=useNavigate()
  const [title,setTitle]=useState('')
@@ -424,7 +445,7 @@ export default function App(){
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<LiveMemberDetails/>}/>
   <Route path="/events" element={<EventsUnavailable/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
   <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/>
-  <Route path="/messages" element={<Messages/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/>
+  <Route path="/messages" element={<MessagesWithDelete/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<LiveActivityLog/>}/>
     <Route path="/ministry-applications" element={<MinistryApplications/>}/>
  </Routes></Shell></AdminGate>
