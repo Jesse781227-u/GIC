@@ -85,6 +85,20 @@ export const memberMergeLogs = pgTable("member_merge_logs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+export const activityLogs = pgTable("activity_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  actorId: text("actor_id").notNull(),
+  actorName: text("actor_name"),
+  action: text("action").notNull(),
+  target: text("target").notNull(),
+  targetId: text("target_id"),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  createdIdx: index("activity_logs_created_at_idx").on(t.createdAt),
+  actorIdx: index("activity_logs_actor_id_idx").on(t.actorId),
+}));
+
 export const ministryApplications = pgTable(
   "ministry_applications",
   {

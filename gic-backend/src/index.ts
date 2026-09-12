@@ -12,6 +12,7 @@ import { schedulingService } from "./services/notifications/scheduling.service.j
 import { ensureDatabaseSchema } from "./db/index.js";
 import adminEventsApp from "./routes/admin-events.js";
 import serviceRemindersApp from "./routes/service-reminders.js";
+import adminActivityApp from "./routes/admin-activity.js";
 
 const app = new Hono();
 
@@ -36,6 +37,7 @@ app.route("/api/push-devices", pushDevicesApp);
 app.route("/api/notifications", notificationsApp);
 app.route("/api/admin/notifications", adminNotificationsApp);
 app.route("/api/admin/events", adminEventsApp);
+app.route("/api/admin/activity", adminActivityApp);
 app.route("/api/service-reminders", serviceRemindersApp);
 
 const port = parseInt(process.env.PORT || "3001");

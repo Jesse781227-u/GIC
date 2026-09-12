@@ -5,6 +5,7 @@ import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { events } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
+import { recordActivity } from "../services/activity.service.js";
 
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
@@ -20,6 +21,7 @@ app.post("/", async (c) => {
     const notification = await notificationService.createDraft({ title: event.title, body: event.description || `${event.title} has been published.`, type: "EVENT_PUBLISHED", audience: "everyone", destinationUrl: "/events", createdBy: c.get("user").sub });
     await notificationService.sendNow(notification.id);
   }
+  await recordActivity({ actorId: c.get("user").sub, actorName: c.get("user").name, action: "Created event", target: event.title, targetId: event.id, metadata: { status: event.status } });
   return c.json({ event }, 201);
 });
 

@@ -4,7 +4,7 @@ import { SignJWT } from "jose";
 import { getJwtSecret } from "../middleware/auth.js";
 import { getFirebaseAuth } from "../lib/firebase.js";
 import { db } from "../db/index.js";
-import { members } from "../db/schema.js";
+import { members, pushDevices, notificationPreferences, notifications, notificationDeliveries, serviceReminders, ministryApplications } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
 
@@ -237,6 +237,24 @@ app.patch("/profile", async (c) => {
       profileComplete: true,
     },
   });
+});
+
+app.delete("/profile", async (c) => {
+  const user = c.get("user");
+  const member = await db.query.members.findFirst({ where: eq(members.id, user.sub) });
+  if (!member) return c.json({ error: "Account not found" }, 404);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(notificationDeliveries).where(eq(notificationDeliveries.memberId, user.sub));
+    await tx.delete(notifications).where(eq(notifications.memberId, user.sub));
+    await tx.delete(pushDevices).where(eq(pushDevices.memberId, user.sub));
+    await tx.delete(notificationPreferences).where(eq(notificationPreferences.memberId, user.sub));
+    await tx.delete(serviceReminders).where(eq(serviceReminders.memberId, user.sub));
+    await tx.delete(ministryApplications).where(eq(ministryApplications.memberId, user.sub));
+    await tx.delete(members).where(eq(members.id, user.sub));
+  });
+
+  return c.json({ success: true, deletedMemberId: user.sub });
 });
 
 export default app;

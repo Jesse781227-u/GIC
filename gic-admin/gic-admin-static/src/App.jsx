@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, CalendarDays, MessageSquare, Settings as SettingsIcon, FileText,
   Activity, ChevronDown, ChevronRight, Plus, Search, Filter, Download,
   MoreHorizontal, UserPlus, Send, Bell, CalendarPlus, ClipboardList,
-  FormInput, BarChart3, Shield, Database, Globe, Lock, CheckCircle2,
+  BarChart3, Shield, Database, Globe, Lock, CheckCircle2,
   Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut
 } from 'lucide-react'
 import {Link, Routes, Route, useLocation, useNavigate, useParams} from 'react-router-dom'
@@ -90,9 +90,9 @@ function Sidebar(){
      {item('/members','Members',Users)}
      {item('/ministry-applications','Ministry applications',ClipboardList)}
      <button className={'nav-item nav-button '+(active('/events')?'active':'')} onClick={()=>setOpen({...open,events:!open.events})}><CalendarDays size={17}/><span>Events</span><ChevronDown size={15} className={open.events?'':'rotated'}/></button>
-     {open.events && <div className="subnav">{item('/events','All Events',CalendarDays)}{item('/events/registrations','Registrations',ClipboardList)}{item('/events/forms','Forms',FormInput)}</div>}
+     {open.events && <div className="subnav">{item('/events','All Events',CalendarDays)}{item('/events/registrations','Registrations',ClipboardList)}</div>}
      <button className={'nav-item nav-button '+(active('/messages')?'active':'')} onClick={()=>setOpen({...open,messages:!open.messages})}><MessageSquare size={17}/><span>Messages</span><ChevronDown size={15} className={open.messages?'':'rotated'}/></button>
-     {open.messages && <div className="subnav">{item('/messages','All Messages',MessageSquare)}{item('/messages/scheduled','Scheduled',Clock3)}{item('/messages/drafts','Drafts',FileText)}{item('/messages/sent','Sent',Send)}</div>}
+     {open.messages && <div className="subnav">{item('/messages','Messages',MessageSquare)}</div>}
      <button className={'nav-item nav-button '+(active('/settings')?'active':'')} onClick={()=>setOpen({...open,settings:!open.settings})}><SettingsIcon size={17}/><span>Settings</span><ChevronDown size={15} className={open.settings?'':'rotated'}/></button>
      {open.settings && <div className="subnav">{item('/settings','General',SettingsIcon)}</div>}
    </div>
@@ -159,8 +159,8 @@ function MapPinIcon(){return <span>⌖</span>}
 
 function EventDetail(){
  const [tab,setTab]=useState('Overview')
- const tabs=['Overview','Registrations','Forms','Attendance','Reminders']
- return <Page title="Youth Conference 2026" subtitle="Manage this event"><div className="detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><div><button className="btn secondary"><Edit3 size={14}/> Edit Event</button><button className="btn primary"><Send size={14}/> Send Notification</button></div></div><Card><div className="event-detail-top"><img src={events[0][5]}/><div><span className="badge success">Published</span><h2>Youth Conference 2026</h2><p><CalendarDays size={14}/> Oct 24, 2026 • 10:00 AM</p><p>⌖ Main Auditorium</p><p>432 registrations · Capacity 800</p></div></div><div className="tabs big">{tabs.map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}</div>{tab==='Overview'&&<><div className="event-stats"><Stat label="Registrations" value="432" change="↑ 18% this week" icon={ClipboardList}/><Stat label="Checked In" value="287" change="66% attendance" icon={CheckCircle2} type="green"/><Stat label="Capacity" value="800" change="54% filled" icon={Users} type="orange"/></div><div className="event-logistics"><div><b>Free bus logistics</b><span>{eventOperations.logistics.notes}</span></div><div><small>Assembly point</small><b>{eventOperations.logistics.assemblyPoint}</b></div><div><small>Assembly time</small><b>{eventOperations.logistics.assemblyTime}</b></div><div><small>Transport capacity</small><b>{eventOperations.logistics.buses} buses · {eventOperations.logistics.busSeats} seats</b></div></div></>}{tab==='Registrations'&&<EventRegistrations embedded/>}{tab==='Forms'&&<EventForms embedded/>}{tab==='Attendance'&&<Attendance embedded/>}{tab==='Reminders'&&<Reminders embedded/>}</Card></Page>
+ const tabs=['Overview','Registrations','Attendance','Reminders']
+ return <Page title="Youth Conference 2026" subtitle="Manage this event"><div className="detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><div><button className="btn secondary"><Edit3 size={14}/> Edit Event</button><button className="btn primary"><Send size={14}/> Send Notification</button></div></div><Card><div className="event-detail-top"><img src={events[0][5]}/><div><span className="badge success">Published</span><h2>Youth Conference 2026</h2><p><CalendarDays size={14}/> Oct 24, 2026 • 10:00 AM</p><p>⌖ Main Auditorium</p><p>432 registrations · Capacity 800</p></div></div><div className="tabs big">{tabs.map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}</div>{tab==='Overview'&&<><div className="event-stats"><Stat label="Registrations" value="432" change="↑ 18% this week" icon={ClipboardList}/><Stat label="Checked In" value="287" change="66% attendance" icon={CheckCircle2} type="green"/><Stat label="Capacity" value="800" change="54% filled" icon={Users} type="orange"/></div><div className="event-logistics"><div><b>Free bus logistics</b><span>{eventOperations.logistics.notes}</span></div><div><small>Assembly point</small><b>{eventOperations.logistics.assemblyPoint}</b></div><div><small>Assembly time</small><b>{eventOperations.logistics.assemblyTime}</b></div><div><small>Transport capacity</small><b>{eventOperations.logistics.buses} buses · {eventOperations.logistics.busSeats} seats</b></div></div></>}{tab==='Registrations'&&<EventRegistrations embedded/>}{tab==='Attendance'&&<Attendance embedded/>}{tab==='Reminders'&&<Reminders embedded/>}</Card></Page>
 }
 
 function EventRegistrations({embedded=false}){
@@ -319,6 +319,14 @@ function ActivityLog(){
 
 function Placeholder({title}){return <Page title={title}><Card className="empty"><Activity size={30}/><h2>{title}</h2><p>This static screen is included as a navigation placeholder and is ready for backend integration.</p></Card></Page>}
 
+function LiveActivityLog(){
+ const [items,setItems]=useState([])
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ useEffect(()=>{fetchAdminApi('/api/admin/activity').then(({items:records=[]})=>setItems(records)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))},[])
+ return <Page title="Activity Log" subtitle="Recorded administrator and member actions"><Card className="table-card">{loading&&<div className="empty-message">Loading activity...</div>}{error&&<div className="empty-message">Activity log is unavailable right now.</div>}{!loading&&!error&&!items.length&&<div className="empty-message">No activity has been recorded yet.</div>}{!loading&&!error&&items.length>0&&<div className="activity-list">{items.map((item)=><div className="activity-row" key={item.id}><div className="activity-type"><Activity size={14}/></div><div className="activity-main"><b>{item.actorName||item.actorId} {item.action.toLowerCase()}</b><small>{item.target}</small></div><span className="badge gray">Recorded</span><time>{item.createdAt?new Date(item.createdAt).toLocaleString():'—'}</time></div>)}</div>}</Card></Page>
+}
+
 function EventsUnavailable(){
  const [createOpen,setCreateOpen]=useState(false)
  const [title,setTitle]=useState('')
@@ -373,7 +381,7 @@ function LiveDashboard(){
  const [summary,setSummary]=useState({members:0,applications:0,messages:0,sentMessages:0,upcomingEvents:0,pendingApplications:0})
  const [error,setError]=useState('')
  useEffect(()=>{Promise.all([fetchAdminApi('/api/admin/ministry-applications/members'),fetchAdminApi('/api/admin/ministry-applications'),fetchAdminApi('/api/admin/notifications'),fetchAdminApi('/api/admin/events/summary')]).then(([memberData,applicationData,messageData,eventData])=>setSummary({members:memberData.members?.length||0,applications:applicationData.applications?.length||0,messages:messageData.items?.length||0,sentMessages:(messageData.items||[]).filter((item)=>['SENT','PARTIALLY_FAILED','FAILED'].includes(item.status)).length,upcomingEvents:eventData.upcomingEvents||0,pendingApplications:(applicationData.applications||[]).filter((item)=>item.status==='PENDING').length})).catch((requestError)=>setError(requestError.message))},[])
- return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministry-applications" label="Ministry applications" value={summary.applications} change={`${summary.pendingApplications} pending`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages/sent" label="Sent messages" value={summary.sentMessages} change="Open sent messages" icon={Send} type="purple"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
+ return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministry-applications" label="Ministry applications" value={summary.applications} change={`${summary.pendingApplications} pending`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
 }
 
 function AdminLogin(){
@@ -417,9 +425,9 @@ export default function App(){
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<LiveMemberDetails/>}/>
   <Route path="/events" element={<EventsUnavailable/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
-  <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/><Route path="/events/forms" element={<Placeholder title="Event forms"/>}/>
-  <Route path="/messages" element={<Messages/>}/><Route path="/messages/1" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/><Route path="/messages/scheduled" element={<Messages initialTab="Scheduled"/>}/><Route path="/messages/drafts" element={<Messages initialTab="Drafts"/>}/><Route path="/messages/sent" element={<Messages initialTab="Sent"/>}/><Route path="/messages/templates" element={<Placeholder title="Message Templates"/>}/>
-  <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<Placeholder title="Activity log"/>}/>
+  <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/>
+  <Route path="/messages" element={<Messages/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/>
+  <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<LiveActivityLog/>}/>
     <Route path="/ministry-applications" element={<MinistryApplications/>}/>
  </Routes></Shell></AdminGate>
 }

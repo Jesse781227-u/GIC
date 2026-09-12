@@ -5,6 +5,7 @@ import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { ministryApplications } from "../db/schema.js";
 import { members, memberMergeLogs } from "../db/schema.js";
+import { recordActivity } from "../services/activity.service.js";
 
 const memberApp = new Hono();
 memberApp.use("*", authMiddleware);
@@ -73,6 +74,7 @@ adminApp.patch("/:id", async (c) => {
       if (!updatedMember) return c.json({ error: "Member could not be updated" }, 500);
     }
   }
+  await recordActivity({ actorId: user.sub, actorName: user.name, action: parsed.data.status === "APPROVED" ? "Approved ministry application" : "Declined ministry application", target: current.ministry, targetId: current.memberId, metadata: { applicationId: current.id } });
   return c.json({ application });
 });
 
