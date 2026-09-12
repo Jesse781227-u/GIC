@@ -204,6 +204,14 @@ async function getMixlrData(forceRefresh = false) {
   return mixlrRequestPromise
 }
 
+function formatRecordingDate(value) {
+  const match = String(value || '').match(/(\d{1,2})(?:st|nd|rd|th)?[\s,]+([A-Za-z]+)[\s,]+(\d{4})/i)
+  if (!match) return '10th September 2026'
+  const day = Number(match[1])
+  const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th')
+  return `${day}${suffix} ${match[2]} ${match[3]}`
+}
+
 function readPersistedServiceCache() {
   try {
     const raw = localStorage.getItem(SERVICE_CACHE_KEY)
@@ -284,6 +292,7 @@ function AudioPlayerProvider({ children }) {
   const audioRef = useRef(null)
   const [streamUrl, setStreamUrl] = useState('https://globalimpactng.mixlr.com')
   const [title, setTitle] = useState('Global Impact Church')
+  const [recordingDate, setRecordingDate] = useState('10th September 2026')
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -303,6 +312,7 @@ function AudioPlayerProvider({ children }) {
     const safeUrl = nextUrl || streamUrl
     setStreamUrl(safeUrl)
     setTitle(nextTitle || title)
+    setRecordingDate(options.recordingDate || recordingDate)
     setLoading(Boolean(options.loading) || Boolean(nextUrl))
     setError('')
     setMinimized(Boolean(options.minimized))
@@ -310,7 +320,7 @@ function AudioPlayerProvider({ children }) {
     if (audio && safeUrl && audio.src !== safeUrl) {
       audio.src = safeUrl
     }
-  }, [ensureAudio, streamUrl, title])
+  }, [ensureAudio, recordingDate, streamUrl, title])
 
   const pause = useCallback(() => {
     const audio = ensureAudio()
@@ -447,6 +457,7 @@ function AudioPlayerProvider({ children }) {
     volume,
     streamUrl,
     title,
+    recordingDate,
     togglePlayback,
     setStream,
     pause,
@@ -458,7 +469,7 @@ function AudioPlayerProvider({ children }) {
     durationSeconds,
     seekable,
     seek,
-  }), [close, durationSeconds, elapsedSeconds, error, loading, minimized, pause, playing, resume, seek, seekable, setMinimized, setStream, stop, streamUrl, title, togglePlayback, volume])
+  }), [close, durationSeconds, elapsedSeconds, error, loading, minimized, pause, playing, recordingDate, resume, seek, seekable, setMinimized, setStream, stop, streamUrl, title, togglePlayback, volume])
 
   return <audioPlayerContext.Provider value={value}>
     {children}
@@ -469,14 +480,14 @@ function AudioPlayerProvider({ children }) {
 function PersistentAudioPlayer({ embedded = false }) {
   const location = useLocation()
   if (location.pathname === '/home' && !embedded) return null
-  const { playing, loading, minimized, setMinimized, error, title, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
+  const { playing, loading, minimized, error, title, recordingDate, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
   const formatTime = (seconds) => {
     const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
     return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`
   }
   if (!title) return null
   return <aside className={`persistent-audio-player ${embedded ? 'is-embedded' : ''} ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
-    <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? 'Playing live audio' : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button></div></div>
+    <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? recordingDate : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button></div></div>
     {!minimized && <div className="persistent-audio-toolbar"><div className="audio-seek-row"><span>{formatTime(elapsedSeconds)}</span><input type="range" min="0" max={durationSeconds || Math.max(elapsedSeconds, 1)} step="1" value={Math.min(elapsedSeconds, durationSeconds || Math.max(elapsedSeconds, 1))} onChange={(event) => seek(event.target.value)} disabled={!seekable} aria-label={seekable ? 'Seek audio' : 'Seeking unavailable for this live stream'} /><span>{durationSeconds ? formatTime(durationSeconds) : 'LIVE'}</span></div><small className="audio-seek-note">{seekable ? 'Seek within the available playback window' : 'Live stream · seeking unavailable'}</small><label className="volume-control" title="Volume"><Volume2 size={15} /><span>Volume</span><input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label></div>}
   </aside>
 }
