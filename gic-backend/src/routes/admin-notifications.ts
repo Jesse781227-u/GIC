@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import { adminNotifications } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
 import { eq, desc } from "drizzle-orm";
+import { recordActivity } from "../services/activity.service.js";
 
 const app = new Hono();
 
@@ -47,6 +48,8 @@ app.post("/", async (c) => {
     createdBy: user.sub,
   });
 
+  await recordActivity({ actorId: user.sub, actorName: user.name, action: "Created message", target: parsed.data.title, targetId: result.id, metadata: { audience: parsed.data.audience, scheduledAt: parsed.data.scheduledAt || null } });
+
   return c.json({ id: result.id, status: result.status }, 201);
 });
 
@@ -73,6 +76,9 @@ app.post("/:id/send", async (c) => {
   const id = c.req.param("id");
   try {
     await notificationService.sendNow(id);
+    const user = c.get("user");
+    const notification = await db.query.adminNotifications.findFirst({ where: eq(adminNotifications.id, id) });
+    if (notification) await recordActivity({ actorId: user.sub, actorName: user.name, action: "Sent message", target: notification.title, targetId: id, metadata: { audience: notification.audience } });
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 400);

@@ -1,36 +1,45 @@
-import * as admin from "firebase-admin";
+import { App, cert, getApp, getApps, initializeApp, ServiceAccount } from "firebase-admin/app";
+import { getAuth as getAdminAuth } from "firebase-admin/auth";
+import { getMessaging as getAdminMessaging } from "firebase-admin/messaging";
 
-let initialized = false;
-
-export function getFirebaseApp(): admin.app.App {
-  if (initialized) return admin.app();
+export function getFirebaseApp(): App {
+  if (getApps().length) return getApp();
 
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (!serviceAccountJson) {
     throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON environment variable is required");
   }
 
-  let serviceAccount: admin.ServiceAccount;
+  let serviceAccount: ServiceAccount;
   try {
-    serviceAccount = JSON.parse(serviceAccountJson) as admin.ServiceAccount;
+    const parsed = JSON.parse(serviceAccountJson);
+    const raw = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+    serviceAccount = {
+      projectId: raw.projectId || raw.project_id,
+      clientEmail: raw.clientEmail || raw.client_email,
+      privateKey: raw.privateKey || raw.private_key,
+    };
   } catch {
     throw new Error(
       "FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON. Stringify the service account file contents."
     );
   }
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  if (!serviceAccount?.projectId || !serviceAccount?.clientEmail || !serviceAccount?.privateKey) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON must contain project_id/projectId, client_email/clientEmail, and private_key/privateKey");
+  }
 
-  initialized = true;
-  return admin.app();
+  serviceAccount.privateKey = serviceAccount.privateKey.replace(/\\n/g, "\n");
+
+  return initializeApp({ credential: cert(serviceAccount) });
 }
 
-export function getMessaging(): admin.messaging.Messaging {
-  return getFirebaseApp().messaging();
+export function getMessaging() {
+  getFirebaseApp();
+  return getAdminMessaging();
 }
 
-export function getFirebaseAuth(): admin.auth.Auth {
-  return getFirebaseApp().auth();
+export function getFirebaseAuth() {
+  getFirebaseApp();
+  return getAdminAuth();
 }

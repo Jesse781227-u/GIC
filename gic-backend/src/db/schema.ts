@@ -8,7 +8,9 @@ import {
   pgEnum,
   index,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -69,7 +71,33 @@ export const members = pgTable("members", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  phoneIdentityUnique: uniqueIndex("members_phone_identity_unique").on(sql`regexp_replace(${t.phone}, '[^0-9]', '', 'g')`).where(sql`${t.phone} IS NOT NULL AND btrim(${t.phone}) <> ''`),
+  emailIdentityUnique: uniqueIndex("members_email_identity_unique").on(sql`lower(btrim(${t.email}))`).where(sql`${t.email} IS NOT NULL AND btrim(${t.email}) <> ''`),
+}));
+
+export const memberMergeLogs = pgTable("member_merge_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  canonicalMemberId: text("canonical_member_id").notNull(),
+  mergedMemberId: text("merged_member_id").notNull(),
+  reason: text("reason").notNull(),
+  differences: text("differences"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
+
+export const activityLogs = pgTable("activity_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  actorId: text("actor_id").notNull(),
+  actorName: text("actor_name"),
+  action: text("action").notNull(),
+  target: text("target").notNull(),
+  targetId: text("target_id"),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  createdIdx: index("activity_logs_created_at_idx").on(t.createdAt),
+  actorIdx: index("activity_logs_actor_id_idx").on(t.actorId),
+}));
 
 export const ministryApplications = pgTable(
   "ministry_applications",
@@ -96,7 +124,12 @@ export const events = pgTable("events", {
   title: text("title").notNull(),
   description: text("description"),
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
   location: text("location"),
+  imageUrl: text("image_url"),
+  isPaid: boolean("is_paid").notNull().default(false),
+  price: integer("price"),
+  notifyOnPublish: boolean("notify_on_publish").notNull().default(false),
   status: text("status").notNull().default("DRAFT"),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),

@@ -4,7 +4,7 @@ import { SignJWT } from "jose";
 import { getJwtSecret } from "../middleware/auth.js";
 import { getFirebaseAuth } from "../lib/firebase.js";
 import { db } from "../db/index.js";
-import { members } from "../db/schema.js";
+import { members, pushDevices, notificationPreferences, notifications, notificationDeliveries, serviceReminders, ministryApplications } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
 
@@ -34,6 +34,10 @@ const profileSchema = z.object({
 
 function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
 }
 
 async function issueMemberToken(member: typeof members.$inferSelect, platform = "web") {
@@ -185,6 +189,15 @@ app.patch("/profile", async (c) => {
   const parsed = profileSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message || "Invalid profile" }, 400);
 
+  const submittedPhone = normalizePhone(parsed.data.phone);
+  const submittedEmail = parsed.data.email ? normalizeEmail(parsed.data.email) : "";
+  const candidates = await db.query.members.findMany();
+  const duplicate = candidates.find((candidate) => candidate.id !== c.get("user").sub && (
+    (candidate.phone && normalizePhone(candidate.phone) === submittedPhone) ||
+    (submittedEmail && candidate.email && normalizeEmail(candidate.email) === submittedEmail)
+  ));
+  if (duplicate) return c.json({ error: "A member account already exists for this phone number or email address", memberId: duplicate.id }, 409);
+
   const [member] = await db.update(members)
     .set({
       displayName: parsed.data.name,
@@ -224,6 +237,24 @@ app.patch("/profile", async (c) => {
       profileComplete: true,
     },
   });
+});
+
+app.delete("/profile", async (c) => {
+  const user = c.get("user");
+  const member = await db.query.members.findFirst({ where: eq(members.id, user.sub) });
+  if (!member) return c.json({ error: "Account not found" }, 404);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(notificationDeliveries).where(eq(notificationDeliveries.memberId, user.sub));
+    await tx.delete(notifications).where(eq(notifications.memberId, user.sub));
+    await tx.delete(pushDevices).where(eq(pushDevices.memberId, user.sub));
+    await tx.delete(notificationPreferences).where(eq(notificationPreferences.memberId, user.sub));
+    await tx.delete(serviceReminders).where(eq(serviceReminders.memberId, user.sub));
+    await tx.delete(ministryApplications).where(eq(ministryApplications.memberId, user.sub));
+    await tx.delete(members).where(eq(members.id, user.sub));
+  });
+
+  return c.json({ success: true, deletedMemberId: user.sub });
 });
 
 export default app;

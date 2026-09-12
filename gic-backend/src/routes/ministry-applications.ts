@@ -4,7 +4,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { ministryApplications } from "../db/schema.js";
-import { members } from "../db/schema.js";
+import { members, memberMergeLogs } from "../db/schema.js";
+import { recordActivity } from "../services/activity.service.js";
 
 const memberApp = new Hono();
 memberApp.use("*", authMiddleware);
@@ -45,7 +46,18 @@ adminApp.get("/members", async (c) => {
   const records = await db.query.members.findMany({ orderBy: (table, { desc }) => [desc(table.createdAt)] });
   return c.json({ members: records });
 });
-adminApp.get("/", async (c) => c.json({ applications: await db.query.ministryApplications.findMany({ orderBy: [desc(ministryApplications.createdAt)] }) }));
+adminApp.get("/", async (c) => {
+  const [applications, memberRecords] = await Promise.all([
+    db.query.ministryApplications.findMany({ orderBy: [desc(ministryApplications.createdAt)] }),
+    db.query.members.findMany(),
+  ]);
+  const byId = new Map(memberRecords.map((member) => [member.id, member]));
+  return c.json({ applications: applications.map((application) => {
+    const member = byId.get(application.memberId);
+    return { ...application, applicant: member ? { id: member.id, name: member.displayName, phone: member.phone, email: member.email, avatar: member.avatar, ministries: member.ministries, center: member.center, joinedMonth: member.joinedMonth, joinedYear: member.joinedYear } : null };
+  }) });
+});
+adminApp.get("/members/merge-logs", async (c) => c.json({ merges: await db.query.memberMergeLogs.findMany({ orderBy: [desc(memberMergeLogs.createdAt)] }) }));
 adminApp.patch("/:id", async (c) => {
   const parsed = z.object({ status: z.enum(["PENDING", "APPROVED", "DECLINED"]) }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Invalid status" }, 400);
@@ -62,6 +74,7 @@ adminApp.patch("/:id", async (c) => {
       if (!updatedMember) return c.json({ error: "Member could not be updated" }, 500);
     }
   }
+  await recordActivity({ actorId: user.sub, actorName: user.name, action: parsed.data.status === "APPROVED" ? "Approved ministry application" : "Declined ministry application", target: current.ministry, targetId: current.memberId, metadata: { applicationId: current.id } });
   return c.json({ application });
 });
 

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, CalendarDays, MessageSquare, Settings as SettingsIcon, FileText,
   Activity, ChevronDown, ChevronRight, Plus, Search, Filter, Download,
   MoreHorizontal, UserPlus, Send, Bell, CalendarPlus, ClipboardList,
-  FormInput, BarChart3, Shield, Database, Globe, Lock, CheckCircle2,
+  BarChart3, Shield, Database, Globe, Lock, CheckCircle2,
   Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut
 } from 'lucide-react'
 import {Link, Routes, Route, useLocation, useNavigate, useParams} from 'react-router-dom'
@@ -90,11 +90,9 @@ function Sidebar(){
      {item('/members','Members',Users)}
      {item('/ministry-applications','Ministry applications',ClipboardList)}
      <button className={'nav-item nav-button '+(active('/events')?'active':'')} onClick={()=>setOpen({...open,events:!open.events})}><CalendarDays size={17}/><span>Events</span><ChevronDown size={15} className={open.events?'':'rotated'}/></button>
-     {open.events && <div className="subnav">{item('/events','All Events',CalendarDays)}{item('/events/registrations','Registrations',ClipboardList)}{item('/events/forms','Forms',FormInput)}</div>}
-     <button className={'nav-item nav-button '+(active('/messages')?'active':'')} onClick={()=>setOpen({...open,messages:!open.messages})}><MessageSquare size={17}/><span>Messages</span><ChevronDown size={15} className={open.messages?'':'rotated'}/></button>
-     {open.messages && <div className="subnav">{item('/messages','All Messages',MessageSquare)}{item('/messages/scheduled','Scheduled',Clock3)}{item('/messages/drafts','Drafts',FileText)}{item('/messages/sent','Sent',Send)}</div>}
-     <button className={'nav-item nav-button '+(active('/settings')?'active':'')} onClick={()=>setOpen({...open,settings:!open.settings})}><SettingsIcon size={17}/><span>Settings</span><ChevronDown size={15} className={open.settings?'':'rotated'}/></button>
-     {open.settings && <div className="subnav">{item('/settings','General',SettingsIcon)}</div>}
+     {open.events && <div className="subnav">{item('/events','All Events',CalendarDays)}{item('/events/registrations','Registrations',ClipboardList)}</div>}
+     {item('/messages','Messages',MessageSquare)}
+     {item('/settings','Settings',SettingsIcon)}
    </div>
    <div className="other-label">OTHER</div>
    <div className="nav">{item('/activity','Activity Log',Activity)}</div>
@@ -110,7 +108,7 @@ function Page({title,subtitle,action,children}){
  return <main className="page"><div className="page-head"><div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>{children}</main>
 }
 function Card({children,className=''}){return <section className={'card '+className}>{children}</section>}
-function Stat({label,value,change,icon:Icon,type='purple'}){return <Card className="stat"><div className={'stat-icon '+type}><Icon size={18}/></div><span>{label}</span><strong>{value}</strong><small className={change?.startsWith('↑')?'up':''}>{change}</small></Card>}
+function Stat({label,value,change,icon:Icon,type='purple',to}){const content=<><div className={'stat-icon '+type}><Icon size={18}/></div><span>{label}</span><strong>{value}</strong><small className={change?.startsWith('↑')?'up':''}>{change}</small></>;return to?<Link className="stat card" to={to}>{content}</Link>:<Card className="stat">{content}</Card>}
 
 function Dashboard(){
  const [quickOpen,setQuickOpen]=useState(false)
@@ -159,8 +157,8 @@ function MapPinIcon(){return <span>⌖</span>}
 
 function EventDetail(){
  const [tab,setTab]=useState('Overview')
- const tabs=['Overview','Registrations','Forms','Attendance','Reminders']
- return <Page title="Youth Conference 2026" subtitle="Manage this event"><div className="detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><div><button className="btn secondary"><Edit3 size={14}/> Edit Event</button><button className="btn primary"><Send size={14}/> Send Notification</button></div></div><Card><div className="event-detail-top"><img src={events[0][5]}/><div><span className="badge success">Published</span><h2>Youth Conference 2026</h2><p><CalendarDays size={14}/> Oct 24, 2026 • 10:00 AM</p><p>⌖ Main Auditorium</p><p>432 registrations · Capacity 800</p></div></div><div className="tabs big">{tabs.map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}</div>{tab==='Overview'&&<><div className="event-stats"><Stat label="Registrations" value="432" change="↑ 18% this week" icon={ClipboardList}/><Stat label="Checked In" value="287" change="66% attendance" icon={CheckCircle2} type="green"/><Stat label="Capacity" value="800" change="54% filled" icon={Users} type="orange"/></div><div className="event-logistics"><div><b>Free bus logistics</b><span>{eventOperations.logistics.notes}</span></div><div><small>Assembly point</small><b>{eventOperations.logistics.assemblyPoint}</b></div><div><small>Assembly time</small><b>{eventOperations.logistics.assemblyTime}</b></div><div><small>Transport capacity</small><b>{eventOperations.logistics.buses} buses · {eventOperations.logistics.busSeats} seats</b></div></div></>}{tab==='Registrations'&&<EventRegistrations embedded/>}{tab==='Forms'&&<EventForms embedded/>}{tab==='Attendance'&&<Attendance embedded/>}{tab==='Reminders'&&<Reminders embedded/>}</Card></Page>
+ const tabs=['Overview','Registrations','Attendance','Reminders']
+ return <Page title="Youth Conference 2026" subtitle="Manage this event"><div className="detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><div><button className="btn secondary"><Edit3 size={14}/> Edit Event</button><button className="btn primary"><Send size={14}/> Send Notification</button></div></div><Card><div className="event-detail-top"><img src={events[0][5]}/><div><span className="badge success">Published</span><h2>Youth Conference 2026</h2><p><CalendarDays size={14}/> Oct 24, 2026 • 10:00 AM</p><p>⌖ Main Auditorium</p><p>432 registrations · Capacity 800</p></div></div><div className="tabs big">{tabs.map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}</div>{tab==='Overview'&&<><div className="event-stats"><Stat label="Registrations" value="432" change="↑ 18% this week" icon={ClipboardList}/><Stat label="Checked In" value="287" change="66% attendance" icon={CheckCircle2} type="green"/><Stat label="Capacity" value="800" change="54% filled" icon={Users} type="orange"/></div><div className="event-logistics"><div><b>Free bus logistics</b><span>{eventOperations.logistics.notes}</span></div><div><small>Assembly point</small><b>{eventOperations.logistics.assemblyPoint}</b></div><div><small>Assembly time</small><b>{eventOperations.logistics.assemblyTime}</b></div><div><small>Transport capacity</small><b>{eventOperations.logistics.buses} buses · {eventOperations.logistics.busSeats} seats</b></div></div></>}{tab==='Registrations'&&<EventRegistrations embedded/>}{tab==='Attendance'&&<Attendance embedded/>}{tab==='Reminders'&&<Reminders embedded/>}</Card></Page>
 }
 
 function EventRegistrations({embedded=false}){
@@ -192,7 +190,7 @@ function Messages({initialTab='All'}){
    item.id,
     item.title,
     item.body,
-    item.status==='SENT'?'Sent':item.status==='SCHEDULED'?'Scheduled':item.status==='DRAFT'?'Draft':item.status,
+    ['SENT','PARTIALLY_FAILED','FAILED'].includes(item.status)?'Sent':item.status==='SCHEDULED'?'Scheduled':item.status==='DRAFT'?'Draft':item.status,
     item.sentAt||item.scheduledAt||item.createdAt||'—',
     item.audience,
    ])))
@@ -214,6 +212,7 @@ function NewMessage(){
  const [destinationType,setDestinationType]=useState('internal')
  const [externalDestination,setExternalDestination]=useState('')
  const [delivery,setDelivery]=useState('now')
+ const [scheduledAt,setScheduledAt]=useState(()=>new Date(Date.now()+60*60*1000).toISOString().slice(0,16))
  const [sent,setSent]=useState(false)
  const [memberSearch,setMemberSearch]=useState('')
  const [segment,setSegment]=useState('Active members')
@@ -223,6 +222,17 @@ function NewMessage(){
  const [group,setGroup]=useState('All groups / ministries')
  const [centre,setCentre]=useState('All centres')
  const [push,setPush]=useState('Push-enabled members')
+ useEffect(()=>{
+  if(delivery!=='schedule') return
+  const dateInput=document.querySelector('input[type="date"]')
+  const timeInput=document.querySelector('input[type="time"]')
+  if(!dateInput||!timeInput) return
+  dateInput.value=scheduledAt.slice(0,10)
+  timeInput.value=scheduledAt.slice(11,16)
+  const update=()=>setScheduledAt(`${dateInput.value}T${timeInput.value}`)
+  dateInput.addEventListener('change',update); timeInput.addEventListener('change',update)
+  return ()=>{dateInput.removeEventListener('change',update);timeInput.removeEventListener('change',update)}
+ },[delivery,scheduledAt])
  const destinationOption=messageDestinations.find((item)=>item[1]===destination)
  const destinationPreview=destinationType==='external'?externalDestination||'No external URL':destinationOption?.[1]||'No in-app destination'
  useEffect(()=>{if(destination==='__external__'){const pasted=window.prompt('Paste the external destination URL');if(pasted){setDestinationType('external');setExternalDestination(pasted)}else setDestination('')}},[destination])
@@ -233,10 +243,10 @@ function NewMessage(){
    const targetAudience=audience==='Everyone'?'everyone':audience==='Event registrants'?'event_registrants':audience==='Selected members'?'members':'members'
   const destinationUrl=destinationType==='external'?externalDestination.trim():destination
   if(destinationUrl&&destinationType==='external'&&!/^https?:\/\//i.test(destinationUrl)){setSent('External links must start with http:// or https://');return}
-  const created=await fetchAdminApi('/api/admin/notifications',{method:'POST',body:JSON.stringify({title:title.trim(),body:body.trim(),type,audience:targetAudience,destinationUrl:destinationUrl||undefined})})
+  const created=await fetchAdminApi('/api/admin/notifications',{method:'POST',body:JSON.stringify({title:title.trim(),body:body.trim(),type,audience:targetAudience,destinationUrl:destinationUrl||undefined,scheduledAt:result==='Scheduled'&&scheduledAt?new Date(scheduledAt).toISOString():undefined})})
    if(result==='Sent') await fetchAdminApi(`/api/admin/notifications/${created.id}/send`,{method:'POST'})
-   setSent(result==='Sent'?'Sent':'Draft')
-   if(result==='Sent') setTimeout(()=>navigate('/messages'),250)
+   setSent(result==='Sent'? 'Sent' : result==='Scheduled' ? 'Scheduled' : 'Draft')
+   if(result==='Sent'||result==='Scheduled') setTimeout(()=>navigate('/messages'),250)
   }catch(error){setSent(error.message||'Unable to save message')}
  }
  const audienceSummary=audience==='Everyone'?'All eligible members with push enabled':audience==='Selected members'?'Members selected by name, phone, or email':audience==='Segment'?segment:audience==='Event registrants'?`${eventName} · ${registrationStatus}`:`${status} · ${group} · ${centre} · ${push}`
@@ -276,7 +286,7 @@ function MessageDetail(){
 }
 
 function Settings(){
- const [section,setSection]=useState('Church Information')
+ const [section,setSection]=useState('General')
  const [saved,setSaved]=useState(false)
  const sections=[['General',SettingsIcon],['Church Information',Globe],['Branding',Edit3],['Permissions',Shield],['Security',Lock],['Integrations',Database],['Danger Zone',Trash2]]
  const saveChanges=()=>setSaved(true)
@@ -307,19 +317,32 @@ function ActivityLog(){
 
 function Placeholder({title}){return <Page title={title}><Card className="empty"><Activity size={30}/><h2>{title}</h2><p>This static screen is included as a navigation placeholder and is ready for backend integration.</p></Card></Page>}
 
+function LiveActivityLog(){
+ const [items,setItems]=useState([])
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ useEffect(()=>{fetchAdminApi('/api/admin/activity').then(({items:records=[]})=>setItems(records)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))},[])
+ return <Page title="Activity Log" subtitle="Recorded administrator and member actions"><Card className="table-card">{loading&&<div className="empty-message">Loading activity...</div>}{error&&<div className="empty-message">Activity log is unavailable right now.</div>}{!loading&&!error&&!items.length&&<div className="empty-message">No activity has been recorded yet.</div>}{!loading&&!error&&items.length>0&&<div className="activity-list">{items.map((item)=><div className="activity-row" key={item.id}><div className="activity-type"><Activity size={14}/></div><div className="activity-main"><b>{item.actorName||item.actorId} {item.action.toLowerCase()}</b><small>{item.target}</small></div><span className="badge gray">Recorded</span><time>{item.createdAt?new Date(item.createdAt).toLocaleString():'—'}</time></div>)}</div>}</Card></Page>
+}
+
 function EventsUnavailable(){
  const [createOpen,setCreateOpen]=useState(false)
  const [title,setTitle]=useState('')
  const [description,setDescription]=useState('')
  const [startsAt,setStartsAt]=useState('')
+ const [endsAt,setEndsAt]=useState('')
  const [location,setLocation]=useState('')
+ const [isPaid,setIsPaid]=useState(false)
+ const [price,setPrice]=useState('')
+ const [imageUrl,setImageUrl]=useState('')
+ const [notifyOnPublish,setNotifyOnPublish]=useState(true)
  const [status,setStatus]=useState('DRAFT')
  const [saving,setSaving]=useState(false)
  const [notice,setNotice]=useState('')
- const createEvent=async(event)=>{event.preventDefault();setSaving(true);setNotice('');try{await fetchAdminApi('/api/admin/events',{method:'POST',body:JSON.stringify({title,description,startsAt:new Date(startsAt).toISOString(),location,status})});setNotice('Event created successfully.');setCreateOpen(false);setTitle('');setDescription('');setStartsAt('');setLocation('')}catch(error){setNotice(error.message||'Event could not be created.')}finally{setSaving(false)}}
+ const createEvent=async(event)=>{event.preventDefault();setSaving(true);setNotice('');if(endsAt&&new Date(endsAt)<=new Date(startsAt)){setNotice('End time must be after start time.');setSaving(false);return}try{await fetchAdminApi('/api/admin/events',{method:'POST',body:JSON.stringify({title,description,startsAt:new Date(startsAt).toISOString(),endsAt:endsAt?new Date(endsAt).toISOString():undefined,location,isPaid,price:isPaid?Number(price):undefined,imageUrl,notifyOnPublish,status})});setNotice('Event created successfully.');setCreateOpen(false);setTitle('');setDescription('');setStartsAt('');setEndsAt('');setLocation('');setPrice('');setImageUrl('')}catch(error){setNotice(error.message||'Event could not be created.')}finally{setSaving(false)}}
  return <Page title="Events" subtitle="Manage events from the GIC platform" action={<button className="btn primary" onClick={()=>setCreateOpen(true)}><Plus size={15}/> Create Event</button>}>
    {notice&&<Card className="empty-message">{notice}</Card>}<Card className="empty"><CalendarDays size={30}/><h2>No live event data</h2><p>Create the first event to add it to the platform.</p></Card>
-   {createOpen&&<div className="quick-modal" role="dialog" aria-modal="true"><form className="quick-modal-card" onSubmit={createEvent}><div className="quick-modal-head"><div><b>Create Event</b><small>Add a real event to the GIC platform.</small></div><button type="button" className="icon-btn" onClick={()=>setCreateOpen(false)}><X size={17}/></button></div><label className="form-field">Title<input value={title} onChange={(event)=>setTitle(event.target.value)} required /></label><label className="form-field">Description<textarea value={description} onChange={(event)=>setDescription(event.target.value)} rows="3" /></label><label className="form-field">Start date and time<input type="datetime-local" value={startsAt} onChange={(event)=>setStartsAt(event.target.value)} required /></label><label className="form-field">Location<input value={location} onChange={(event)=>setLocation(event.target.value)} /></label><label className="form-field">Status<select value={status} onChange={(event)=>setStatus(event.target.value)}><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option></select></label><button className="btn primary wide" type="submit" disabled={saving}>{saving?'Creating...':'Create Event'}</button></form></div>}
+   {createOpen&&<div className="quick-modal" role="dialog" aria-modal="true"><form className="quick-modal-card" onSubmit={createEvent}><div className="quick-modal-head"><div><b>Create Event</b><small>Add a real event to the GIC platform.</small></div><button type="button" className="icon-btn" onClick={()=>setCreateOpen(false)}><X size={17}/></button></div><label className="form-field">Title<input value={title} onChange={(event)=>setTitle(event.target.value)} required /></label><label className="form-field">Description<textarea value={description} onChange={(event)=>setDescription(event.target.value)} rows="3" /></label><label className="form-field">Event image<input type="file" accept="image/*" onChange={(event)=>{const file=event.target.files?.[0];if(file){const reader=new FileReader();reader.onload=()=>setImageUrl(String(reader.result));reader.readAsDataURL(file)}}}/></label><label className="form-field">Start date and time<input type="datetime-local" value={startsAt} onChange={(event)=>setStartsAt(event.target.value)} required /></label><label className="form-field">End date and time<input type="datetime-local" value={endsAt} onChange={(event)=>setEndsAt(event.target.value)} /></label><label className="form-field">Location<select value={location} onChange={(event)=>setLocation(event.target.value)}><option value="">Choose a location</option><option>Main Auditorium</option><option>Conference Room</option><option>Fellowship Hall</option><option>Online</option><option value="__custom__">Custom location</option></select></label>{location==='__custom__'&&<label className="form-field">Custom location<input onChange={(event)=>setLocation(event.target.value)} placeholder="Enter venue" required /></label>}<label className="toggle-row"><span>Paid event</span><input type="checkbox" checked={isPaid} onChange={(event)=>setIsPaid(event.target.checked)}/></label>{isPaid&&<label className="form-field">Price<input type="number" min="0" value={price} onChange={(event)=>setPrice(event.target.value)} required /></label>}<label className="form-field">Status<select value={status} onChange={(event)=>setStatus(event.target.value)}><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option></select></label><label className="toggle-row"><span>Send notification on publish</span><input type="checkbox" checked={notifyOnPublish} onChange={(event)=>setNotifyOnPublish(event.target.checked)}/></label><button className="btn primary wide" type="submit" disabled={saving}>{saving?'Creating...':'Create Event'}</button></form></div>}
  </Page>
 }
 
@@ -330,7 +353,7 @@ function MinistryApplications(){
   const load=()=>fetchAdminApi('/api/admin/ministry-applications').then(({applications:items=[]})=>setApplications(items)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
   useEffect(()=>{load()},[])
   const updateStatus=(id,status)=>fetchAdminApi(`/api/admin/ministry-applications/${id}`,{method:'PATCH',body:JSON.stringify({status})}).then(({application})=>setApplications((items)=>items.map((item)=>item.id===application.id?application:item)))
-  return <Page title="Ministry applications" subtitle="Review member requests to serve in GIC ministries"><Card className="table-card">{loading&&<div className="empty-message">Loading applications...</div>}{error&&<div className="empty-message">Applications are unavailable right now.</div>}{!loading&&!error&&!applications.length&&<div className="empty-message">No ministry applications yet.</div>}{!loading&&!error&&applications.map((application)=><div className="application-row" key={application.id}><div><b>{application.memberName}</b><small>{application.ministry}</small>{application.message&&<p>{application.message}</p>}</div><span className={'badge '+(application.status==='APPROVED'?'success':application.status==='DECLINED'?'gray':'blue')}>{application.status}</span><div className="application-actions"><button className="tool" onClick={()=>updateStatus(application.id,'APPROVED')}>Approve</button><button className="tool" onClick={()=>updateStatus(application.id,'DECLINED')}>Decline</button></div></div>)}</Card></Page>
+  return <Page title="Ministry applications" subtitle="Review member requests to serve in GIC ministries"><Card className="table-card">{loading&&<div className="empty-message">Loading applications...</div>}{error&&<div className="empty-message">Applications are unavailable right now.</div>}{!loading&&!error&&!applications.length&&<div className="empty-message">No ministry applications yet.</div>}{!loading&&!error&&applications.map((application)=><div className="application-row" key={application.id}><div className="application-applicant">{application.applicant?.avatar?<img className="avatar" src={application.applicant.avatar} alt=""/>:<div className="avatar">{(application.applicant?.name||application.memberName||'?').slice(0,2).toUpperCase()}</div>}<div><b>{application.applicant?.name||application.memberName}</b><small>{application.applicant?.phone||'Phone not provided'} · {application.applicant?.email||'Email not provided'}</small><small>{application.applicant?.center||'Centre not provided'} · Member since {application.applicant?.joinedMonth&&application.applicant?.joinedYear?`${application.applicant.joinedMonth}/${application.applicant.joinedYear}`:'not provided'}</small><small>Already in: {application.applicant?.ministries||'No ministries recorded'}</small><strong>Applying for: {application.ministry}</strong>{application.message&&<p>{application.message}</p>}</div></div><span className={'badge '+(application.status==='APPROVED'?'success':application.status==='DECLINED'?'gray':'blue')}>{application.status}</span><div className="application-actions"><button className="tool" onClick={()=>updateStatus(application.id,'APPROVED')}>Approve</button><button className="tool" onClick={()=>updateStatus(application.id,'DECLINED')}>Decline</button></div></div>)}</Card></Page>
 }
 
 function LiveMembers(){
@@ -341,7 +364,7 @@ function LiveMembers(){
  const [error,setError]=useState('')
  useEffect(()=>{fetchAdminApi('/api/admin/ministry-applications/members').then(({members=[]})=>setRecords(members)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))},[])
  const visible=records.filter((member)=>`${member.displayName} ${member.phone||''} ${member.email||''} ${member.ministries||''} ${member.center||''}`.toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||(member.active?'Active':'Inactive')===status))
- return <Page title="Members" subtitle="Live member records from the GIC platform"><Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Active</option><option>Inactive</option></select></div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries</th><th>Status</th><th>Last seen</th></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}><div className="avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div><b>{member.displayName}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.center||'—'}</td><td>{member.ministries||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>}</Card></Page>
+ return <Page title="Members" subtitle="Live member records from the GIC platform"><Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Active</option><option>Inactive</option></select></div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries</th><th>Member since</th><th>Birthday</th><th>Status</th><th>Last seen</th></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}>{member.avatar?<img className="avatar" src={member.avatar} alt=""/>:<div className="avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<b>{member.displayName}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.center||'—'}</td><td>{member.ministries||'—'}</td><td>{member.joinedMonth&&member.joinedYear?`${member.joinedMonth}/${member.joinedYear}`:'—'}</td><td>{member.birthday||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>}</Card></Page>
 }
 
 function LiveMemberDetails(){
@@ -349,14 +372,14 @@ function LiveMemberDetails(){
  const [member,setMember]=useState(null)
  useEffect(()=>{fetchAdminApi('/api/admin/ministry-applications/members').then(({members=[]})=>setMember(members.find((item)=>item.id===id)||null)).catch(()=>setMember(null))},[id])
  if(!member)return <Page title="Member"><Card className="empty-message">Loading live member data...</Card></Page>
- return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card><div className="member-profile-header"><div className="avatar member-avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div><div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></div></div><div className="profile-section"><h3>Personal information</h3><div className="profile-fields"><div><small>Phone</small><b>{member.phone||'—'}</b></div><div><small>Email</small><b>{member.email||'—'}</b></div><div><small>Centre</small><b>{member.center||'—'}</b></div><div><small>Last seen</small><b>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</b></div></div></div><div className="profile-section"><h3>Groups / Ministries</h3><div className="tag-list">{(member.ministries||'').split(',').map((item)=>item.trim()).filter(Boolean).map((item)=><span className="tag" key={item}>{item}</span>)}</div></div></Card></Page>
+ return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card><div className="member-profile-header">{member.avatar?<img className="avatar member-avatar" src={member.avatar} alt=""/>:<div className="avatar member-avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><p>Member since {member.joinedMonth&&member.joinedYear?`${member.joinedMonth}/${member.joinedYear}`:'not provided'}</p></div></div><div className="profile-section"><h3>Personal information</h3><div className="profile-fields"><div><small>Phone</small><b>{member.phone||'—'}</b></div><div><small>Email</small><b>{member.email||'—'}</b></div><div><small>Centre</small><b>{member.center||'—'}</b></div><div><small>Birthday</small><b>{member.birthday||'—'}</b></div><div><small>Service time</small><b>{member.serviceTime||'—'}</b></div><div><small>Membership status</small><b>{member.membershipStatus||'—'}</b></div><div><small>Last seen</small><b>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</b></div></div></div><div className="profile-section"><h3>Groups / Ministries</h3><div className="tag-list">{(member.ministries||'').split(',').map((item)=>item.trim()).filter(Boolean).map((item)=><span className="tag" key={item}>{item}</span>)}</div>{!member.ministries&&<span className="muted">Not provided</span>}</div></Card></Page>
 }
 
 function LiveDashboard(){
- const [summary,setSummary]=useState({members:0,applications:0,messages:0})
+ const [summary,setSummary]=useState({members:0,applications:0,messages:0,sentMessages:0,upcomingEvents:0,pendingApplications:0})
  const [error,setError]=useState('')
- useEffect(()=>{Promise.all([fetchAdminApi('/api/admin/ministry-applications/members'),fetchAdminApi('/api/admin/ministry-applications'),fetchAdminApi('/api/admin/notifications')]).then(([memberData,applicationData,messageData])=>setSummary({members:memberData.members?.length||0,applications:applicationData.applications?.length||0,messages:messageData.items?.length||0})).catch((requestError)=>setError(requestError.message))},[])
- return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat label="Members" value={summary.members} change="Live records" icon={Users}/><Stat label="Ministry applications" value={summary.applications} change="Live records" icon={ClipboardList} type="green"/><Stat label="Notifications" value={summary.messages} change="Live records" icon={Bell} type="blue"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
+ useEffect(()=>{Promise.all([fetchAdminApi('/api/admin/ministry-applications/members'),fetchAdminApi('/api/admin/ministry-applications'),fetchAdminApi('/api/admin/notifications'),fetchAdminApi('/api/admin/events/summary')]).then(([memberData,applicationData,messageData,eventData])=>setSummary({members:memberData.members?.length||0,applications:applicationData.applications?.length||0,messages:messageData.items?.length||0,sentMessages:(messageData.items||[]).filter((item)=>['SENT','PARTIALLY_FAILED','FAILED'].includes(item.status)).length,upcomingEvents:eventData.upcomingEvents||0,pendingApplications:(applicationData.applications||[]).filter((item)=>item.status==='PENDING').length})).catch((requestError)=>setError(requestError.message))},[])
+ return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministry-applications" label="Ministry applications" value={summary.applications} change={`${summary.pendingApplications} pending`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
 }
 
 function AdminLogin(){
@@ -400,9 +423,9 @@ export default function App(){
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<LiveMemberDetails/>}/>
   <Route path="/events" element={<EventsUnavailable/>}/><Route path="/events/youth-conference-2024" element={<Placeholder title="Event details"/>}/>
-  <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/><Route path="/events/forms" element={<Placeholder title="Event forms"/>}/>
-  <Route path="/messages" element={<Messages/>}/><Route path="/messages/1" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/><Route path="/messages/scheduled" element={<Messages initialTab="Scheduled"/>}/><Route path="/messages/drafts" element={<Messages initialTab="Drafts"/>}/><Route path="/messages/sent" element={<Messages initialTab="Sent"/>}/><Route path="/messages/templates" element={<Placeholder title="Message Templates"/>}/>
-  <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<Placeholder title="Activity log"/>}/>
+  <Route path="/events/registrations" element={<Placeholder title="Event registrations"/>}/>
+  <Route path="/messages" element={<Messages/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/>
+  <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<LiveActivityLog/>}/>
     <Route path="/ministry-applications" element={<MinistryApplications/>}/>
  </Routes></Shell></AdminGate>
 }
