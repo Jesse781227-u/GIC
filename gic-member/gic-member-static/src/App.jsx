@@ -829,7 +829,7 @@ function ProtectedRoute({ children }) {
           return
         }
         if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
-          await navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => null)
+          await navigator.serviceWorker.register('/sw.js').catch(() => null)
           const token = await getFcmToken()
           if (token) await registerPushTokenWithBackend(token)
         }

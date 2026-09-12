@@ -49,7 +49,7 @@ export class PushService {
       },
       webpush: url ? {
         fcmOptions: {
-          link: url,
+          link: new URL(url, process.env.MEMBER_APP_URL || "http://localhost:3000").toString(),
         },
       } : undefined,
     };

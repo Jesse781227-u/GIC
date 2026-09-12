@@ -37,7 +37,8 @@ export async function getFcmToken() {
 
   try {
     const messaging = getMessaging(firebaseApp);
-    return await getToken(messaging, { vapidKey: FIREBASE_CONFIG.vapidKey });
+    const serviceWorkerRegistration = await navigator.serviceWorker.register('/sw.js');
+    return await getToken(messaging, { vapidKey: FIREBASE_CONFIG.vapidKey, serviceWorkerRegistration });
   } catch (error) {
     console.warn('FCM token unavailable:', error);
     return '';
