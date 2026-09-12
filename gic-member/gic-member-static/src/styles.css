@@ -36,6 +36,7 @@ textarea{min-height:86px;resize:vertical}
 input:focus,select:focus,textarea:focus{border-color:var(--purple)}
 .btn{border:0;border-radius:8px;padding:12px 16px;display:flex;justify-content:center;align-items:center;gap:7px;font-weight:600;font-size:12px}
 .btn.primary{background:var(--purple);color:#fff}
+.btn.member{background:var(--green);color:#fff}
 .btn.gold{background:var(--gold);color:#20133b}
 .btn.white{background:#fff;color:var(--purple)}
 .btn.outline{background:transparent;border:1px solid rgba(255,255,255,.75);color:#fff}

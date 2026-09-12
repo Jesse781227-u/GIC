@@ -204,6 +204,14 @@ async function getMixlrData(forceRefresh = false) {
   return mixlrRequestPromise
 }
 
+function formatRecordingDate(value) {
+  const match = String(value || '').match(/(\d{1,2})(?:st|nd|rd|th)?[\s,]+([A-Za-z]+)[\s,]+(\d{4})/i)
+  if (!match) return '10th September 2026'
+  const day = Number(match[1])
+  const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th')
+  return `${day}${suffix} ${match[2]} ${match[3]}`
+}
+
 function readPersistedServiceCache() {
   try {
     const raw = localStorage.getItem(SERVICE_CACHE_KEY)
@@ -284,6 +292,7 @@ function AudioPlayerProvider({ children }) {
   const audioRef = useRef(null)
   const [streamUrl, setStreamUrl] = useState('https://globalimpactng.mixlr.com')
   const [title, setTitle] = useState('Global Impact Church')
+  const [recordingDate, setRecordingDate] = useState('10th September 2026')
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -303,6 +312,7 @@ function AudioPlayerProvider({ children }) {
     const safeUrl = nextUrl || streamUrl
     setStreamUrl(safeUrl)
     setTitle(nextTitle || title)
+    setRecordingDate(options.recordingDate || recordingDate)
     setLoading(Boolean(options.loading) || Boolean(nextUrl))
     setError('')
     setMinimized(Boolean(options.minimized))
@@ -310,7 +320,7 @@ function AudioPlayerProvider({ children }) {
     if (audio && safeUrl && audio.src !== safeUrl) {
       audio.src = safeUrl
     }
-  }, [ensureAudio, streamUrl, title])
+  }, [ensureAudio, recordingDate, streamUrl, title])
 
   const pause = useCallback(() => {
     const audio = ensureAudio()
@@ -447,6 +457,7 @@ function AudioPlayerProvider({ children }) {
     volume,
     streamUrl,
     title,
+    recordingDate,
     togglePlayback,
     setStream,
     pause,
@@ -458,26 +469,25 @@ function AudioPlayerProvider({ children }) {
     durationSeconds,
     seekable,
     seek,
-  }), [close, durationSeconds, elapsedSeconds, error, loading, minimized, pause, playing, resume, seek, seekable, setMinimized, setStream, stop, streamUrl, title, togglePlayback, volume])
+  }), [close, durationSeconds, elapsedSeconds, error, loading, minimized, pause, playing, recordingDate, resume, seek, seekable, setMinimized, setStream, stop, streamUrl, title, togglePlayback, volume])
 
   return <audioPlayerContext.Provider value={value}>
     {children}
     <audio ref={audioRef} src={streamUrl} preload="auto" playsInline aria-label="Global Impact Church Mixlr audio" />
-    <PersistentAudioPlayer />
   </audioPlayerContext.Provider>
 }
 
 function PersistentAudioPlayer({ embedded = false }) {
   const location = useLocation()
   if (location.pathname === '/home' && !embedded) return null
-  const { playing, loading, minimized, setMinimized, error, title, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
+  const { playing, loading, minimized, error, title, recordingDate, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
   const formatTime = (seconds) => {
     const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
     return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`
   }
   if (!title) return null
-  return <aside className={`persistent-audio-player ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
-    <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? 'Playing live audio' : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button></div></div>
+  return <aside className={`persistent-audio-player ${embedded ? 'is-embedded' : ''} ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
+    <div className="persistent-audio-main"><div className="persistent-audio-meta"><span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span><div><strong>{title}</strong><small>{error || (playing ? recordingDate : 'Ready to play')}</small></div></div><div className="persistent-audio-actions"><button type="button" className="player-icon-button" onClick={playing ? pause : resume} aria-label={playing ? 'Pause Mixlr' : 'Play Mixlr'}>{playing ? <Pause size={17} /> : <Play size={17} />}</button></div></div>
     {!minimized && <div className="persistent-audio-toolbar"><div className="audio-seek-row"><span>{formatTime(elapsedSeconds)}</span><input type="range" min="0" max={durationSeconds || Math.max(elapsedSeconds, 1)} step="1" value={Math.min(elapsedSeconds, durationSeconds || Math.max(elapsedSeconds, 1))} onChange={(event) => seek(event.target.value)} disabled={!seekable} aria-label={seekable ? 'Seek audio' : 'Seeking unavailable for this live stream'} /><span>{durationSeconds ? formatTime(durationSeconds) : 'LIVE'}</span></div><small className="audio-seek-note">{seekable ? 'Seek within the available playback window' : 'Live stream · seeking unavailable'}</small><label className="volume-control" title="Volume"><Volume2 size={15} /><span>Volume</span><input type="range" min="0" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="Volume" /></label></div>}
   </aside>
 }
@@ -761,6 +771,7 @@ function MemberShell({ children, active = 'home', title, backTo, lockProfile = f
       {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className="bell-btn" title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
     <main className="mobile-main">{children}</main>
+    <PersistentAudioPlayer />
     {!lockProfile && <BottomNav active={active} />}
   </div>
 }
@@ -1148,7 +1159,7 @@ function OnboardingFlow() {
   </div></div>
 }
 
-function HomePage() {
+function LegacyHomePage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
   const { setStream } = useAudioPlayer()
@@ -1161,17 +1172,10 @@ function HomePage() {
       try {
         const mixlrData = await getMixlrData()
         if (cancelled) return
-        setLatestMixlrRecording(mixlrData)
         const streamUrl = mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com'
         setStream(streamUrl, mixlrData?.title || 'Global Impact Church', { loading: true })
       } catch {
-        const fallback = {
-          title: 'Latest recording unavailable',
-          displayTitle: 'Listen to the latest recording on Mixlr',
-          url: 'https://globalimpactng.mixlr.com/recordings',
-          audioUrl: 'https://globalimpactng.mixlr.com',
-        }
-        if (!cancelled) setLatestMixlrRecording(fallback)
+        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', { loading: true })
       }
     }
     loadMixlr()
@@ -1189,7 +1193,7 @@ function HomePage() {
           <Logo light />
         </div>
 
-        <div style={{
+        <div className="hero-audio-console" style={{
           background: 'rgba(10, 4, 34, 0.65)',
           borderRadius: '14px',
           padding: '12px',
@@ -1197,24 +1201,6 @@ function HomePage() {
           border: '1px solid rgba(255, 255, 255, 0.12)',
           marginTop: '8px'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block', boxShadow: '0 0 8px #3b82f6' }}/>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#f7c637' }}>{latestMixlrRecording?.displayTitle || 'Loading latest recording...'}</span>
-                <small style={{ color: '#e0d6fc', fontSize: '10px' }}>{latestMixlrRecording?.displayDate || 'Fetching from Mixlr'}</small>
-              </div>
-            </div>
-            <a 
-              href={latestMixlrRecording?.url || 'https://globalimpactng.mixlr.com/recordings'} 
-              target="_blank" 
-              rel="noreferrer"
-              style={{ fontSize: '10px', color: '#fff', opacity: 0.85, textDecoration: 'underline' }}
-            >
-              Mixlr↗
-            </a>
-          </div>
-
           <PersistentAudioPlayer embedded />
         </div>
       </section>
@@ -1235,6 +1221,53 @@ function HomePage() {
         {getUpcomingEvents().slice(0, 2).map((event) => (
           <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />
         ))}
+      </section>
+    </MemberShell>
+    {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
+  </>
+}
+
+function HomePage() {
+  const memberName = localStorage.getItem('gic_member_name') || ''
+  const { setStream } = useAudioPlayer()
+  const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
+  const nextEvent = getServiceDisplay(getNextEvent())
+
+  useEffect(() => {
+    let cancelled = false
+    getMixlrData()
+      .then((mixlrData) => {
+        if (cancelled) return
+        setStream(mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com', mixlrData?.title || 'Global Impact Church', { loading: true })
+      })
+      .catch(() => {
+        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', { loading: true })
+      })
+    return () => { cancelled = true }
+  }, [setStream])
+
+  return <>
+    <MemberShell active="home">
+      <section className="hero-card home-hero">
+        <div className="home-hero-heading">
+          <div>
+            <small>Welcome home,</small>
+            <h2>{memberName}</h2>
+          </div>
+          <Logo light />
+        </div>
+        <div className="hero-audio-console"><PersistentAudioPlayer embedded /></div>
+      </section>
+      <section className="section">
+        <div className="section-head"><span>Next Service</span></div>
+        <article className="announcement-card" onClick={() => setSelectedServiceEvent(getNextEvent())} style={{ cursor: 'pointer' }}>
+          <div className="image-banner" style={{ backgroundImage: `url(${nextEvent.image})` }} />
+          <div className="pad"><small>{nextEvent.title}</small><h3>{nextEvent.date} · {nextEvent.time}</h3><p>{nextEvent.location}</p></div>
+        </article>
+      </section>
+      <section className="section">
+        <div className="section-head"><span>Upcoming Events</span><Link to="/events">View All</Link></div>
+        {getUpcomingEvents().slice(0, 2).map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
       </section>
     </MemberShell>
     {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
@@ -1615,6 +1648,17 @@ function MinistriesPage() {
 }
 
 function MinistryDirectory() {
+  const [approvedMinistries, setApprovedMinistries] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
+
+  useEffect(() => {
+    fetchMemberApi('/api/ministry-applications')
+      .then((response) => {
+        const approved = response.applications?.filter((application) => application.status === 'APPROVED').map((application) => application.ministry) || []
+        setApprovedMinistries((current) => [...new Set([...current, ...approved])])
+      })
+      .catch(() => {})
+  }, [])
+
   return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
     <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
     <div className="directory-list">{ministries.map((ministry) => <article className="directory-card" key={ministry.id}>
@@ -1623,7 +1667,7 @@ function MinistryDirectory() {
         <h2>{ministry.title}</h2>
         <p>{ministry.desc}</p>
         <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
-        <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>
+        {approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
       </div>
     </article>)}</div>
   </MemberShell>

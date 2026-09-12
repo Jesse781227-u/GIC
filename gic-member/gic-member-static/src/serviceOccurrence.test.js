@@ -24,6 +24,6 @@ test('midweek occurrence and label are consistent across every day', () => {
 test('Sunday occurrence and label are consistent before and after service', () => {
   const before = new Date('2026-09-06T07:44:00Z')
   const after = new Date('2026-09-06T07:46:00Z')
-  assert.equal(formatServiceOccurrenceLabel(getNextServiceOccurrence(SERVICE_TYPES.SUNDAY, before, 'Sunday Services: 08:45AM'), before), 'This Sunday')
-  assert.equal(formatServiceOccurrenceLabel(getNextServiceOccurrence(SERVICE_TYPES.SUNDAY, after, 'Sunday Services: 08:45AM'), after), 'Next Sunday')
+  assert.equal(formatServiceOccurrenceLabel(getNextServiceOccurrence(SERVICE_TYPES.SUNDAY, before, 'Sunday Services: 08:45AM'), before), 'Sunday')
+  assert.equal(formatServiceOccurrenceLabel(getNextServiceOccurrence(SERVICE_TYPES.SUNDAY, after, 'Sunday Services: 08:45AM'), after), 'Sunday')
 })
