@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { authMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { notificationPreferences, notifications } from "../db/schema.js";
-import { eq, isNull, desc, count } from "drizzle-orm";
+import { eq, isNull, desc, count, and } from "drizzle-orm";
 import { z } from "zod";
 
 const preferencesSchema = z.object({
@@ -105,7 +105,7 @@ app.get("/unread-count", async (c) => {
   const [result] = await db
     .select({ count: count() })
     .from(notifications)
-    .where(eq(notifications.memberId, user.sub));
+    .where(and(eq(notifications.memberId, user.sub), isNull(notifications.readAt)));
   return c.json({ count: result?.count ?? 0 });
 });
 

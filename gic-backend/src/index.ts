@@ -11,6 +11,7 @@ import { memberApp as ministryApplicationsApp, adminApp as adminMinistryApplicat
 import { schedulingService } from "./services/notifications/scheduling.service.js";
 import { ensureDatabaseSchema } from "./db/index.js";
 import adminEventsApp from "./routes/admin-events.js";
+import serviceRemindersApp from "./routes/service-reminders.js";
 
 const app = new Hono();
 
@@ -35,6 +36,7 @@ app.route("/api/push-devices", pushDevicesApp);
 app.route("/api/notifications", notificationsApp);
 app.route("/api/admin/notifications", adminNotificationsApp);
 app.route("/api/admin/events", adminEventsApp);
+app.route("/api/service-reminders", serviceRemindersApp);
 
 const port = parseInt(process.env.PORT || "3001");
 

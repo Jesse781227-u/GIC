@@ -208,6 +208,27 @@ export const notifications = pgTable(
   })
 );
 
+export const serviceReminders = pgTable(
+  "service_reminders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: text("member_id").notNull(),
+    serviceType: text("service_type").notNull(),
+    occurrenceKey: text("occurrence_key").notNull(),
+    serviceStartsAt: timestamp("service_starts_at", { withTimezone: true }).notNull(),
+    offsetMinutes: text("offset_minutes").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    memberIdx: index("service_reminders_member_id_idx").on(t.memberId),
+    dueIdx: index("service_reminders_due_idx").on(t.status, t.scheduledFor),
+    uniqueReminder: unique("service_reminders_member_occurrence_offset_unique").on(t.memberId, t.occurrenceKey, t.offsetMinutes),
+  })
+);
+
 // ─── notification_deliveries ──────────────────────────────────────────────────
 // FCM delivery attempt per device. Idempotency via unique(notification_id, device_id).
 

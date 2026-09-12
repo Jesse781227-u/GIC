@@ -6,6 +6,7 @@ import {
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -74,6 +75,10 @@ function getSundayServiceCopy() {
   }
 }
 
+function getServiceOccurrence(serviceType, now = new Date()) {
+  return getNextServiceOccurrence(serviceType, now, getSelectedService().time)
+}
+
 function getLagosDateParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Lagos',
@@ -102,24 +107,8 @@ function getLagosDateParts(date = new Date()) {
 
 function getNextServiceDate(event, now = new Date()) {
   if (!event.isService) return new Date(event.date.replace(/^\w+, /, '')).getTime()
-  const next = getNextServiceOccurrence(event.id, now)
+  const next = getServiceOccurrence(event.id, now)
   return next.getTime()
-}
-
-function getNextServiceOccurrence(eventId, fallbackNow = new Date()) {
-  const targetDay = eventId === 'midweek-service' ? 3 : 0
-  const { hours, minutes } = eventId === 'midweek-service' ? { hours: 18, minutes: 0 } : parseServiceTimeString(getSelectedService().time)
-  const now = new Date(fallbackNow)
-  const base = new Date(now)
-  base.setHours(0, 0, 0, 0)
-  const offset = (targetDay - base.getDay() + 7) % 7
-  const candidate = new Date(base)
-  candidate.setDate(base.getDate() + offset)
-  candidate.setHours(hours, minutes, 0, 0)
-  if (candidate.getTime() <= now.getTime()) {
-    candidate.setDate(candidate.getDate() + 7)
-  }
-  return candidate
 }
 
 function getNextEvent() {
@@ -128,12 +117,14 @@ function getNextEvent() {
 
 function formatServiceLabel(serviceDate, eventId) {
   const now = new Date()
-  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', month: 'short', day: 'numeric', weekday: 'long' })
-  const nowLagos = new Date(new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Lagos' })))
-  const serviceLagos = new Date(new Date(serviceDate.toLocaleString('en-US', { timeZone: 'Africa/Lagos' })))
+  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, month: 'short', day: 'numeric', weekday: 'long' })
+  const nowParts = getLagosDateParts(now)
+  const serviceParts = getLagosDateParts(serviceDate)
+  const nowLagos = new Date(Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day))
+  const serviceLagos = new Date(Date.UTC(serviceParts.year, serviceParts.month - 1, serviceParts.day))
   const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
   const diffDays = Math.round((startOfDay(serviceLagos) - startOfDay(nowLagos)) / 86400000)
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long' }).format(serviceDate)
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long' }).format(serviceDate)
   if (diffDays === 0) return 'Today'
   if (diffDays === 1) return 'Tomorrow'
   if (diffDays > 1 && diffDays < 7) return `This ${weekday}`
@@ -142,7 +133,7 @@ function formatServiceLabel(serviceDate, eventId) {
 
 function getServiceDisplay(event) {
   const { center } = getSelectedService()
-  const serviceDate = getNextServiceOccurrence(event.id)
+  const serviceDate = getServiceOccurrence(event.id)
   const label = formatServiceLabel(serviceDate, event.id)
   const sundayTime = getSelectedService().time.replace(/^Sunday Services?:\s*/i, '')
   return event.id === 'sunday-service'
@@ -151,8 +142,8 @@ function getServiceDisplay(event) {
 }
 
 function getUpcomingEvents() {
-  const nextSundayService = getNextServiceOccurrence('sunday-service')
-  const nextMidweekService = getNextServiceOccurrence('midweek-service')
+  const nextSundayService = getServiceOccurrence('sunday-service')
+  const nextMidweekService = getServiceOccurrence('midweek-service')
   return [
     {
       id: 'sunday-service',
@@ -403,6 +394,19 @@ function AudioPlayerProvider({ children }) {
     }
   }, [ensureAudio, streamUrl, volume])
 
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return undefined
+    navigator.mediaSession.metadata = new MediaMetadata({ title, artist: 'Global Impact Church', album: 'Mixlr Live Audio' })
+    navigator.mediaSession.setActionHandler('play', resume)
+    navigator.mediaSession.setActionHandler('pause', pause)
+    return () => {
+      try {
+        navigator.mediaSession.setActionHandler('play', null)
+        navigator.mediaSession.setActionHandler('pause', null)
+      } catch {}
+    }
+  }, [pause, resume, title])
+
   const value = useMemo(() => ({
     playing,
     loading,
@@ -423,7 +427,7 @@ function AudioPlayerProvider({ children }) {
 
   return <audioPlayerContext.Provider value={value}>
     {children}
-    <audio ref={audioRef} src={streamUrl} preload="auto" />
+    <audio ref={audioRef} src={streamUrl} preload="auto" playsInline aria-label="Global Impact Church Mixlr audio" />
     <PersistentAudioPlayer />
   </audioPlayerContext.Provider>
 }
@@ -1094,7 +1098,7 @@ function OnboardingFlow() {
 function HomePage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const [latestMixlrRecording, setLatestMixlrRecording] = useState(null)
-  const { setStream } = useAudioPlayer()
+  const { setStream, togglePlayback } = useAudioPlayer()
   const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
   const nextEvent = getServiceDisplay(getNextEvent())
 
@@ -1158,13 +1162,7 @@ function HomePage() {
             </a>
           </div>
 
-          {latestMixlrRecording?.audioUrl ? <audio
-            controls
-            preload="metadata"
-            src={latestMixlrRecording.audioUrl}
-            aria-label={latestMixlrRecording.title}
-            style={{ width: '100%', height: '42px' }}
-          /> : <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>Latest recording is not available right now.</p>}
+          {latestMixlrRecording?.audioUrl ? <button type="button" className="btn primary wide" onClick={togglePlayback}>Listen live</button> : <p style={{ color: '#e0d6fc', fontSize: '10px', margin: 0 }}>Latest recording is not available right now.</p>}
         </div>
       </section>
       <section className="section">
@@ -1235,11 +1233,13 @@ function Announcements() {
 
 function AnnouncementDetails() {
   const { id } = useParams()
+  const { refreshUnreadCount } = useNotificationCount()
   const [announcement, setAnnouncement] = useState(null)
   useEffect(() => {
     fetchMemberApi('/api/notifications')
       .then(({ items = [] }) => {
         const notification = items.find((item) => item.id === id)
+        fetchMemberApi(`/api/notifications/${id}/read`, { method: 'PATCH' }).then(() => refreshUnreadCount()).catch(() => {})
         if (notification) setAnnouncement({
           id: notification.id,
           category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
@@ -1278,23 +1278,32 @@ function EventsPage() {
 
 function ServiceModal({ event, onClose }) {
   const serviceEvent = getServiceDisplay(event)
-  const startDate = serviceEvent.startAt ? new Date(serviceEvent.startAt) : getNextServiceOccurrence(event.id)
+  const startDate = getServiceOccurrence(event.id)
   const endDate = new Date(startDate.getTime() + (event.id === 'midweek-service' ? 90 : 120) * 60000)
   const reminderOptions = [60, 30]
-  const [activeReminders, setActiveReminders] = useState(() => reminderOptions.filter((offset) => {
-    const stored = localStorage.getItem(`gic_reminder_${event.id}_${offset}`)
-    return stored === 'true'
-  }))
+  const occurrenceKey = startDate.toISOString()
+  const [activeReminders, setActiveReminders] = useState([])
+  const [reminderMessage, setReminderMessage] = useState('')
   const [calendarMessage, setCalendarMessage] = useState('')
 
-  const toggleReminder = (minutes) => {
-    setActiveReminders((current) => {
-      const updated = current.includes(minutes)
-        ? current.filter((currentValue) => currentValue !== minutes)
-        : [...current, minutes].sort((a, b) => a - b)
-      localStorage.setItem(`gic_reminder_${event.id}_${minutes}`, updated.includes(minutes) ? 'true' : 'false')
-      return updated
-    })
+  useEffect(() => {
+    let cancelled = false
+    fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}`)
+      .then(({ reminders = [] }) => { if (!cancelled) setActiveReminders(reminders.map((reminder) => Number(reminder.offsetMinutes))) })
+      .catch(() => { if (!cancelled) setActiveReminders(reminderOptions.filter((offset) => localStorage.getItem(`gic_reminder_${event.id}_${offset}`) === 'true')) })
+    return () => { cancelled = true }
+  }, [event.id, occurrenceKey])
+
+  const toggleReminder = async (minutes) => {
+    const enabled = !activeReminders.includes(minutes)
+    const scheduledFor = new Date(startDate.getTime() - minutes * 60000)
+    try {
+      if (enabled) await fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
+      else await fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
+      localStorage.setItem(`gic_reminder_${event.id}_${minutes}`, String(enabled))
+      setActiveReminders((current) => enabled ? [...current, minutes].sort((a, b) => a - b) : current.filter((value) => value !== minutes))
+      setReminderMessage(enabled ? 'Reminder saved.' : 'Reminder removed.')
+    } catch { setReminderMessage('Reminders require an active signed-in connection.') }
   }
 
   const addToCalendar = () => {

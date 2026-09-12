@@ -5,6 +5,7 @@ import {
   notificationDeliveries,
   pushDevices,
   notificationPreferences,
+  serviceReminders,
 } from "../../db/schema.js";
 import { audienceService } from "./audience.service.js";
 import { pushService } from "./push.service.js";
@@ -33,6 +34,30 @@ export interface NotificationDraft {
 }
 
 export class NotificationService {
+  async sendServiceReminder(reminder: typeof serviceReminders.$inferSelect) {
+    const prefs = await db.query.notificationPreferences.findFirst({ where: eq(notificationPreferences.memberId, reminder.memberId) });
+    if (prefs && (!prefs.pushEnabled || !prefs.reminders)) return;
+    const devices = await db.query.pushDevices.findMany({
+      where: and(eq(pushDevices.memberId, reminder.memberId), eq(pushDevices.active, true)),
+    });
+    const title = reminder.serviceType === "midweek-service" ? "GIC Midweek Service" : "GIC Sunday Service";
+    const offset = Number(reminder.offsetMinutes);
+    const body = `${title} starts in ${offset === 60 ? "1 hour" : "30 minutes"}.`;
+    const [inboxItem] = await db.insert(notifications).values({
+      memberId: reminder.memberId,
+      title,
+      body,
+      type: "EVENT_REMINDER",
+      destinationUrl: "/events",
+    }).returning();
+    if (devices.length) {
+      const deliveries = await db.insert(notificationDeliveries).values(devices.map((device) => ({
+        notificationId: inboxItem.id, memberId: reminder.memberId, deviceId: device.id, status: "pending" as const,
+      }))).returning({ id: notificationDeliveries.id });
+      await pushService.processDeliveries(deliveries.map(({ id }) => id), title, body, "/events");
+    }
+  }
+
   private notificationPreferenceKey(type: any): keyof typeof defaultPreferenceFlags {
     const value = String(type);
 
