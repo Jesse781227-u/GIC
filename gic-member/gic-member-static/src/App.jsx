@@ -14,6 +14,7 @@ import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } fro
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
 const SERVICE_CACHE_KEY = 'gic_service_cache'
+const DEFAULT_RECORDING_DATE = 'Recording date unavailable'
 
 const notificationCountContext = createContext(null)
 const audioPlayerContext = createContext(null)
@@ -206,7 +207,7 @@ async function getMixlrData(forceRefresh = false) {
 
 function formatRecordingDate(value) {
   const match = String(value || '').match(/(\d{1,2})(?:st|nd|rd|th)?[\s,]+([A-Za-z]+)[\s,]+(\d{4})/i)
-  if (!match) return '10th September 2026'
+  if (!match) return DEFAULT_RECORDING_DATE
   const day = Number(match[1])
   const suffix = day % 100 >= 11 && day % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th')
   return `${day}${suffix} ${match[2]} ${match[3]}`
@@ -300,7 +301,7 @@ function AudioPlayerProvider({ children }) {
   const audioRef = useRef(null)
   const [streamUrl, setStreamUrl] = useState('https://globalimpactng.mixlr.com')
   const [title, setTitle] = useState('Global Impact Church')
-  const [recordingDate, setRecordingDate] = useState('10th September 2026')
+  const [recordingDate, setRecordingDate] = useState(DEFAULT_RECORDING_DATE)
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -320,7 +321,7 @@ function AudioPlayerProvider({ children }) {
     const safeUrl = nextUrl || streamUrl
     setStreamUrl(safeUrl)
     setTitle(nextTitle || title)
-    setRecordingDate(options.recordingDate || recordingDate)
+    setRecordingDate(options.recordingDate ?? DEFAULT_RECORDING_DATE)
     setLoading(Boolean(options.loading) || Boolean(nextUrl))
     setError('')
     setMinimized(Boolean(options.minimized))
@@ -328,7 +329,7 @@ function AudioPlayerProvider({ children }) {
     if (audio && safeUrl && audio.src !== safeUrl) {
       audio.src = safeUrl
     }
-  }, [ensureAudio, recordingDate, streamUrl, title])
+  }, [ensureAudio, streamUrl, title])
 
   const pause = useCallback(() => {
     const audio = ensureAudio()
@@ -777,8 +778,32 @@ function BottomNav({ active = 'home' }) {
   )}</nav>
 }
 
+const ACCOUNT_COMPLETION_PATHS = ['/', '/recover', '/onboarding', '/profile/edit']
+const AUTHENTICATED_CONSOLE_PATHS = [
+  '/home',
+  '/announcements',
+  '/events',
+  '/my-registrations',
+  '/forms',
+  '/ministries',
+  '/profile',
+]
+
+function isPersistentConsoleAllowed(pathname) {
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/'
+  const isAccountCompletionPath = ACCOUNT_COMPLETION_PATHS.some((path) =>
+    normalizedPath === path || (path !== '/' && normalizedPath.startsWith(`${path}/`))
+  )
+  if (isAccountCompletionPath) return false
+  if (/^\/events\/[^/]+\/register(?:\/|$)/.test(normalizedPath)) return false
+
+  return AUTHENTICATED_CONSOLE_PATHS.some((path) => normalizedPath === path || normalizedPath.startsWith(`${path}/`))
+}
+
 function MemberShell({ children, active = 'home', title, backTo, lockProfile = false }) {
+  const location = useLocation()
   const { unreadCount, notificationPulse } = useNotificationCount()
+  const showPersistentConsole = isPersistentConsoleAllowed(location.pathname)
   return <div className="member-page">
     <header className="mobile-header">
       {backTo && !lockProfile ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
@@ -786,7 +811,7 @@ function MemberShell({ children, active = 'home', title, backTo, lockProfile = f
       {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className={`bell-btn ${notificationPulse ? 'notification-pulse' : ''}`} title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
     <main className="mobile-main">{children}</main>
-    <PersistentAudioPlayer />
+    {showPersistentConsole && <PersistentAudioPlayer />}
     {!lockProfile && <BottomNav active={active} />}
   </div>
 }
@@ -1191,9 +1216,15 @@ function LegacyHomePage() {
         const mixlrData = await getMixlrData()
         if (cancelled) return
         const streamUrl = mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com'
-        setStream(streamUrl, mixlrData?.title || 'Global Impact Church', { loading: true })
+        setStream(streamUrl, mixlrData?.displayTitle || mixlrData?.title || 'Global Impact Church', {
+          loading: true,
+          recordingDate: formatRecordingDate(mixlrData?.displayDate),
+        })
       } catch {
-        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', { loading: true })
+        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', {
+          loading: true,
+          recordingDate: DEFAULT_RECORDING_DATE,
+        })
       }
     }
     loadMixlr()
@@ -1256,10 +1287,16 @@ function HomePage() {
     getMixlrData()
       .then((mixlrData) => {
         if (cancelled) return
-        setStream(mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com', mixlrData?.title || 'Global Impact Church', { loading: true })
+        setStream(mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com', mixlrData?.displayTitle || mixlrData?.title || 'Global Impact Church', {
+          loading: true,
+          recordingDate: formatRecordingDate(mixlrData?.displayDate),
+        })
       })
       .catch(() => {
-        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', { loading: true })
+        if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', {
+          loading: true,
+          recordingDate: DEFAULT_RECORDING_DATE,
+        })
       })
     return () => { cancelled = true }
   }, [setStream])
