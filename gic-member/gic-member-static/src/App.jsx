@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
+import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -538,9 +539,13 @@ function PersistentAudioPlayerLegacy() {
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
 async function fetchMemberApi(path, options = {}) {
   const token = localStorage.getItem('gic_auth_token')
-  const response = await fetch(`${API_BASE}${path}`, {
+  const request = () => fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -548,10 +553,23 @@ async function fetchMemberApi(path, options = {}) {
       ...(options.headers || {}),
     },
   })
+  const retryable = !options.method || options.method.toUpperCase() === 'GET'
+  let response
+  for (let attempt = 0; attempt < (retryable ? 2 : 1); attempt += 1) {
+    try {
+      response = await request()
+      if (response.status < 500 || attempt === 1) break
+    } catch (error) {
+      if (!retryable || attempt === 1) throw error
+    }
+    await wait(300)
+  }
 
   if (!response.ok) {
     const details = await response.text().catch(() => '')
-    throw new Error(details || `Request failed: ${response.status}`)
+    const error = new Error(details || `Request failed: ${response.status}`)
+    error.status = response.status
+    throw error
   }
 
   return response.json()
@@ -559,15 +577,6 @@ async function fetchMemberApi(path, options = {}) {
 
 function getSecureMode() {
   return window.isSecureContext || window.location.hostname === 'localhost'
-}
-
-function getBrowserName() {
-  const ua = navigator.userAgent
-  if (/Edg\//.test(ua)) return 'Edge'
-  if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) return 'Chrome'
-  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return 'Safari'
-  if (/Firefox\//.test(ua)) return 'Firefox'
-  return 'Unknown'
 }
 
 function isStandalonePwa() {
@@ -680,11 +689,13 @@ function storeMemberSession(data) {
   localStorage.setItem('gic_auth_method', 'device_auth')
 }
 
-function clearStaleMemberSession() {
-  for (const key of ['gic_auth_token', 'gic_account_id', 'gic_auth_method', 'gic_profile_completed', 'gic_onboarding_profile', 'gic_onboarding_completed']) {
+function clearStaleMemberSession({ preserveAccountId = false } = {}) {
+  const keys = ['gic_auth_token', 'gic_auth_method', 'gic_profile_completed', 'gic_onboarding_profile', 'gic_onboarding_completed']
+  if (!preserveAccountId) keys.push('gic_account_id')
+  for (const key of keys) {
     localStorage.removeItem(key)
   }
-  document.cookie = 'gic_account_id=; Max-Age=0; Path=/; SameSite=Lax'
+  if (!preserveAccountId) document.cookie = 'gic_account_id=; Max-Age=0; Path=/; SameSite=Lax'
 }
 
 export async function performDeviceAuth(memberName) {
@@ -697,11 +708,21 @@ export async function performDeviceAuth(memberName) {
     ...(memberName?.trim() && memberName.trim() !== 'Member' ? { name: memberName.trim() } : {})
   }
   try {
-    const res = await fetch(`${API_BASE}/api/auth/device`, {
+    const request = () => fetch(`${API_BASE}/api/auth/device`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     })
+    let res
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        res = await request()
+        if (res.status < 500 || attempt === 1) break
+      } catch (error) {
+        if (attempt === 1) throw error
+      }
+      await wait(300)
+    }
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Device authentication failed')
     storeAccountId(data.member.id)
@@ -872,7 +893,8 @@ function ProtectedRoute({ children }) {
           if (token) await registerPushTokenWithBackend(token)
         }
         setChecking(false)
-      } catch {
+      } catch (error) {
+        if (error?.status === 401 || error?.status === 403) clearStaleMemberSession()
         navigate('/', { replace: true })
       }
     }
@@ -898,7 +920,7 @@ function Welcome() {
         try {
           profile = (await fetchMemberApi('/api/auth/profile')).profile
         } catch {
-          clearStaleMemberSession()
+          clearStaleMemberSession({ preserveAccountId: true })
           profile = (await performDeviceAuth()).member
         }
       } else profile = (await performDeviceAuth()).member
@@ -1002,6 +1024,7 @@ function OnboardingFlow() {
   const [stage, setStage] = useState('profile')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
+  const [installBrowser, setInstallBrowser] = useState(() => getBrowserName())
   const [installedApp, setInstalledApp] = useState(() => isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
 
   useEffect(() => {
@@ -1055,8 +1078,9 @@ function OnboardingFlow() {
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
     window.addEventListener('appinstalled', handleInstalled)
     window.addEventListener('pageshow', refreshDisplayMode)
-    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+    if (isIOSDevice(navigator.userAgent, navigator.maxTouchPoints)) {
       setInstallMode('ios')
+      setInstallBrowser(getBrowserName(navigator.userAgent))
     }
 
     return () => {
@@ -1163,14 +1187,13 @@ function OnboardingFlow() {
   }
 
   if (stage === 'ios-install') {
+    const installSteps = getIOSInstallSteps(installBrowser)
     return <div className="onboarding-page"><div className="onboarding-card" style={{ minHeight: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
       <h1 style={{ textAlign: 'center', fontSize: '26px', marginBottom: '10px' }}>Add GIC to your Home Screen</h1>
-      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}></p>
+      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}>Use the {installBrowser === 'Unknown' ? 'browser' : installBrowser} menu to add GIC. The steps below work across iPhone and iPad browsers.</p>
       <div className="stack" style={{ gap: '10px', textAlign: 'left', padding: '10px 8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>1</span><span>Tap the Share button.</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>2</span><span>Select “Add to Home Screen”.</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>3</span><span>Tap “Add”.</span></div>
+        {installSteps.map((step, index) => <div key={step} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>{index + 1}</span><span>{step}</span></div>)}
       </div>
       <div style={{ display: 'flex', gap: '10px', marginTop: '26px' }}>
         <button className="btn gold wide" onClick={() => setDismissedNotice('Open GIC from your home screen to continue.')}>I installed GIC</button>
