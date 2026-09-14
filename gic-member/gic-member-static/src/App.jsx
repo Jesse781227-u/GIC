@@ -568,7 +568,14 @@ async function fetchMemberApi(path, options = {}) {
 
   if (!response.ok) {
     const details = await response.text().catch(() => '')
-    const error = new Error(details || `Request failed: ${response.status}`)
+    let message = details || `Request failed: ${response.status}`
+    try {
+      const parsedDetails = JSON.parse(details)
+      message = parsedDetails.error || parsedDetails.message || message
+    } catch {
+      // Keep the response text when the API does not return JSON.
+    }
+    const error = new Error(message)
     error.status = response.status
     throw error
   }
@@ -673,20 +680,26 @@ function storeAccountId(accountId) {
   document.cookie = `gic_account_id=${encodeURIComponent(accountId)}; Max-Age=31536000; Path=/; SameSite=Lax`
 }
 
+function storeMemberProfile(profile) {
+  storeAccountId(profile.id)
+  localStorage.setItem('gic_member_name', profile.name || '')
+  localStorage.setItem('gic_member_phone', profile.phone || '')
+  localStorage.setItem('gic_member_email', profile.email || '')
+  localStorage.setItem('gic_member_ministries', profile.ministries || '')
+  localStorage.setItem('gic_member_center', profile.center || '')
+  localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
+  localStorage.setItem('gic_member_birthday', profile.birthday || '')
+  localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
+  localStorage.setItem('gic_member_joined_month', profile.joinedMonth || '')
+  localStorage.setItem('gic_member_joined_year', profile.joinedYear || '')
+  if (profile.avatar) localStorage.setItem('gic_member_avatar', profile.avatar)
+  else localStorage.removeItem('gic_member_avatar')
+  localStorage.setItem('gic_profile_completed', profile.profileComplete ? 'true' : 'false')
+}
+
 function storeMemberSession(data) {
-  storeAccountId(data.member.id)
   localStorage.setItem('gic_auth_token', data.token)
-  localStorage.setItem('gic_member_name', data.member.name)
-  localStorage.setItem('gic_member_phone', data.member.phone || '')
-  localStorage.setItem('gic_member_email', data.member.email || '')
-  localStorage.setItem('gic_member_ministries', data.member.ministries || '')
-  localStorage.setItem('gic_member_center', data.member.center || '')
-  localStorage.setItem('gic_member_service_time', data.member.serviceTime || '')
-  localStorage.setItem('gic_member_birthday', data.member.birthday || '')
-  localStorage.setItem('gic_membership_status', data.member.membershipStatus || '')
-  localStorage.setItem('gic_member_joined_month', data.member.joinedMonth || '')
-  localStorage.setItem('gic_member_joined_year', data.member.joinedYear || '')
-  if (data.member.avatar) localStorage.setItem('gic_member_avatar', data.member.avatar)
+  storeMemberProfile(data.member)
   localStorage.setItem('gic_auth_method', 'device_auth')
 }
 
@@ -865,18 +878,7 @@ function ProtectedRoute({ children }) {
       try {
         const { profile } = await fetchMemberApi('/api/auth/profile')
         if (cancelled) return
-        storeAccountId(profile.id)
-        localStorage.setItem('gic_member_name', profile.name || '')
-        localStorage.setItem('gic_member_phone', profile.phone || '')
-        localStorage.setItem('gic_member_email', profile.email || '')
-        localStorage.setItem('gic_member_ministries', profile.ministries || '')
-        localStorage.setItem('gic_member_center', profile.center || '')
-        localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
-        localStorage.setItem('gic_member_birthday', profile.birthday || '')
-        localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
-        localStorage.setItem('gic_member_joined_month', profile.joinedMonth || '')
-        localStorage.setItem('gic_member_joined_year', profile.joinedYear || '')
-        if (profile.avatar) localStorage.setItem('gic_member_avatar', profile.avatar)
+        storeMemberProfile(profile)
         if (!profile.active || !profile.profileComplete) {
           if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
           return
@@ -1922,22 +1924,27 @@ function EditProfile() {
   const [joinedYear, setJoinedYear] = useState(localStorage.getItem('gic_member_joined_year') || '')
   const [avatar, setAvatar] = useState(localStorage.getItem('gic_member_avatar') || '')
   const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
   const availableServiceTimes = selectedCenter?.times || []
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!name.trim() || !phone.trim()) return
+    if (saving) return
+    if (!name.trim() || !phone.trim()) {
+      setSaveError('Name and phone number are required before you can continue.')
+      return
+    }
     setSaveError('')
+    setSaving(true)
     try {
-      await performDeviceAuth(name.trim())
       const profileResponse = await fetchMemberApi('/api/auth/profile', {
         method: 'PATCH',
         body: JSON.stringify({
           name: name.trim(),
           phone: phone.trim(),
           email: email.trim(),
-          ministries: localStorage.getItem('gic_member_ministries') || '',
+          ministries: ministriesValue.join(', '),
           center,
           serviceTime,
           birthday,
@@ -1948,30 +1955,34 @@ function EditProfile() {
         }),
       })
       const savedProfile = profileResponse.profile
-      localStorage.setItem('gic_member_name', savedProfile.name || '')
-      localStorage.setItem('gic_member_phone', savedProfile.phone || '')
-      localStorage.setItem('gic_member_email', savedProfile.email || '')
-      localStorage.setItem('gic_member_ministries', savedProfile.ministries || '')
-      localStorage.setItem('gic_member_center', savedProfile.center || '')
-      localStorage.setItem('gic_member_service_time', savedProfile.serviceTime || '')
-      localStorage.setItem('gic_member_birthday', savedProfile.birthday || '')
-      localStorage.setItem('gic_membership_status', savedProfile.membershipStatus || '')
-      localStorage.setItem('gic_member_joined_month', savedProfile.joinedMonth || '')
-      localStorage.setItem('gic_member_joined_year', savedProfile.joinedYear || '')
-      if (savedProfile.avatar) localStorage.setItem('gic_member_avatar', savedProfile.avatar)
-      localStorage.setItem('gic_profile_completed', 'true')
+      if (!savedProfile?.profileComplete) {
+        throw new Error('Your profile was not marked complete. Please check your name and phone number and try again.')
+      }
+      storeMemberProfile(savedProfile)
       const notificationReady = !('Notification' in window) || Notification.permission !== 'default'
       if (isStandalonePwa() && notificationReady) {
         localStorage.setItem('gic_onboarding_completed', 'true')
         localStorage.removeItem('gic_onboarding_profile')
         navigate('/home', { replace: true })
       } else if (required || localStorage.getItem('gic_onboarding_profile') === 'true') {
-        navigate('/onboarding?stage=install', { replace: true })
+        const nextStage = !isStandalonePwa()
+          ? 'install'
+          : notificationReady
+            ? 'notifications'
+            : null
+        if (nextStage) navigate(`/onboarding?stage=${nextStage}`, { replace: true })
+        else {
+          localStorage.setItem('gic_onboarding_completed', 'true')
+          localStorage.removeItem('gic_onboarding_profile')
+          navigate('/home', { replace: true })
+        }
       } else {
-        navigate('/profile')
+        navigate('/profile', { replace: true })
       }
     } catch (error) {
       setSaveError(error.message || 'Profile could not be saved. Please try again.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -2040,7 +2051,7 @@ function EditProfile() {
         </div>
       </section>
       <div className="profile-form-actions">
-        <Button type="submit" className="wide">Save Changes & Sync Device</Button>
+        <Button type="submit" className="wide" disabled={saving}>{saving ? 'Saving profile...' : 'Save Changes & Sync Device'}</Button>
       </div>
     </form>
   </MemberShell>
