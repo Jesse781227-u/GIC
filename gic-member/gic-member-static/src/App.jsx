@@ -1968,6 +1968,7 @@ function EditProfile() {
           </label>
           <Field label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
           <Field label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
+          <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
         </div>
       </section>
       <section className="profile-form-section">
@@ -1986,7 +1987,6 @@ function EditProfile() {
           <SelectField label="Preferred service time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
             {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
           </SelectField>
-          <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
           <SelectField label="New member?" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)}>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
