@@ -40,6 +40,10 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function isProfileComplete(member: typeof members.$inferSelect) {
+  return Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim());
+}
+
 async function issueMemberToken(member: typeof members.$inferSelect, platform = "web") {
   return new SignJWT({ sub: member.id, role: "MEMBER", name: member.displayName, platform })
     .setProtectedHeader({ alg: "HS256" })
@@ -63,7 +67,7 @@ function memberResponse(member: typeof members.$inferSelect) {
     joinedYear: member.joinedYear || null,
     avatar: member.avatar || "",
     active: member.active,
-    profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
+    profileComplete: isProfileComplete(member),
     authMethod: "device_auth",
     authenticatedAt: new Date().toISOString(),
   };
@@ -179,7 +183,7 @@ app.get("/profile", async (c) => {
       joinedYear: member.joinedYear || null,
       avatar: member.avatar || "",
       active: member.active,
-      profileComplete: Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim()),
+      profileComplete: isProfileComplete(member),
     },
   });
 });
@@ -234,7 +238,7 @@ app.patch("/profile", async (c) => {
       joinedYear: member.joinedYear || null,
       avatar: member.avatar || "",
       active: member.active,
-      profileComplete: true,
+      profileComplete: isProfileComplete(member),
     },
   });
 });
