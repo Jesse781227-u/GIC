@@ -5,7 +5,7 @@ import {
   Activity, ChevronDown, ChevronRight, Plus, Search, Filter, Download,
   MoreHorizontal, UserPlus, Send, Bell, CalendarPlus, ClipboardList,
   BarChart3, Shield, Database, Globe, Lock, CheckCircle2,
-  Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut, ImagePlus
+  Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut, ImagePlus, ChevronLeft
 } from 'lucide-react'
 import {Link, Routes, Route, useLocation, useNavigate, useParams} from 'react-router-dom'
 import {ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell} from 'recharts'
@@ -79,13 +79,14 @@ function Logo(){
    <span style={{ fontSize: '7px', letterSpacing: '1px', fontWeight: 700, color: '#f5c238' }}>GLOBAL IMPACT CHURCH</span>
  </div>
 }
-function Sidebar({mobileOpen=false}){
+function Sidebar({mobileOpen=false,collapsed=false,onToggle}){
  const loc=useLocation()
  const [open,setOpen]=useState({events:true,messages:true,settings:true})
  const active=(path)=>loc.pathname===path || (path!=='/'&&loc.pathname.startsWith(path))
  const item=(to,label,Icon,extra)=> <Link to={to} className={'nav-item '+(active(to)?'active':'')}><Icon size={17}/><span>{label}</span>{extra}</Link>
- return <aside className={'sidebar '+(mobileOpen?'mobile-open':'')}>
+ return <aside className={'sidebar '+(collapsed?'collapsed ':'')+(mobileOpen?'mobile-open':'')}>
    <Logo/>
+   <button className="sidebar-toggle" type="button" onClick={onToggle} aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} title={collapsed?'Expand sidebar':'Collapse sidebar'}><ChevronLeft size={15}/></button>
    <div className="nav">
      {item('/dashboard','Dashboard',LayoutDashboard)}
      {item('/members','Members',Users)}
@@ -104,9 +105,14 @@ function Sidebar({mobileOpen=false}){
 function Shell({children}){
  const currentDate=new Intl.DateTimeFormat('en-US',{month:'long',day:'numeric',year:'numeric'}).format(new Date())
  const [mobileOpen,setMobileOpen]=useState(false)
+ const [collapsed,setCollapsed]=useState(()=>{
+  const saved=localStorage.getItem('gic_admin_sidebar_collapsed')
+  return saved ? saved==='true' : window.innerWidth<=900
+ })
  const location=useLocation()
  useEffect(()=>setMobileOpen(false),[location.pathname])
- return <div className="app-shell"><Sidebar mobileOpen={mobileOpen}/>{mobileOpen&&<button className="mobile-nav-backdrop" aria-label="Close navigation" onClick={()=>setMobileOpen(false)}/>}<div className="workspace"><header className="topbar"><button className="mobile-menu-button" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Menu size={20}/></button><div className="mobile-brand"><Logo/></div><div className="top-spacer"/><div className="date-picker">{currentDate} <CalendarDays size={15}/></div></header>{children}</div></div>
+ useEffect(()=>{localStorage.setItem('gic_admin_sidebar_collapsed',collapsed?'true':'false')},[collapsed])
+ return <div className="app-shell"><Sidebar mobileOpen={mobileOpen} collapsed={collapsed&&!mobileOpen} onToggle={()=>setCollapsed((value)=>!value)}/>{mobileOpen&&<button className="mobile-nav-backdrop" aria-label="Close navigation" onClick={()=>setMobileOpen(false)}/>}<div className={'workspace '+(collapsed&&!mobileOpen?'sidebar-collapsed':'sidebar-expanded')}><header className="topbar"><button className="mobile-menu-button" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Menu size={20}/></button><div className="mobile-brand"><Logo/></div><div className="top-spacer"/><div className="date-picker">{currentDate} <CalendarDays size={15}/></div></header>{children}</div></div>
 }
 function Page({title,subtitle,action,children}){
  return <main className="page"><div className="page-head"><div><h1>{title}</h1>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>{children}</main>
@@ -389,11 +395,27 @@ function ModernEvents(){
 
 function ModernMemberDetails(){
  const {id}=useParams()
+ const navigate=useNavigate()
  const [member,setMember]=useState(null)
+ const [deleting,setDeleting]=useState(false)
+ const [deleteError,setDeleteError]=useState('')
  useEffect(()=>{fetchAdminApi('/api/admin/ministry-applications/members').then(({members=[]})=>setMember(members.find((item)=>item.id===id)||null)).catch(()=>setMember(null))},[id])
+ const deleteMember=async()=>{
+  if(!member||!window.confirm(`Delete ${member.displayName||'this member'}? This permanently removes the member profile, devices, notifications, reminders, and ministry applications.`))return
+  setDeleteError('')
+  setDeleting(true)
+  try{
+   await fetchAdminApi(`/api/admin/ministry-applications/members/${encodeURIComponent(member.id)}`,{method:'DELETE'})
+   navigate('/members',{replace:true})
+  }catch(requestError){
+   setDeleteError(requestError.message||'Member could not be deleted.')
+  }finally{
+   setDeleting(false)
+  }
+ }
  if(!member)return <Page title="Member"><Card className="empty-message">Loading live member data...</Card></Page>
  const joined=member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'Not provided'
- return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar modern-detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card className="modern-member-card"><div className="modern-member-head"><div className="modern-member-identity">{member.avatar?<img className="modern-member-avatar" src={member.avatar} alt=""/>:<div className="modern-member-avatar avatar-fallback">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><small>Member since {joined}</small></div></div></div><div className="modern-profile-section"><h3>Personal information</h3><div className="modern-profile-grid"><div><small>Phone</small><b>{member.phone||'—'}</b></div><div><small>Email</small><b>{member.email||'—'}</b></div><div><small>Centre</small><b>{member.center||'—'}</b></div><div><small>Birthday</small><b>{member.birthday||'—'}</b></div><div><small>Service time</small><b>{member.serviceTime||'—'}</b></div><div><small>Last seen</small><b>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</b></div><div><small>Membership status</small><b>{member.membershipStatus||'No'}</b></div></div></div><div className="modern-profile-section"><h3>Groups / Ministries</h3><div className="tag-list">{(member.ministries||'').split(',').map((item)=>item.trim()).filter(Boolean).map((item)=><span className="tag" key={item}>{item}</span>)}</div>{!member.ministries&&<span className="modern-empty-label">Not provided</span>}</div><div className="modern-member-actions"><button className="btn secondary" onClick={()=>window.alert('Profile editing will be connected to the member editor next.') }><Edit3 size={14}/> Edit Profile</button><Link className="btn primary" to="/messages/new"><Send size={14}/> Send Message</Link><Link className="btn secondary" to="/activity"><Activity size={14}/> View Activity</Link></div></Card></Page>
+ return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar modern-detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card className="modern-member-card"><div className="modern-member-head"><div className="modern-member-identity">{member.avatar?<img className="modern-member-avatar" src={member.avatar} alt=""/>:<div className="modern-member-avatar avatar-fallback">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><small>Member since {joined}</small></div></div></div><div className="modern-profile-section"><h3>Personal information</h3><div className="modern-profile-grid"><div><small>Phone</small><b>{member.phone||'—'}</b></div><div><small>Email</small><b>{member.email||'—'}</b></div><div><small>Centre</small><b>{member.center||'—'}</b></div><div><small>Birthday</small><b>{member.birthday||'—'}</b></div><div><small>Service time</small><b>{member.serviceTime||'—'}</b></div><div><small>Last seen</small><b>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</b></div><div><small>Membership status</small><b>{member.membershipStatus||'No'}</b></div></div></div><div className="modern-profile-section"><h3>Groups / Ministries</h3><div className="tag-list">{(member.ministries||'').split(',').map((item)=>item.trim()).filter(Boolean).map((item)=><span className="tag" key={item}>{item}</span>)}</div>{!member.ministries&&<span className="modern-empty-label">Not provided</span>}</div>{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}<div className="modern-member-actions"><button className="btn secondary" onClick={()=>window.alert('Profile editing will be connected to the member editor next.') }><Edit3 size={14}/> Edit Profile</button><Link className="btn primary" to="/messages/new"><Send size={14}/> Send Message</Link><Link className="btn secondary" to="/activity"><Activity size={14}/> View Activity</Link><button className="btn danger" onClick={deleteMember} disabled={deleting}><Trash2 size={14}/>{deleting?'Deleting...':'Delete Member'}</button></div></Card></Page>
 }
 
 function EventsUnavailable(){
@@ -433,9 +455,24 @@ function LiveMembers(){
  const [records,setRecords]=useState([])
  const [loading,setLoading]=useState(true)
  const [error,setError]=useState('')
+ const [deleteError,setDeleteError]=useState('')
+ const [deletingId,setDeletingId]=useState('')
  useEffect(()=>{fetchAdminApi('/api/admin/ministry-applications/members').then(({members=[]})=>setRecords(members)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))},[])
  const visible=records.filter((member)=>`${member.displayName} ${member.phone||''} ${member.email||''} ${member.ministries||''} ${member.center||''}`.toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||(member.active?'Active':'Inactive')===status))
- return <Page title="Members" subtitle="Live member records from the GIC platform"><Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Active</option><option>Inactive</option></select></div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries</th><th>Member since</th><th>Birthday</th><th>Status</th><th>Last seen</th></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}>{member.avatar?<img className="avatar" src={member.avatar} alt=""/>:<div className="avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<b>{member.displayName}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.center||'—'}</td><td>{member.ministries||'—'}</td><td>{member.joinedMonth&&member.joinedYear?`${member.joinedMonth}/${member.joinedYear}`:'—'}</td><td>{member.birthday||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>}</Card></Page>
+ const deleteMember=async(member)=>{
+  if(!window.confirm(`Delete ${member.displayName||'this member'}? This permanently removes the member profile, devices, notifications, reminders, and ministry applications.`))return
+  setDeleteError('')
+  setDeletingId(member.id)
+  try{
+   await fetchAdminApi(`/api/admin/ministry-applications/members/${encodeURIComponent(member.id)}`,{method:'DELETE'})
+   setRecords((items)=>items.filter((item)=>item.id!==member.id))
+  }catch(requestError){
+   setDeleteError(requestError.message||'Member could not be deleted.')
+  }finally{
+   setDeletingId('')
+  }
+ }
+ return <Page title="Members" subtitle="Live member records from the GIC platform"><Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Active</option><option>Inactive</option></select></div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries</th><th>Member since</th><th>Birthday</th><th>Status</th><th>Last seen</th><th aria-label="Actions" /></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}>{member.avatar?<img className="avatar" src={member.avatar} alt=""/>:<div className="avatar">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<b>{member.displayName}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.center||'—'}</td><td>{member.ministries||'—'}</td><td>{member.joinedMonth&&member.joinedYear?`${member.joinedMonth}/${member.joinedYear}`:'—'}</td><td>{member.birthday||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td><td><button className="icon-btn delete-member" type="button" onClick={()=>deleteMember(member)} disabled={deletingId===member.id} aria-label={`Delete ${member.displayName}`} title="Delete member"><Trash2 size={15}/></button></td></tr>)}</tbody></table></div>}</Card></Page>
 }
 
 function LiveMemberDetails(){

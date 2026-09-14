@@ -3,8 +3,17 @@ import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
-import { ministryApplications } from "../db/schema.js";
-import { members, memberMergeLogs } from "../db/schema.js";
+import {
+  birthdayNotificationSends,
+  memberMergeLogs,
+  members,
+  ministryApplications,
+  notificationDeliveries,
+  notificationPreferences,
+  notifications,
+  pushDevices,
+  serviceReminders,
+} from "../db/schema.js";
 import { recordActivity } from "../services/activity.service.js";
 
 const memberApp = new Hono();
@@ -45,6 +54,32 @@ adminApp.use("*", authMiddleware, adminMiddleware);
 adminApp.get("/members", async (c) => {
   const records = await db.query.members.findMany({ orderBy: (table, { desc }) => [desc(table.createdAt)] });
   return c.json({ members: records });
+});
+adminApp.delete("/members/:id", async (c) => {
+  const memberId = c.req.param("id");
+  const member = await db.query.members.findFirst({ where: eq(members.id, memberId) });
+  if (!member) return c.json({ error: "Member not found" }, 404);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(notificationDeliveries).where(eq(notificationDeliveries.memberId, memberId));
+    await tx.delete(notifications).where(eq(notifications.memberId, memberId));
+    await tx.delete(pushDevices).where(eq(pushDevices.memberId, memberId));
+    await tx.delete(notificationPreferences).where(eq(notificationPreferences.memberId, memberId));
+    await tx.delete(serviceReminders).where(eq(serviceReminders.memberId, memberId));
+    await tx.delete(birthdayNotificationSends).where(eq(birthdayNotificationSends.memberId, memberId));
+    await tx.delete(ministryApplications).where(eq(ministryApplications.memberId, memberId));
+    await tx.delete(members).where(eq(members.id, memberId));
+  });
+
+  await recordActivity({
+    actorId: c.get("user").sub,
+    actorName: c.get("user").name,
+    action: "Deleted member",
+    target: member.displayName,
+    targetId: memberId,
+  });
+
+  return c.json({ success: true, deletedMemberId: memberId });
 });
 adminApp.get("/", async (c) => {
   const [applications, memberRecords] = await Promise.all([
