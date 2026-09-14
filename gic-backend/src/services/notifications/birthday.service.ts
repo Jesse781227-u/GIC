@@ -54,7 +54,8 @@ export function birthdayCelebration(member: typeof members.$inferSelect, today =
     fullName: member.displayName,
     avatar: member.avatar || "",
     title: `Happy Birthday, ${name}!`,
-    message: `The GIC family is celebrating you today, ${name}. May your new year be filled with joy, grace, and beautiful moments.`,
+    message: `Today we celebrate the gift of you, ${name}. May this new year of life bring you deep joy, fresh strength, and beautiful moments with God and the people who love you.`,
+    blessing: "May the Lord bless you and keep you, guide your steps, and fill your days with peace.",
     date: getBirthdayDateKey(today),
     destinationUrl: BIRTHDAY_ROUTE,
   };
@@ -75,7 +76,7 @@ export class BirthdayService {
     const [inboxItem] = await db.insert(notifications).values({
       memberId: member.id,
       title: celebration.title,
-      body: celebration.message,
+      body: `${celebration.message} ${celebration.blessing}`,
       type: "SYSTEM_NOTIFICATION",
       destinationUrl: BIRTHDAY_ROUTE,
     }).returning();
@@ -94,7 +95,7 @@ export class BirthdayService {
     await pushService.processDeliveries(
       deliveries.map(({ id }) => id),
       celebration.title,
-      celebration.message,
+      `${celebration.message} ${celebration.blessing}`,
       BIRTHDAY_ROUTE,
       { birthdayDate, tag: `gic-birthday-${member.id}-${birthdayDate}` },
     );
