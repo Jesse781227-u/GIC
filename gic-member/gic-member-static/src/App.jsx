@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useContext, useCallback, createContext } from 'react'
 import { createPortal } from 'react-dom'
 import './bugfix.css'
+import './birthday.css'
 import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
@@ -821,6 +822,7 @@ function isPersistentConsoleAllowed(pathname) {
     normalizedPath === path || (path !== '/' && normalizedPath.startsWith(`${path}/`))
   )
   if (isAccountCompletionPath) return false
+  if (normalizedPath === '/announcements/birthday') return false
   if (/^\/events\/[^/]+\/register(?:\/|$)/.test(normalizedPath)) return false
 
   return AUTHENTICATED_CONSOLE_PATHS.some((path) => normalizedPath === path || normalizedPath.startsWith(`${path}/`))
@@ -1423,7 +1425,20 @@ function BirthdayPage() {
   }, [])
   return <MemberShell active="home" title="Your Birthday" backTo="/announcements">
     {loading && <p className="center muted">Preparing your birthday message...</p>}
-    {!loading && birthday && <section className="birthday-page-card"><div className="birthday-confetti" aria-hidden="true">✦　✧　✦</div>{birthday.avatar ? <img className="birthday-avatar" src={birthday.avatar} alt="" /> : <div className="birthday-avatar birthday-avatar-fallback">{birthday.name.charAt(0)}</div>}<span className="eyebrow">A message just for you</span><h1>{birthday.title}</h1><p>{birthday.message}</p><div className="birthday-seal">With love from the GIC family</div></section>}
+    {!loading && birthday && <section className="birthday-page-card">
+      <div className="birthday-celebration" aria-hidden="true">
+        <span className="birthday-glow" />
+        <span className="birthday-orbit birthday-orbit-one" />
+        <span className="birthday-orbit birthday-orbit-two" />
+        <div className="birthday-confetti">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
+      </div>
+      {birthday.avatar ? <img className="birthday-avatar" src={birthday.avatar} alt="" /> : <div className="birthday-avatar birthday-avatar-fallback">{birthday.name.charAt(0)}</div>}
+      <span className="eyebrow">A message just for you</span>
+      <h1>{birthday.title}</h1>
+      <p className="birthday-message">{birthday.message}</p>
+      <p className="birthday-blessing"><span>Our prayer for you</span>{birthday.blessing}</p>
+      <div className="birthday-seal">With love from the GIC family</div>
+    </section>}
     {!loading && !birthday && <div className="empty"><h2>This birthday message is private</h2><p>There is no birthday celebration available today.</p><Link className="btn primary wide" to="/announcements">Back to Announcements</Link></div>}
   </MemberShell>
 }
