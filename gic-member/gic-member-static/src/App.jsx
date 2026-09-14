@@ -1946,40 +1946,64 @@ function EditProfile() {
   }
 
   return <MemberShell active="profile" title="Edit Profile" backTo="/profile" lockProfile={required}>
-    <div className="profile-head">
+    <div className="profile-head profile-edit-head">
       <label className="avatar large avatar-picker">
         {avatar ? <img src={avatar} alt="Profile preview" /> : name.slice(0, 2).toUpperCase()}
         <span><Camera size={13} /></span>
         <input type="file" accept="image/*" onChange={handleAvatarChange} />
       </label>
     </div>
-    {required && <p className="auth-inline-error" role="alert">Your account needs a name and phone number before you can continue.</p>}
-    {saveError && <p className="auth-inline-error" role="alert">{saveError}</p>}
-    <form onSubmit={handleSave} className="stack">
-      <label className="field">
-        <span>FULL NAME</span>
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <Field label="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
-      <Field label="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
-      <div className="field"><span>MINISTRIES</span><p className="muted">Ministry membership is added after admin approval. Apply from Browse Ministries to request to join.</p></div>
-      <SelectField label="Center You Attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
-        {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
-      </SelectField>
-      <SelectField label="Preferred Service Time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
-        {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
-      </SelectField>
-      <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
-      <SelectField label="New member?" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)}>
-        <option value="Yes">Yes</option>
-        <option value="No">No</option>
-      </SelectField>
-      <SelectField label="Month joined (Optional)" value={joinedMonth} onChange={(e) => setJoinedMonth(e.target.value)}>
-        <option value="">I'm not sure</option>
-        {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}
-      </SelectField>
-      <label className="field"><span>YEAR JOINED</span><input type="number" min="1900" max={new Date().getFullYear()} value={joinedYear} onChange={(e) => setJoinedYear(e.target.value)} required={required || !localStorage.getItem('gic_profile_completed')} /></label>
-      <Button type="submit" className="wide">Save Changes & Sync Device</Button>
+    <form onSubmit={handleSave} className="stack profile-form">
+      {required && <p className="profile-form-notice" role="alert">Your account needs a name and phone number before you can continue.</p>}
+      {saveError && <p className="profile-form-notice is-error" role="alert">{saveError}</p>}
+      <section className="profile-form-section">
+        <div className="profile-form-section-head">
+          <span>Personal details</span>
+          <small>Your basic contact information</small>
+        </div>
+        <div className="profile-form-fields">
+          <label className="field">
+            <span>Full name</span>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <Field label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
+          <Field label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
+        </div>
+      </section>
+      <section className="profile-form-section">
+        <div className="profile-form-section-head">
+          <span>Your church details</span>
+          <small>Help us personalize your GIC experience</small>
+        </div>
+        <div className="profile-form-fields">
+          <div className="field">
+            <span>Ministries</span>
+            <p className="profile-form-help">Ministry membership is added after admin approval. Apply from Browse Ministries to request to join.</p>
+          </div>
+          <SelectField label="Center you attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
+            {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
+          </SelectField>
+          <SelectField label="Preferred service time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
+            {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
+          </SelectField>
+          <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
+          <SelectField label="New member?" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)}>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </SelectField>
+          <SelectField label="Month joined (optional)" value={joinedMonth} onChange={(e) => setJoinedMonth(e.target.value)}>
+            <option value="">I'm not sure</option>
+            {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}
+          </SelectField>
+          <label className="field">
+            <span>Year joined</span>
+            <input type="number" min="1900" max={new Date().getFullYear()} value={joinedYear} onChange={(e) => setJoinedYear(e.target.value)} required={required || !localStorage.getItem('gic_profile_completed')} />
+          </label>
+        </div>
+      </section>
+      <div className="profile-form-actions">
+        <Button type="submit" className="wide">Save Changes & Sync Device</Button>
+      </div>
     </form>
   </MemberShell>
 }
