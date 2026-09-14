@@ -492,7 +492,12 @@ function PersistentAudioPlayer({ embedded = false }) {
   const { playing, loading, minimized, error, title, recordingDate, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
   const formatTime = (seconds) => {
     const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
-    return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`
+    const hours = Math.floor(safeSeconds / 3600)
+    const minutes = Math.floor((safeSeconds % 3600) / 60)
+    const remainder = safeSeconds % 60
+    return hours > 0
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+      : `${minutes}:${String(remainder).padStart(2, '0')}`
   }
   if (!title) return null
   return <aside className={`persistent-audio-player ${embedded ? 'is-embedded' : ''} ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
