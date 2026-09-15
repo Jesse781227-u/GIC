@@ -54,13 +54,13 @@ const eventSchema = eventSchemaBase.superRefine((value, ctx) => {
   if (value.endsAt && new Date(value.endsAt) <= new Date(value.startsAt)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endsAt"], message: "End time must be after start time" });
   }
-  if (value.isPaid && value.price === undefined) {
+  if (value.isPaid && value.price == null) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["price"], message: "Price is required for paid events" });
   }
   if (value.registrationOpensAt && value.registrationClosesAt && new Date(value.registrationClosesAt) <= new Date(value.registrationOpensAt)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationClosesAt"], message: "Registration close time must be after open time" });
   }
-  if (value.registrationRequired && value.registrationCapacity === null) {
+  if (value.registrationRequired && value.registrationCapacity == null) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationCapacity"], message: "Capacity is required when registration is enabled" });
   }
   if (value.locationType === "ONLINE" && !value.isOnline) {
@@ -162,6 +162,12 @@ app.put("/:id", async (c) => {
   if (!normalized.success) return c.json({ error: "Invalid event", details: normalized.error.issues }, 400);
   const [event] = await db.update(events).set(eventValues(normalized.data, existing.createdBy)).where(eq(events.id, id)).returning();
   return c.json({ event });
+});
+
+app.get("/:id", async (c) => {
+  const event = await db.query.events.findFirst({ where: eq(events.id, c.req.param("id")) });
+  if (!event) return c.json({ error: "Event not found" }, 404);
+  return c.json({ event: await eventWithCounts(event) });
 });
 
 app.get("/:id/pickup-locations", async (c) => {
