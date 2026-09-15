@@ -9,6 +9,7 @@ import {
   eventRegistrations,
   eventReminders,
   members,
+  busPickupPoints,
 } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
 import { recordActivity } from "../services/activity.service.js";
@@ -72,6 +73,7 @@ const eventSchema = eventSchemaBase.superRefine((value, ctx) => {
 });
 
 const pickupSchema = z.object({
+  busPickupPointId: z.string().uuid().nullable().optional(),
   locationName: z.string().trim().min(1),
   addressLandmark: z.string().trim().min(1),
   pickupTime: z.string().datetime(),
@@ -173,7 +175,12 @@ app.get("/:id", async (c) => {
 app.get("/:id/pickup-locations", async (c) => {
   const event = await db.query.events.findFirst({ where: eq(events.id, c.req.param("id")) });
   if (!event) return c.json({ error: "Event not found" }, 404);
-  return c.json({ pickupLocations: await db.query.eventPickupLocations.findMany({ where: eq(eventPickupLocations.eventId, event.id), orderBy: [desc(eventPickupLocations.createdAt)] }) });
+  const pickupLocations = await db.query.eventPickupLocations.findMany({
+    where: eq(eventPickupLocations.eventId, event.id),
+    orderBy: [desc(eventPickupLocations.createdAt)],
+    with: { busPickupPoint: true },
+  });
+  return c.json({ pickupLocations });
 });
 
 app.post("/:id/pickup-locations", async (c) => {
@@ -182,8 +189,13 @@ app.post("/:id/pickup-locations", async (c) => {
   if (!event) return c.json({ error: "Event not found" }, 404);
   const parsed = pickupSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid pickup location", details: parsed.error.issues }, 400);
+  if (parsed.data.busPickupPointId) {
+    const pickupPoint = await db.query.busPickupPoints.findFirst({ where: and(eq(busPickupPoints.id, parsed.data.busPickupPointId), eq(busPickupPoints.active, true)) });
+    if (!pickupPoint) return c.json({ error: "Pickup point is not available" }, 400);
+  }
   const [pickupLocation] = await db.insert(eventPickupLocations).values({
     eventId,
+    busPickupPointId: parsed.data.busPickupPointId ?? null,
     locationName: parsed.data.locationName,
     addressLandmark: parsed.data.addressLandmark,
     pickupTime: new Date(parsed.data.pickupTime),
@@ -202,7 +214,12 @@ app.put("/:id/pickup-locations/:pickupId", async (c) => {
   if (!existing) return c.json({ error: "Pickup location not found" }, 404);
   const parsed = pickupSchema.partial().safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid pickup location", details: parsed.error.issues }, 400);
+  if (parsed.data.busPickupPointId) {
+    const pickupPoint = await db.query.busPickupPoints.findFirst({ where: and(eq(busPickupPoints.id, parsed.data.busPickupPointId), eq(busPickupPoints.active, true)) });
+    if (!pickupPoint) return c.json({ error: "Pickup point is not available" }, 400);
+  }
   const [pickupLocation] = await db.update(eventPickupLocations).set({
+    ...(parsed.data.busPickupPointId === undefined ? {} : { busPickupPointId: parsed.data.busPickupPointId }),
     ...(parsed.data.locationName === undefined ? {} : { locationName: parsed.data.locationName }),
     ...(parsed.data.addressLandmark === undefined ? {} : { addressLandmark: parsed.data.addressLandmark }),
     ...(parsed.data.pickupTime === undefined ? {} : { pickupTime: new Date(parsed.data.pickupTime) }),

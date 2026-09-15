@@ -119,6 +119,34 @@ export const ministryApplications = pgTable(
   })
 );
 
+export const churchLocations = pgTable("church_locations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  address: text("address").notNull(),
+  serviceTimes: text("service_times"),
+  contactInfo: text("contact_info"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  nameUnique: unique("church_locations_name_unique").on(t.name),
+  activeIdx: index("church_locations_active_idx").on(t.active),
+}));
+
+export const busPickupPoints = pgTable("bus_pickup_points", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  address: text("address").notNull(),
+  managerName: text("manager_name").notNull(),
+  managerPhone: text("manager_phone").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  nameUnique: unique("bus_pickup_points_name_unique").on(t.name),
+  activeIdx: index("bus_pickup_points_active_idx").on(t.active),
+}));
+
 export const events = pgTable("events", {
   id: uuid("id").primaryKey().defaultRandom(),
   title: text("title").notNull(),
@@ -159,6 +187,7 @@ export const eventPickupLocations = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    busPickupPointId: uuid("bus_pickup_point_id").references(() => busPickupPoints.id, { onDelete: "set null" }),
     locationName: text("location_name").notNull(),
     addressLandmark: text("address_landmark").notNull(),
     pickupTime: timestamp("pickup_time", { withTimezone: true }).notNull(),
@@ -170,6 +199,7 @@ export const eventPickupLocations = pgTable(
   },
   (t) => ({
     eventIdx: index("event_pickup_locations_event_id_idx").on(t.eventId),
+    busPickupPointIdx: index("event_pickup_locations_bus_pickup_point_id_idx").on(t.busPickupPointId),
     activeIdx: index("event_pickup_locations_active_idx").on(t.active),
   })
 );

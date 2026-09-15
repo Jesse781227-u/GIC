@@ -11,6 +11,7 @@ import {
   eventPickupLocations,
   eventRegistrations,
   eventReminders,
+  busPickupPoints,
 } from "./schema.js";
 
 export const pushDevicesRelations = relations(pushDevices, ({ many }) => ({
@@ -54,6 +55,7 @@ export const eventsRelations = relations(events, ({ many }) => ({
 }));
 export const eventPickupLocationsRelations = relations(eventPickupLocations, ({ one, many }) => ({
   event: one(events, { fields: [eventPickupLocations.eventId], references: [events.id] }),
+  busPickupPoint: one(busPickupPoints, { fields: [eventPickupLocations.busPickupPointId], references: [busPickupPoints.id] }),
   registrations: many(eventRegistrations),
 }));
 export const eventRegistrationsRelations = relations(eventRegistrations, ({ one }) => ({

@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema.js";
 import * as relations from "./relations.js";
+import { busPickupPointSeed, churchLocationSeed } from "./reference-data.js";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
@@ -42,6 +43,18 @@ export async function ensureDatabaseSchema() {
   await client`CREATE INDEX IF NOT EXISTS event_registrations_pickup_location_id_idx ON event_registrations(pickup_location_id)`;
   await client`CREATE TABLE IF NOT EXISTS event_reminders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE, offset_minutes integer NOT NULL, scheduled_for timestamptz NOT NULL, status text NOT NULL DEFAULT 'pending', sent_at timestamptz, created_by text NOT NULL, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE(event_id, offset_minutes))`;
   await client`CREATE INDEX IF NOT EXISTS event_reminders_due_idx ON event_reminders(status, scheduled_for)`;
+  await client`CREATE TABLE IF NOT EXISTS church_locations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL UNIQUE, address text NOT NULL, service_times text, contact_info text, active boolean NOT NULL DEFAULT true, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
+  await client`CREATE INDEX IF NOT EXISTS church_locations_active_idx ON church_locations(active)`;
+  await client`CREATE TABLE IF NOT EXISTS bus_pickup_points (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL UNIQUE, address text NOT NULL, manager_name text NOT NULL, manager_phone text NOT NULL, active boolean NOT NULL DEFAULT true, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
+  await client`CREATE INDEX IF NOT EXISTS bus_pickup_points_active_idx ON bus_pickup_points(active)`;
+  await client`ALTER TABLE event_pickup_locations ADD COLUMN IF NOT EXISTS bus_pickup_point_id uuid REFERENCES bus_pickup_points(id) ON DELETE SET NULL`;
+  await client`CREATE INDEX IF NOT EXISTS event_pickup_locations_bus_pickup_point_id_idx ON event_pickup_locations(bus_pickup_point_id)`;
+  for (const location of churchLocationSeed) {
+    await client`INSERT INTO church_locations (name, address, service_times, contact_info) VALUES (${location.name}, ${location.address}, ${location.serviceTimes}, ${location.contactInfo}) ON CONFLICT (name) DO NOTHING`;
+  }
+  for (const pickupPoint of busPickupPointSeed) {
+    await client`INSERT INTO bus_pickup_points (name, address, manager_name, manager_phone) VALUES (${pickupPoint.name}, ${pickupPoint.address}, ${pickupPoint.managerName}, ${pickupPoint.managerPhone}) ON CONFLICT (name) DO NOTHING`;
+  }
   await client`CREATE TABLE IF NOT EXISTS service_reminders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id text NOT NULL, service_type text NOT NULL, occurrence_key text NOT NULL, service_starts_at timestamptz NOT NULL, offset_minutes text NOT NULL, scheduled_for timestamptz NOT NULL, status text NOT NULL DEFAULT 'pending', created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE(member_id, occurrence_key, offset_minutes))`;
   await client`CREATE INDEX IF NOT EXISTS service_reminders_due_idx ON service_reminders(status, scheduled_for)`;
   await client`CREATE TABLE IF NOT EXISTS birthday_notification_sends (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id text NOT NULL, birthday_date text NOT NULL, status text NOT NULL DEFAULT 'processing', sent_at timestamptz, error text, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE(member_id, birthday_date))`;
