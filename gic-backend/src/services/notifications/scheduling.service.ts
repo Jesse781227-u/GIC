@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { db } from "../../db/index.js";
-import { adminNotifications, birthdayNotificationSends, members, serviceReminders } from "../../db/schema.js";
+import { adminNotifications, birthdayNotificationSends, eventRegistrations, eventReminders, events, members, serviceReminders } from "../../db/schema.js";
 import { notificationService } from "./notification.service.js";
 import { lte, and, eq } from "drizzle-orm";
 import { birthdayService, birthdayCelebration, getBirthdayDateKey, getLagosDateParts } from "./birthday.service.js";
@@ -64,6 +64,42 @@ export class SchedulingService {
       } catch (error) {
         console.error(`Failed to process service reminder ${reminder.id}:`, error);
         await db.update(serviceReminders).set({ status: "failed", updatedAt: new Date() }).where(eq(serviceReminders.id, reminder.id));
+      }
+    }
+
+    const dueEventReminders = await db
+      .update(eventReminders)
+      .set({ status: "processing", updatedAt: now })
+      .where(and(eq(eventReminders.status, "pending"), lte(eventReminders.scheduledFor, now)))
+      .returning();
+    for (const reminder of dueEventReminders) {
+      try {
+        const event = await db.query.events.findFirst({ where: eq(events.id, reminder.eventId) });
+        if (event) {
+          const registrations = await db.query.eventRegistrations.findMany({
+            where: and(eq(eventRegistrations.eventId, event.id), eq(eventRegistrations.status, "CONFIRMED")),
+          });
+          const offsetLabel = reminder.offsetMinutes === 1440
+            ? "1 day"
+            : reminder.offsetMinutes === 60
+              ? "1 hour"
+              : reminder.offsetMinutes === 30
+                ? "30 minutes"
+                : `${reminder.offsetMinutes} minutes`;
+          for (const registration of registrations) {
+            await notificationService.sendToMember({
+              memberId: registration.memberId,
+              title: event.title,
+              body: `${event.title} starts in ${offsetLabel}.`,
+              type: "EVENT_REMINDER",
+              destinationUrl: `/events/${event.id}`,
+            });
+          }
+        }
+        await db.update(eventReminders).set({ status: "sent", sentAt: new Date(), updatedAt: new Date() }).where(eq(eventReminders.id, reminder.id));
+      } catch (error) {
+        console.error(`Failed to process event reminder ${reminder.id}:`, error);
+        await db.update(eventReminders).set({ status: "failed", updatedAt: new Date() }).where(eq(eventReminders.id, reminder.id));
       }
     }
 
