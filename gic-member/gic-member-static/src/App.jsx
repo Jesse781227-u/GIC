@@ -1710,6 +1710,7 @@ function EventRegistration() {
   const memberName = profile?.name || localStorage.getItem('gic_member_name') || ''
   const email = profile?.email || localStorage.getItem('gic_member_email') || ''
   const phone = profile?.phone || localStorage.getItem('gic_member_phone') || ''
+  const selectedPickup = (event.pickupLocations || []).find((pickup) => pickup.id === pickupLocationId)
   const handleSubmit = async (submitEvent) => {
     submitEvent.preventDefault()
     setError('')
@@ -1737,7 +1738,7 @@ function EventRegistration() {
         <Field label="Email Address" value={email} icon={Mail} />
         <Field label="Phone Number" value={phone} icon={Phone} />
       </div>
-       {event.busTransportEnabled && <label className="field"><span>BUS PICKUP LOCATION</span><select value={pickupLocationId} onChange={(submitEvent) => setPickupLocationId(submitEvent.target.value)} required><option value="">Choose a pickup location</option>{(event.pickupLocations || []).map((pickup) => <option key={pickup.id} value={pickup.id}>{pickup.locationName} · {pickup.addressLandmark} · {new Date(pickup.pickupTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {pickup.capacity} seats</option>)}</select></label>}
+       {event.busTransportEnabled && <><label className="field"><span>BUS PICKUP LOCATION</span><select value={pickupLocationId} onChange={(submitEvent) => setPickupLocationId(submitEvent.target.value)} required><option value="">Choose a pickup location</option>{(event.pickupLocations || []).map((pickup) => <option key={pickup.id} value={pickup.id}>{pickup.locationName} · {pickup.addressLandmark} · {new Date(pickup.pickupTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {pickup.capacity} seats</option>)}</select></label>{selectedPickup&&<div className="pickup-contact-card"><b>{selectedPickup.locationName}</b><span>{selectedPickup.addressLandmark}</span><span>Pickup time: {new Date(selectedPickup.pickupTime).toLocaleString()}</span>{selectedPickup.managerName&&<span>Pickup manager: {selectedPickup.managerName} · <a href={`tel:${selectedPickup.managerPhone}`}>{selectedPickup.managerPhone}</a></span>}</div>}</>}
       <label className="check registration-terms"><input type="checkbox" defaultChecked required /> I agree to the event <u>terms and conditions</u></label>
        {error && <p className="auth-error" role="alert">{error}</p>}
        <button type="submit" className="btn primary wide registration-submit" disabled={saving}>{saving ? 'Registering...' : 'Confirm Registration'} <ChevronRight size={17} /></button>
@@ -2144,6 +2145,10 @@ function MyRegistrations() {
     location: registration.location || 'Location to be announced',
     startAt: registration.startsAt,
     pickupLocationName: registration.pickupLocationName,
+    pickupLocationAddress: registration.pickupLocationAddress,
+    pickupLocationTime: registration.pickupLocationTime,
+    pickupManagerName: registration.pickupManagerName,
+    pickupManagerPhone: registration.pickupManagerPhone,
     status: registration.status,
     image: GIC_LOGO,
   })), ...localRegistrations.filter((event) => !remoteRegistrations.some((registration) => registration.eventId === event.id))]
@@ -2160,7 +2165,7 @@ function MyRegistrations() {
       const seconds = Math.floor((remaining % 60000) / 1000)
       return <article className="registered-event-card" key={event.id}>
         <div className="registered-event-cover" style={{ backgroundImage: `url(${event.image})` }}><span className="status">Registered</span></div>
-         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<small className="registered-location">Bus pickup: {event.pickupLocationName}</small>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':'Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
+         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':'Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
       </article>
     }) : <div className="events-empty-state">
       <div className="events-empty-illustration" aria-hidden="true">

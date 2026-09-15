@@ -8,6 +8,7 @@ import {
   eventPickupLocations,
   eventRegistrations,
   members,
+  busPickupPoints,
 } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
 
@@ -25,11 +26,19 @@ function isRegistrationOpen(event: typeof events.$inferSelect, now = new Date())
     && (!event.registrationClosesAt || event.registrationClosesAt > now);
 }
 
-function formatEvent(event: typeof events.$inferSelect, pickupLocations: Array<typeof eventPickupLocations.$inferSelect> = []) {
+type EventPickupWithReference = typeof eventPickupLocations.$inferSelect & {
+  busPickupPoint?: typeof busPickupPoints.$inferSelect | null;
+};
+
+function formatEvent(event: typeof events.$inferSelect, pickupLocations: EventPickupWithReference[] = []) {
   return {
     ...event,
     registrationOpen: isRegistrationOpen(event),
-    pickupLocations: event.busTransportEnabled ? pickupLocations.filter((location) => location.active) : [],
+    pickupLocations: event.busTransportEnabled ? pickupLocations.filter((location) => location.active).map((location) => ({
+      ...location,
+      managerName: location.busPickupPoint?.managerName || null,
+      managerPhone: location.busPickupPoint?.managerPhone || null,
+    })) : [],
   };
 }
 
@@ -40,7 +49,7 @@ app.get("/", async (c) => {
   });
   const ids = records.map((event) => event.id);
   const pickupLocations = ids.length
-    ? await db.query.eventPickupLocations.findMany({ where: inArray(eventPickupLocations.eventId, ids), orderBy: [asc(eventPickupLocations.pickupTime)] })
+    ? await db.query.eventPickupLocations.findMany({ where: inArray(eventPickupLocations.eventId, ids), orderBy: [asc(eventPickupLocations.pickupTime)], with: { busPickupPoint: true } })
     : [];
   return c.json({ events: records.map((event) => formatEvent(event, pickupLocations.filter((location) => location.eventId === event.id))) });
 });
@@ -112,6 +121,10 @@ app.get("/registrations", async (c) => {
     registeredAt: eventRegistrations.registeredAt,
     pickupLocationId: eventRegistrations.pickupLocationId,
     pickupLocationName: eventPickupLocations.locationName,
+    pickupLocationAddress: eventPickupLocations.addressLandmark,
+    pickupLocationTime: eventPickupLocations.pickupTime,
+    pickupManagerName: busPickupPoints.managerName,
+    pickupManagerPhone: busPickupPoints.managerPhone,
     eventTitle: events.title,
     startsAt: events.startsAt,
     location: events.location,
@@ -129,6 +142,7 @@ app.get("/:id", async (c) => {
   const pickupLocations = await db.query.eventPickupLocations.findMany({
     where: and(eq(eventPickupLocations.eventId, event.id), eq(eventPickupLocations.active, true)),
     orderBy: [asc(eventPickupLocations.pickupTime)],
+    with: { busPickupPoint: true },
   });
   const registration = await db.query.eventRegistrations.findFirst({
     where: and(eq(eventRegistrations.eventId, event.id), eq(eventRegistrations.memberId, c.get("user").sub)),

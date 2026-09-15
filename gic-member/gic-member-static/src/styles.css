@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
 @import './motion.css';
 
+.pickup-contact-card{display:flex;flex-direction:column;gap:5px;margin-top:-7px;margin-bottom:15px;padding:12px 14px;border:1px solid #e4dced;border-radius:12px;background:#faf7fd;color:#625d6e;font-size:11px;line-height:1.45}.pickup-contact-card b,.registered-pickup b{color:#5b2c8a}.pickup-contact-card a,.registered-pickup a{color:#5b2c8a;font-weight:700}.registered-pickup{display:flex;flex-direction:column;gap:4px;margin-top:10px;padding:10px 12px;border-radius:12px;background:#faf7fd;color:#777181;font-size:10px;line-height:1.4}.registered-pickup small{display:block}
+
 .directory-list{display:flex;flex-direction:column;gap:14px}.directory-card{overflow:hidden;background:#fff;border:1px solid #eeeaf4;border-radius:14px;box-shadow:0 7px 19px rgba(46,25,87,.06)}.directory-card>img{display:block;width:100%;height:130px;object-fit:cover}.directory-card-body{padding:14px}.directory-card h2{font-size:16px;color:#30204c;margin:0 0 5px}.directory-card p{font-size:11px;line-height:1.5;color:#686274;margin:0 0 12px}.directory-requirements{display:flex;flex-direction:column;gap:4px;padding:10px;background:#faf8fd;border-radius:8px;margin-bottom:12px}.directory-requirements b{font-size:9px;color:#5b2c8a}.directory-requirements span{font-size:9px;line-height:1.45;color:#686274}
 
 :root{
