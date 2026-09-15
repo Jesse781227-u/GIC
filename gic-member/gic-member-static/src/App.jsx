@@ -1363,7 +1363,7 @@ function HomePage() {
 
 function EventRow({ event, onOpenService }) {
   const displayEvent = event.isService ? getServiceDisplay(event) : event
-  const content = <><img src={displayEvent.image} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date} · {displayEvent.time}</small><small className="event-location"><MapPin size={13} />{displayEvent.location}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
+  const content = <><img src={displayEvent.image || displayEvent.imageUrl || GIC_LOGO} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleDateString() : '')} · {displayEvent.time || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')}</small><small className="event-location"><MapPin size={13} />{displayEvent.location || displayEvent.venueName || (displayEvent.isOnline ? 'Online' : 'Location to be announced')}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
   if (displayEvent.isService) {
     return <button type="button" className="event-row service-row" onClick={() => onOpenService?.(event)}>{content}</button>
   }
@@ -1481,10 +1481,26 @@ function AnnouncementDetails() {
 
 function EventsPage() {
   const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
+  const [remoteEvents, setRemoteEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    fetchMemberApi('/api/events')
+      .then(({ events: records = [] }) => setRemoteEvents(records.map((event) => ({
+        ...event,
+        date: new Date(event.startsAt).toLocaleDateString(),
+        time: new Date(event.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        image: event.imageUrl || GIC_LOGO,
+      }))))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+  const listedEvents = [...getUpcomingEvents(), ...remoteEvents]
   return <>
     <MemberShell active="events" title="Events" backTo="/home">
       <div className="segmented"><button className="active">Upcoming</button><Link to="/my-registrations">My Events</Link></div>
-      {getUpcomingEvents().map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
+      {loading && <p className="center muted">Loading events...</p>}
+      {!loading && !listedEvents.length && <p className="center muted">No upcoming events.</p>}
+      {listedEvents.map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
     </MemberShell>
     {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
   </>
@@ -1642,30 +1658,73 @@ function ServiceModalLegacy({ event, onClose }) {
 }
 
 function EventDetails() {
-  const { id } = useParams(); const e = events.find(x => x.id === id) || events[0]
+  const { id } = useParams()
+  const staticEvent = events.find(x => x.id === id)
+  const [remoteEvent, setRemoteEvent] = useState(null)
+  const [registration, setRegistration] = useState(null)
+  const [loading, setLoading] = useState(!staticEvent)
+  useEffect(() => {
+    if (staticEvent) return
+    fetchMemberApi(`/api/events/${id}`).then(({ event: record, registration: currentRegistration }) => {
+      setRegistration(currentRegistration)
+      setRemoteEvent({
+      ...record,
+      date: new Date(record.startsAt).toLocaleDateString(),
+      time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      image: record.imageUrl || GIC_LOGO,
+      })
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [id, staticEvent])
+  if (loading) return <MemberShell active="events" title="Event" backTo="/events"><p className="center muted">Loading event...</p></MemberShell>
+  const e = remoteEvent || staticEvent || events[0]
   if (e.isService) {
     const service = getServiceDisplay(e)
     return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p></div></MemberShell>
   }
-  const isRegistered = Boolean(localStorage.getItem(`gic_registration_${e.id}`))
-  return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
+  const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
+  return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{!e.registrationRequired ? <p className="muted">Registration is not required for this event.</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
 }
 
 function EventRegistration() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const event = events.find((item) => item.id === id) || events[0]
-  const memberName = localStorage.getItem('gic_member_name') || ''
-  const email = localStorage.getItem('gic_member_email') || ''
-  const phone = localStorage.getItem('gic_member_phone') || ''
-  const handleSubmit = (submitEvent) => {
+  const staticEvent = events.find((item) => item.id === id)
+  const [event, setEvent] = useState(staticEvent)
+  const [pickupLocationId, setPickupLocationId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [profile, setProfile] = useState(null)
+  useEffect(() => {
+    Promise.all([
+      staticEvent ? Promise.resolve({ event: staticEvent, registration: null }) : fetchMemberApi(`/api/events/${id}`),
+      fetchMemberApi('/api/auth/profile'),
+    ]).then(([eventResponse, profileResponse]) => {
+      if (!staticEvent) {
+        const record = eventResponse.event
+        setEvent({ ...record, date: new Date(record.startsAt).toLocaleDateString(), time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), image: record.imageUrl || GIC_LOGO })
+      }
+      setProfile(profileResponse.profile)
+    }).catch((requestError) => setError(requestError.message || 'Event registration is unavailable.'))
+  }, [id, staticEvent])
+  if (!event) return <MemberShell active="events" title="Register for Event" backTo="/events"><p className="center muted">{error || 'Loading event...'}</p></MemberShell>
+  const memberName = profile?.name || localStorage.getItem('gic_member_name') || ''
+  const email = profile?.email || localStorage.getItem('gic_member_email') || ''
+  const phone = profile?.phone || localStorage.getItem('gic_member_phone') || ''
+  const handleSubmit = async (submitEvent) => {
     submitEvent.preventDefault()
-    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({
-      eventId: event.id,
-      registeredAt: new Date().toISOString(),
-      name: memberName,
-      event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image }
-    }))
+    setError('')
+    if (!staticEvent) {
+      setSaving(true)
+      try {
+        await fetchMemberApi(`/api/events/${event.id}/registrations`, { method: 'POST', body: JSON.stringify({ pickupLocationId: pickupLocationId || null }) })
+      } catch (requestError) {
+        setError(requestError.message || 'Registration could not be completed.')
+        setSaving(false)
+        return
+      }
+      setSaving(false)
+    }
+    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image } }))
     navigate(`/events/${event.id}/success`)
   }
 
@@ -1678,15 +1737,20 @@ function EventRegistration() {
         <Field label="Email Address" value={email} icon={Mail} />
         <Field label="Phone Number" value={phone} icon={Phone} />
       </div>
+       {event.busTransportEnabled && <label className="field"><span>BUS PICKUP LOCATION</span><select value={pickupLocationId} onChange={(submitEvent) => setPickupLocationId(submitEvent.target.value)} required><option value="">Choose a pickup location</option>{(event.pickupLocations || []).map((pickup) => <option key={pickup.id} value={pickup.id}>{pickup.locationName} · {pickup.addressLandmark} · {new Date(pickup.pickupTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {pickup.capacity} seats</option>)}</select></label>}
       <label className="check registration-terms"><input type="checkbox" defaultChecked required /> I agree to the event <u>terms and conditions</u></label>
-      <button type="submit" className="btn primary wide registration-submit">Confirm Registration <ChevronRight size={17} /></button>
+       {error && <p className="auth-error" role="alert">{error}</p>}
+       <button type="submit" className="btn primary wide registration-submit" disabled={saving}>{saving ? 'Registering...' : 'Confirm Registration'} <ChevronRight size={17} /></button>
     </form>
   </MemberShell>
 }
 
 function RegistrationSuccess() {
   const { id } = useParams()
-  const event = events.find((item) => item.id === id) || events[0]
+  const [storedEvent] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`gic_registration_${id}`) || 'null')?.event || null } catch { return null }
+  })
+  const event = events.find((item) => item.id === id) || storedEvent || events[0]
   const [calendarAdded, setCalendarAdded] = useState(false)
   const handleAddToCalendar = () => {
     const calendarEvent = [
@@ -2059,27 +2123,44 @@ function EditProfile() {
 
 function MyRegistrations() {
   const [now, setNow] = useState(Date.now())
-  const registrations = events.filter((event) => {
+  const [remoteRegistrations, setRemoteRegistrations] = useState([])
+  useEffect(() => {
+    fetchMemberApi('/api/events/registrations')
+      .then(({ registrations = [] }) => setRemoteRegistrations(registrations))
+      .catch(() => {})
+  }, [])
+  const localRegistrations = events.filter((event) => {
     try {
       return Boolean(localStorage.getItem(`gic_registration_${event.id}`))
     } catch {
       return false
     }
   })
+  const registrations = [...remoteRegistrations.map((registration) => ({
+    id: registration.eventId,
+    title: registration.eventTitle,
+    date: new Date(registration.startsAt).toLocaleDateString(),
+    time: new Date(registration.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    location: registration.location || 'Location to be announced',
+    startAt: registration.startsAt,
+    pickupLocationName: registration.pickupLocationName,
+    status: registration.status,
+    image: GIC_LOGO,
+  })), ...localRegistrations.filter((event) => !remoteRegistrations.some((registration) => registration.eventId === event.id))]
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
   return <MemberShell active="events" title="My Events" backTo="/events">
     {registrations.length ? registrations.map((event) => {
-      const remaining = Math.max(0, new Date(`${event.date.replace(/^\w+, /, '')} ${event.time}`).getTime() - now)
+       const remaining = Math.max(0, new Date(event.startAt || `${event.date.replace(/^\w+, /, '')} ${event.time}`).getTime() - now)
       const days = Math.floor(remaining / 86400000)
       const hours = Math.floor((remaining % 86400000) / 3600000)
       const minutes = Math.floor((remaining % 3600000) / 60000)
       const seconds = Math.floor((remaining % 60000) / 1000)
       return <article className="registered-event-card" key={event.id}>
         <div className="registered-event-cover" style={{ backgroundImage: `url(${event.image})` }}><span className="status">Registered</span></div>
-        <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small><div className="countdown"><small>Event starts in</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
+         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<small className="registered-location">Bus pickup: {event.pickupLocationName}</small>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':'Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
       </article>
     }) : <div className="events-empty-state">
       <div className="events-empty-illustration" aria-hidden="true">

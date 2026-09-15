@@ -34,6 +34,40 @@ export interface NotificationDraft {
 }
 
 export class NotificationService {
+  async sendToMember(input: {
+    memberId: string;
+    title: string;
+    body: string;
+    type: "EVENT_REMINDER" | "REGISTRATION_CONFIRMATION";
+    destinationUrl?: string;
+  }) {
+    const prefs = await db.query.notificationPreferences.findFirst({
+      where: eq(notificationPreferences.memberId, input.memberId),
+    });
+    if (prefs && (!prefs.pushEnabled || (input.type === "EVENT_REMINDER" ? !prefs.reminders : !prefs.registrationUpdates))) {
+      return { skipped: true, reason: "preference" };
+    }
+    const devices = await db.query.pushDevices.findMany({
+      where: and(eq(pushDevices.memberId, input.memberId), eq(pushDevices.active, true)),
+    });
+    const [inboxItem] = await db.insert(notifications).values({
+      memberId: input.memberId,
+      title: input.title,
+      body: input.body,
+      type: input.type,
+      destinationUrl: input.destinationUrl,
+    }).returning();
+    if (!devices.length) return { notificationId: inboxItem.id, sent: 0 };
+    const deliveries = await db.insert(notificationDeliveries).values(devices.map((device) => ({
+      notificationId: inboxItem.id,
+      memberId: input.memberId,
+      deviceId: device.id,
+      status: "pending" as const,
+    }))).returning({ id: notificationDeliveries.id });
+    await pushService.processDeliveries(deliveries.map(({ id }) => id), input.title, input.body, input.destinationUrl);
+    return { notificationId: inboxItem.id, sent: deliveries.length };
+  }
+
   async sendServiceReminder(reminder: typeof serviceReminders.$inferSelect) {
     const prefs = await db.query.notificationPreferences.findFirst({ where: eq(notificationPreferences.memberId, reminder.memberId) });
     if (prefs && (!prefs.pushEnabled || !prefs.reminders)) return;

@@ -7,6 +7,10 @@ import {
   notificationDeliveries,
   serviceReminders,
   birthdayNotificationSends,
+  events,
+  eventPickupLocations,
+  eventRegistrations,
+  eventReminders,
 } from "./schema.js";
 
 export const pushDevicesRelations = relations(pushDevices, ({ many }) => ({
@@ -43,3 +47,19 @@ export const notificationDeliveriesRelations = relations(notificationDeliveries,
 
 export const serviceRemindersRelations = relations(serviceReminders, () => ({}));
 export const birthdayNotificationSendsRelations = relations(birthdayNotificationSends, () => ({}));
+export const eventsRelations = relations(events, ({ many }) => ({
+  pickupLocations: many(eventPickupLocations),
+  registrations: many(eventRegistrations),
+  reminders: many(eventReminders),
+}));
+export const eventPickupLocationsRelations = relations(eventPickupLocations, ({ one, many }) => ({
+  event: one(events, { fields: [eventPickupLocations.eventId], references: [events.id] }),
+  registrations: many(eventRegistrations),
+}));
+export const eventRegistrationsRelations = relations(eventRegistrations, ({ one }) => ({
+  event: one(events, { fields: [eventRegistrations.eventId], references: [events.id] }),
+  pickupLocation: one(eventPickupLocations, { fields: [eventRegistrations.pickupLocationId], references: [eventPickupLocations.id] }),
+}));
+export const eventRemindersRelations = relations(eventReminders, ({ one }) => ({
+  event: one(events, { fields: [eventReminders.eventId], references: [events.id] }),
+}));

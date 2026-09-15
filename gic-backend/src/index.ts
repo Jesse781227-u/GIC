@@ -13,6 +13,7 @@ import { ensureDatabaseSchema } from "./db/index.js";
 import adminEventsApp from "./routes/admin-events.js";
 import serviceRemindersApp from "./routes/service-reminders.js";
 import adminActivityApp from "./routes/admin-activity.js";
+import eventsApp from "./routes/events.js";
 
 const app = new Hono();
 
@@ -39,6 +40,7 @@ app.route("/api/admin/notifications", adminNotificationsApp);
 app.route("/api/admin/events", adminEventsApp);
 app.route("/api/admin/activity", adminActivityApp);
 app.route("/api/service-reminders", serviceRemindersApp);
+app.route("/api/events", eventsApp);
 
 const port = parseInt(process.env.PORT || "3001");
 

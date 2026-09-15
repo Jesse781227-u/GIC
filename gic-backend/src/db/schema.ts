@@ -131,10 +131,86 @@ export const events = pgTable("events", {
   price: integer("price"),
   notifyOnPublish: boolean("notify_on_publish").notNull().default(false),
   status: text("status").notNull().default("DRAFT"),
+  eventType: text("event_type").notNull().default("Service"),
+  registrationRequired: boolean("registration_required").notNull().default(false),
+  registrationOpensAt: timestamp("registration_opens_at", { withTimezone: true }),
+  registrationClosesAt: timestamp("registration_closes_at", { withTimezone: true }),
+  registrationCapacity: integer("registration_capacity"),
+  allowWaitlist: boolean("allow_waitlist").notNull().default(false),
+  organizerUnit: text("organizer_unit"),
+  organizerContactPerson: text("organizer_contact_person"),
+  organizerContactPhone: text("organizer_contact_phone"),
+  isOnline: boolean("is_online").notNull().default(false),
+  onlineUrl: text("online_url"),
+  onlineAccessInstructions: text("online_access_instructions"),
+  busTransportEnabled: boolean("bus_transport_enabled").notNull().default(false),
+  locationType: text("location_type").notNull().default("CHURCH"),
+  venueName: text("venue_name"),
+  address: text("address"),
+  mapInfo: text("map_info"),
+  sendRegistrationConfirmation: boolean("send_registration_confirmation").notNull().default(false),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
+
+export const eventPickupLocations = pgTable(
+  "event_pickup_locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    locationName: text("location_name").notNull(),
+    addressLandmark: text("address_landmark").notNull(),
+    pickupTime: timestamp("pickup_time", { withTimezone: true }).notNull(),
+    capacity: integer("capacity").notNull(),
+    notes: text("notes"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    eventIdx: index("event_pickup_locations_event_id_idx").on(t.eventId),
+    activeIdx: index("event_pickup_locations_active_idx").on(t.active),
+  })
+);
+
+export const eventRegistrations = pgTable(
+  "event_registrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    memberId: text("member_id").notNull(),
+    status: text("status").notNull().default("CONFIRMED"),
+    pickupLocationId: uuid("pickup_location_id").references(() => eventPickupLocations.id, { onDelete: "set null" }),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    eventMemberUnique: unique("event_registrations_event_member_unique").on(t.eventId, t.memberId),
+    eventIdx: index("event_registrations_event_id_idx").on(t.eventId),
+    memberIdx: index("event_registrations_member_id_idx").on(t.memberId),
+    pickupIdx: index("event_registrations_pickup_location_id_idx").on(t.pickupLocationId),
+  })
+);
+
+export const eventReminders = pgTable(
+  "event_reminders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    offsetMinutes: integer("offset_minutes").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("pending"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    eventOffsetUnique: unique("event_reminders_event_offset_unique").on(t.eventId, t.offsetMinutes),
+    dueIdx: index("event_reminders_due_idx").on(t.status, t.scheduledFor),
+  })
+);
 
 // ─── push_devices ─────────────────────────────────────────────────────────────
 // One member can have multiple browser/device registrations.

@@ -4,7 +4,7 @@ import { SignJWT } from "jose";
 import { getJwtSecret } from "../middleware/auth.js";
 import { getFirebaseAuth } from "../lib/firebase.js";
 import { db } from "../db/index.js";
-import { members, pushDevices, notificationPreferences, notifications, notificationDeliveries, serviceReminders, ministryApplications } from "../db/schema.js";
+import { members, pushDevices, notificationPreferences, notifications, notificationDeliveries, serviceReminders, ministryApplications, eventRegistrations } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
 
@@ -255,6 +255,7 @@ app.delete("/profile", async (c) => {
     await tx.delete(notificationPreferences).where(eq(notificationPreferences.memberId, user.sub));
     await tx.delete(serviceReminders).where(eq(serviceReminders.memberId, user.sub));
     await tx.delete(ministryApplications).where(eq(ministryApplications.memberId, user.sub));
+    await tx.delete(eventRegistrations).where(eq(eventRegistrations.memberId, user.sub));
     await tx.delete(members).where(eq(members.id, user.sub));
   });
 
