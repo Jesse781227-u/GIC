@@ -139,15 +139,24 @@ app.post("/", async (c) => {
   if (!parsed.success) return c.json({ error: "Invalid event", details: parsed.error.issues }, 400);
   const [event] = await db.insert(events).values(eventValues(parsed.data, c.get("user").sub)).returning();
   if (event.notifyOnPublish && event.status === "PUBLISHED") {
-    const notification = await notificationService.createDraft({
-      title: event.title,
-      body: event.description || `${event.title} has been published.`,
-      type: "EVENT_PUBLISHED",
-      audience: "everyone",
-      destinationUrl: "/events",
-      createdBy: c.get("user").sub,
-    });
-    await notificationService.sendNow(notification.id);
+    // Event creation must not fail after the event has been saved just because
+    // notification delivery is slow or unavailable. The existing notification
+    // pipeline still handles the publish notification in the background.
+    void (async () => {
+      try {
+        const notification = await notificationService.createDraft({
+          title: event.title,
+          body: event.description || `${event.title} has been published.`,
+          type: "EVENT_PUBLISHED",
+          audience: "everyone",
+          destinationUrl: "/events",
+          createdBy: c.get("user").sub,
+        });
+        await notificationService.sendNow(notification.id);
+      } catch (notificationError) {
+        console.error(`Event publish notification failed for ${event.id}:`, notificationError);
+      }
+    })();
   }
   await recordActivity({ actorId: c.get("user").sub, actorName: c.get("user").name, action: "Created event", target: event.title, targetId: event.id, metadata: { status: event.status } });
   return c.json({ event }, 201);
