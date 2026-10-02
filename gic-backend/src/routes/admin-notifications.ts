@@ -7,7 +7,7 @@ import { adminNotifications } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
 import { eq, desc } from "drizzle-orm";
 import { recordActivity } from "../services/activity.service.js";
-import { notificationMediaService } from "../services/notifications/media.service.js";
+import { notificationMediaService, R2MediaStorageError } from "../services/notifications/media.service.js";
 import { isAllowedMemberRoute } from "../lib/member-routes.js";
 import { NotificationMediaValidationError } from "../services/notifications/media-validation.js";
 
@@ -145,6 +145,7 @@ app.post("/media", bodyLimit({ maxSize: 26 * 1024 * 1024 }), async (c) => {
   } catch (error) {
     if (error instanceof NotificationMediaValidationError) return c.json({ error: error.message }, 400);
     console.error("Notification media upload failed:", error);
+    if (error instanceof R2MediaStorageError) return c.json({ error: error.message }, 503);
     const failure = describeMediaInfrastructureFailure(error);
     return c.json({ error: failure }, 500);
   }
@@ -170,12 +171,13 @@ function isUploadFile(value: unknown): value is File {
 function describeMediaInfrastructureFailure(error: unknown) {
   const failure = error as { code?: string | number; message?: string };
   const code = String(failure?.code || "").toLowerCase();
+  const name = String((error as { name?: string })?.name || "").toLowerCase();
   const message = String(failure?.message || "").toLowerCase();
-  if (code === "403" || code.includes("permission") || /permission.*(denied|storage\.objects)/.test(message)) {
-    return "Firebase Storage denied the upload. Grant the backend service account Storage Object Admin access to the configured bucket.";
+  if (["accessdenied", "invalidaccesskeyid", "signaturedoesnotmatch"].includes(name) || code === "403") {
+    return "Cloudflare R2 rejected the request. Verify the R2 access key ID, secret, and bucket permissions in the backend environment.";
   }
   if (code === "404" || /bucket.*(not found|does not exist)/.test(message)) {
-    return "The configured Firebase Storage bucket was not found. Verify FIREBASE_STORAGE_BUCKET in the backend deployment.";
+    return "The configured Cloudflare R2 bucket was not found. Verify CLOUDFLARE_R2_BUCKET_NAME and the R2 account ID.";
   }
   if (code === "42p01" || /relation [^ ]*notification_media[^ ]* does not exist/.test(message)) {
     return "The notification media database migration is missing. Deploy the backend database migrations and retry.";

@@ -22,8 +22,14 @@ services:
         sync: false
       - key: FIREBASE_PROJECT_ID
         value: global-impact-church-9b8fd
-      - key: FIREBASE_STORAGE_BUCKET
-        value: global-impact-church-9b8fd.firebasestorage.app
+      - key: CLOUDFLARE_R2_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_R2_BUCKET_NAME
+        sync: false
+      - key: CLOUDFLARE_R2_ACCESS_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_R2_SECRET_ACCESS_KEY
+        sync: false
       - key: JWT_SECRET
         sync: false
 
