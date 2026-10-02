@@ -1841,10 +1841,7 @@ function MinistriesPage() {
   const joinedMinistries = ministryRows.filter((item) => item.joined)
   const pendingMinistries = ministryRows.filter((item) => item.applicationStatus === 'pending')
   const joinedFellowships = fellowshipRows.filter((item) => item.joined)
-  const fallbackCells = [
-    { id: 'mens-fellowship', name: 'Men’s Fellowship', eligible: false },
-    { id: 'womens-fellowship', name: 'Women’s Fellowship', eligible: false },
-  ]
+  const fallbackCells = []
   const availableCells = fellowshipRows.length ? fellowshipRows : fallbackCells
   return <MemberShell active="ministries" title="Ministries & Cells" backTo="/home">
     <div className="ministries-screen">
