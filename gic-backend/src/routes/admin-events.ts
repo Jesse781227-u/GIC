@@ -318,6 +318,7 @@ app.put("/:id/reminders", async (c) => {
     await tx.delete(eventReminders).where(eq(eventReminders.eventId, eventId));
     if (offsets.length) {
       await tx.insert(eventReminders).values(offsets.map((offsetMinutes) => ({
+        churchId,
         eventId,
         offsetMinutes,
         scheduledFor: new Date(event.startsAt.getTime() - offsetMinutes * 60_000),
