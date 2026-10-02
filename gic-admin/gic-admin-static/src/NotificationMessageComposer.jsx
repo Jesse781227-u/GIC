@@ -33,7 +33,7 @@ export default function NotificationMessageComposer() {
   const [body, setBody] = useState('')
   const [audience, setAudience] = useState('everyone')
   const [category, setCategory] = useState('General Announcement')
-  const [destinationType, setDestinationType] = useState('none')
+  const [destinationType, setDestinationType] = useState('')
   const [destinationRoute, setDestinationRoute] = useState('')
   const [media, setMedia] = useState(null)
   const [preview, setPreview] = useState('')
@@ -75,6 +75,7 @@ export default function NotificationMessageComposer() {
   const save = async (mode) => {
     setMessage('')
     if (!title.trim() || !body.trim()) return setMessage('Title and message are required.')
+    if (!destinationType) return setMessage('Choose an app page or upload media for the notification destination.')
     if (destinationType === 'internal_route' && !destinationRoute.trim()) return setMessage('Enter an internal member app route.')
     if (destinationType === 'media_page' && !media?.id) return setMessage('Upload media before saving this destination.')
     setSaving(true)
@@ -113,7 +114,7 @@ export default function NotificationMessageComposer() {
         <label className="form-field">Category<select value={category} onChange={(event) => setCategory(event.target.value)}>{['General Announcement', 'Event', 'Registration', 'Reminder', 'Church Update'].map((item) => <option key={item}>{item}</option>)}</select></label>
         <label className="form-field">Audience<select value={audience} onChange={(event) => setAudience(event.target.value)}><option value="everyone">Everyone</option><option value="event_registrants">Event registrants</option><option value="members">Selected members</option><option value="ministry">Ministry members</option></select></label>
       </div>
-      <section className="composer-section notification-destination"><div className="destination-heading"><b>Notification Destination</b>{destinationType !== 'none' && <button type="button" className="tool" onClick={() => { setDestinationType('none'); setDestinationRoute(''); setMedia(null); setPreview('') }}>Clear destination</button>}</div>
+      <section className="composer-section notification-destination"><div className="destination-heading"><b>Notification Destination</b><span className="destination-required">Required</span></div>
         <div className="audience-options destination-options">{[['internal_route', 'Open app page'], ['media_page', 'Open media page']].map(([value, label]) => <label key={value}><input type="radio" name="notificationDestination" checked={destinationType === value} onChange={() => setDestinationType(value)}/>{label}</label>)}</div>
         {destinationType === 'internal_route' && <div className="destination-fields">
           <label className="form-field">Select app page<select value={routeOptions.some(([, route]) => route === destinationRoute) ? destinationRoute : ''} onChange={(event) => { if (event.target.value) setDestinationRoute(event.target.value) }}><option value="">Choose a page or enter a route below</option>{routeOptions.map(([label, route]) => <option key={`${label}-${route}`} value={route}>{label}</option>)}</select></label>
@@ -124,7 +125,7 @@ export default function NotificationMessageComposer() {
       </section>
       {delivery === 'schedule' && <label className="form-field">Send at<input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)}/></label>}
       {message && <div className="empty-message" role="status">{message}</div>}
-      <div className="composer-actions"><Link className="btn secondary" to="/messages"><ArrowLeft size={14}/> Cancel</Link><button className="btn secondary" disabled={saving || uploading} onClick={() => save('DRAFT')}>Save draft</button><button className="btn secondary" disabled={saving || uploading} onClick={() => setDelivery(delivery === 'schedule' ? 'now' : 'schedule')}>{delivery === 'schedule' ? 'Cancel schedule' : 'Schedule'}</button><button className="btn primary" disabled={saving || uploading} onClick={() => save(delivery === 'schedule' ? 'SCHEDULED' : 'SENT')}><Send size={14}/>{saving ? 'Saving…' : delivery === 'schedule' ? 'Schedule notification' : 'Send notification'}</button></div>
+      <div className="composer-actions"><Link className="btn secondary" to="/messages"><ArrowLeft size={14}/> Cancel</Link><button className="btn secondary" disabled={saving || uploading} onClick={() => save('DRAFT')}>Save draft</button><button className="btn secondary" disabled={saving || uploading} onClick={() => setDelivery(delivery === 'schedule' ? 'now' : 'schedule')}>{delivery === 'schedule' ? 'Cancel schedule' : 'Schedule'}</button><button className="btn primary" disabled={saving || uploading || !destinationType || (destinationType === 'internal_route' && !destinationRoute.trim()) || (destinationType === 'media_page' && !media?.id)} onClick={() => save(delivery === 'schedule' ? 'SCHEDULED' : 'SENT')}><Send size={14}/>{saving ? 'Saving…' : delivery === 'schedule' ? 'Schedule notification' : 'Send notification'}</button></div>
     </section><aside className="phone-preview"><b>Preview as member</b><div className="phone-frame"><div className="phone-notification"><small>GLOBAL IMPACT CHURCH</small><strong>{title || 'Notification title'}</strong><span>{body || 'Your notification message will appear here.'}</span></div>{destinationType === 'media_page' && preview && (media?.mediaType === 'video' ? <video src={preview} controls playsInline preload="metadata"/> : <img src={preview} alt="Destination preview"/>)}<small>{destinationType === 'internal_route' ? routeLabel : destinationType === 'media_page' ? 'Full-page media destination' : 'No tap destination'}</small></div></aside></div>
   </main>
 }

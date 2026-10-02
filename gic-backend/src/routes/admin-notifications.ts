@@ -31,7 +31,7 @@ const createSchema = z.object({
     "SYSTEM_NOTIFICATION"
   ]),
   audience: z.enum(["everyone", "ministry", "event_registrants", "members"]),
-  destinationType: z.enum(["none", "internal_route", "media_page"]).default("none"),
+  destinationType: z.enum(["internal_route", "media_page"]),
   destinationRoute: z.string().optional(),
   destinationMediaId: z.string().uuid().optional(),
   scheduledAt: z.string().optional(),
