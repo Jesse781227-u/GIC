@@ -833,6 +833,7 @@ function MemberShell({ children, active = 'home', title, backTo, lockProfile = f
   const { unreadCount, notificationPulse } = useNotificationCount()
   const showPersistentConsole = isPersistentConsoleAllowed(location.pathname)
   return <div className="member-page">
+    <div className="ios-status-bar" aria-label="Status bar"><span>9:41</span><span className="ios-status-icons"><span className="ios-signal" /><span className="ios-wifi">⌁</span><span className="ios-battery">▰</span></span></div>
     <header className="mobile-header">
       {backTo && !lockProfile ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
       {title ? <strong>{title}</strong> : <Logo />}
@@ -1819,7 +1820,7 @@ function PrayerRequest() {
 }
 
 function MinistriesPage() {
-  const [tab, setTab] = useState('Ministries')
+  const [tab, setTab] = useState('Cells')
   const [ministryRows, setMinistryRows] = useState([])
   const [fellowshipRows, setFellowshipRows] = useState([])
   const [busyFellowship, setBusyFellowship] = useState('')
@@ -1840,11 +1841,18 @@ function MinistriesPage() {
   const joinedMinistries = ministryRows.filter((item) => item.joined)
   const pendingMinistries = ministryRows.filter((item) => item.applicationStatus === 'pending')
   const joinedFellowships = fellowshipRows.filter((item) => item.joined)
-  return <MemberShell active="ministries" title="Ministries & Fellowships" backTo="/home">
-    <div className="tabs big"><button className={tab === 'Ministries' ? 'active' : ''} onClick={() => setTab('Ministries')}>Ministries</button><button className={tab === 'Fellowships' ? 'active' : ''} onClick={() => setTab('Fellowships')}>Fellowships</button></div>
+  const fallbackCells = [
+    { id: 'mens-fellowship', name: 'Men’s Fellowship', eligible: false },
+    { id: 'womens-fellowship', name: 'Women’s Fellowship', eligible: false },
+  ]
+  const availableCells = fellowshipRows.length ? fellowshipRows : fallbackCells
+  return <MemberShell active="ministries" title="Ministries & Cells" backTo="/home">
+    <div className="ministries-screen">
+    <div className="tabs big"><button className={tab === 'Ministries' ? 'active' : ''} onClick={() => setTab('Ministries')}>Ministries</button><button className={tab === 'Cells' ? 'active' : ''} onClick={() => setTab('Cells')}>Cells</button></div>
     {error && <p className="center muted">{error}</p>}
     {tab === 'Ministries' && <section className="ministries-list"><div className="section-head"><span>My Ministries</span><Link to="/ministries/browse">Browse</Link></div>{joinedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>{ministry.description || 'Approved member'}</small></div><span className="badge success">Member</span></Link>)}{pendingMinistries.map((ministry) => <div className="ministry-row" key={ministry.id}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>Application pending</small></div><span className="badge blue">Pending</span></div>)}{!joinedMinistries.length && !pendingMinistries.length && <p className="center muted">You have not joined a ministry yet.</p>}<Link className="btn primary wide" to="/ministries/browse">Browse Ministries</Link></section>}
-    {tab === 'Fellowships' && <section className="ministries-list"><div className="section-head"><span>My Fellowships</span></div>{joinedFellowships.map((fellowship) => <div className="ministry-row" key={`joined-${fellowship.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{fellowship.name}</b><small>{fellowship.description || 'Fellowship member'}</small></div><button className="tool" disabled={busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Saving…' : 'Leave'}</button></div>)}{fellowshipRows.filter((fellowship) => !fellowship.joined).map((fellowship) => <div className="ministry-row" key={fellowship.id}><div className="action-icon"><Users size={17}/></div><div><b>{fellowship.name}</b><small>{fellowship.eligible ? fellowship.description || 'Open to eligible members' : 'Not eligible based on your profile'}</small></div><button className="tool" disabled={!fellowship.eligible || busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Joining…' : 'Join'}</button></div>)}{!fellowshipRows.length && <p className="center muted">No fellowships are currently available.</p>}</section>}
+    {tab === 'Cells' && <section className="ministries-list cells-list"><div className="section-head"><span>My Cells</span></div>{joinedFellowships.map((fellowship) => <div className="ministry-row" key={`joined-${fellowship.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{fellowship.name}</b><small>{fellowship.description || 'Fellowship member'}</small></div><button className="tool" disabled={busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Saving…' : 'Leave'}</button></div>)}{availableCells.filter((fellowship) => !fellowship.joined).map((fellowship) => <div className="ministry-row cell-card" key={fellowship.id}><div className="action-icon"><Users size={20}/></div><div><b>{fellowship.name}</b><small>{fellowship.eligible ? fellowship.description || 'Open to eligible members' : 'Not eligible based on your profile'}</small></div><button className="tool" disabled={!fellowship.eligible || busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Joining…' : 'Join'}</button></div>)}</section>}
+    </div>
   </MemberShell>
 }
 
