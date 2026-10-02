@@ -38,15 +38,15 @@ async function ensureStandardSegments(churchId: string, actor: string) {
   const standards = [
     { name: "All Members", description: "All active members of this church.", rules: { conditions: [] } },
     { name: "New Members", description: "Members who joined within the configured number of months.", rules: { conditions: [{ field: "joined_within_months", operator: "within", value: 5 }] } },
-    { name: "Male Members", description: "Members whose profile gender is male.", rules: { conditions: [{ field: "gender", operator: "equals", value: "male" }] } },
-    { name: "Female Members", description: "Members whose profile gender is female.", rules: { conditions: [{ field: "gender", operator: "equals", value: "female" }] } },
+    { name: "Choir", description: "Choir team members.", rules: { conditions: [] } },
+    { name: "Ushering Team", description: "Ushering and front-of-house team members.", rules: { conditions: [] } },
+    { name: "Media Team", description: "Media and livestream team members.", rules: { conditions: [] } },
+    { name: "Protocol", description: "Protocol and event coordination team members.", rules: { conditions: [] } },
+    { name: "Security", description: "Security team members.", rules: { conditions: [] } },
+    { name: "Pastors", description: "Pastoral leadership members.", rules: { conditions: [] } },
+    { name: "Youth Fellowship", description: "Youth fellowship members.", rules: { conditions: [] } },
   ];
-  for (const item of standards) await db.insert(segments).values({ churchId, ...item, segmentType: "automatic", isSystem: true, createdBy: actor }).onConflictDoNothing();
-  const standardCells = [
-    { name: "Men's Fellowship", description: "Fellowship for eligible male members.", eligibilityRules: { conditions: [{ field: "gender", operator: "equals", value: "male" }] } },
-    { name: "Women's Fellowship", description: "Fellowship for eligible female members.", eligibilityRules: { conditions: [{ field: "gender", operator: "equals", value: "female" }] } },
-  ];
-  for (const item of standardCells) await db.insert(cells).values({ churchId, ...item }).onConflictDoNothing();
+  for (const item of standards) await db.insert(segments).values({ churchId, ...item, segmentType: "manual", isSystem: true, createdBy: actor }).onConflictDoNothing();
 }
 
 async function logGroupAction(c: Context, action: string, name: string, id?: string) {

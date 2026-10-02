@@ -191,13 +191,13 @@ DO $$ BEGIN ALTER TABLE notification_media ADD CONSTRAINT notification_media_chu
 DO $$ BEGIN ALTER TABLE notifications ADD CONSTRAINT notifications_tenant_campaign_fk FOREIGN KEY(church_id, message_id) REFERENCES admin_notifications(church_id, id) ON DELETE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 INSERT INTO segments (church_id, name, description, segment_type, rules, is_system, created_by) VALUES
-('11111111-1111-4111-8111-111111111111', 'All Members', 'All active members of this church.', 'automatic', '{"conditions":[]}', true, 'system'),
+('11111111-1111-4111-8111-111111111111', 'All Members', 'All active members of this church.', 'manual', '{"conditions":[]}', true, 'system'),
 ('11111111-1111-4111-8111-111111111111', 'New Members', 'Members who joined within the configured number of months.', 'automatic', '{"conditions":[{"field":"joined_within_months","operator":"within","value":5}]}', true, 'system'),
-('11111111-1111-4111-8111-111111111111', 'Male Members', 'Members whose profile gender is male.', 'automatic', '{"conditions":[{"field":"gender","operator":"equals","value":"male"}]}', true, 'system'),
-('11111111-1111-4111-8111-111111111111', 'Female Members', 'Members whose profile gender is female.', 'automatic', '{"conditions":[{"field":"gender","operator":"equals","value":"female"}]}', true, 'system')
-ON CONFLICT (church_id, name) DO NOTHING;
-
-INSERT INTO cells (church_id, name, description, eligibility_rules) VALUES
-('11111111-1111-4111-8111-111111111111', 'Men''s Fellowship', 'Fellowship for eligible male members.', '{"conditions":[{"field":"gender","operator":"equals","value":"male"}]}'),
-('11111111-1111-4111-8111-111111111111', 'Women''s Fellowship', 'Fellowship for eligible female members.', '{"conditions":[{"field":"gender","operator":"equals","value":"female"}]}')
+('11111111-1111-4111-8111-111111111111', 'Choir', 'Choir team members.', 'manual', '{"conditions":[]}', true, 'system'),
+('11111111-1111-4111-8111-111111111111', 'Ushering Team', 'Ushering and front-of-house team members.', 'manual', '{"conditions":[]}', true, 'system'),
+('11111111-1111-4111-8111-111111111111', 'Media Team', 'Media and livestream team members.', 'manual', '{"conditions":[]}', true, 'system'),
+('11111111-1111-4111-8111-111111111111', 'Protocol', 'Protocol and event coordination team members.', 'manual', '{"conditions":[]}', true, 'system'),
+('11111111-1111-4111-8111-111111111111', 'Security', 'Security team members.', 'manual', '{"conditions":[]}', true, 'system'),
+('11111111-1111-4111-8111-111111111111', 'Pastors', 'Pastoral leadership members.', 'manual', '{"conditions":[]}', true, 'system'),
+('11111111-1111-4111-8111-111111111111', 'Youth Fellowship', 'Youth fellowship members.', 'manual', '{"conditions":[]}', true, 'system')
 ON CONFLICT (church_id, name) DO NOTHING;
