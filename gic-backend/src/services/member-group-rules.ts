@@ -17,6 +17,8 @@ function memberAge(member: GroupMember, now: Date) {
 export function matchesProfileCondition(member: GroupMember, condition: GroupCondition, now = new Date()) {
   switch (condition.field) {
     case "gender": return condition.operator === "equals" && member.gender === condition.value;
+    case "age_group_id": return condition.operator === "equals" && member.ageGroupId === condition.value;
+    case "relationship_status": return condition.operator === "equals" && member.relationshipStatus === condition.value;
     case "center": return condition.operator === "equals" && member.center === condition.value;
     case "membership_status": return condition.operator === "equals" && member.membershipStatus === condition.value;
     case "age": {
@@ -41,6 +43,8 @@ export function describeGroupRules(rules: GroupRules) {
   const descriptions = conditions.map((condition) => {
     switch (condition.field) {
       case "gender": return `gender is ${String(condition.value)}`;
+      case "age_group_id": return "age group matches the configured option";
+      case "relationship_status": return `relationship status is ${String(condition.value)}`;
       case "center": return `center is ${String(condition.value)}`;
       case "membership_status": return `membership status is ${String(condition.value)}`;
       case "age": return `age is between ${condition.min ?? 0} and ${condition.max ?? 120}`;

@@ -8,6 +8,7 @@ import {
   pushDevices,
 } from "../../db/schema.js";
 import { pushService } from "./push.service.js";
+import { birthdayOccursOn } from "../../lib/age-groups.js";
 
 export const BIRTHDAY_ROUTE = "/announcements/birthday";
 export const BIRTHDAY_TIME_ZONE = "Africa/Lagos";
@@ -33,13 +34,7 @@ export function getBirthdayDateKey(parts = getLagosDateParts()): string {
 }
 
 export function isBirthdayToday(birthday: string | null | undefined, today = getLagosDateParts()): boolean {
-  const match = String(birthday || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return false;
-  const birthMonth = Number(match[2]);
-  const birthDay = Number(match[3]);
-  // Feb 29 birthdays are celebrated on Feb 28 in non-leap years.
-  const feb29Fallback = birthMonth === 2 && birthDay === 29 && today.month === 2 && today.day === 28 && today.year % 4 !== 0;
-  return (birthMonth === today.month && birthDay === today.day) || feb29Fallback;
+  return birthdayOccursOn(birthday, today);
 }
 
 export function firstName(displayName: string): string {

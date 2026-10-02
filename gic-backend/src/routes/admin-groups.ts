@@ -1,18 +1,19 @@
 import { Hono, type Context } from "hono";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
-import { cells, cellMemberships, eventRegistrations, events, members, ministries, ministryMemberships, segments, segmentMemberships } from "../db/schema.js";
+import { ageGroupDefinitions, cells, cellMemberships, eventRegistrations, events, members, ministries, ministryMemberships, segments, segmentMemberships } from "../db/schema.js";
 import { churchIdForUser } from "../lib/tenant.js";
-import { countSegmentMembers, isEligibleForCell, resolveSegmentMemberIds } from "../services/member-groups.service.js";
+import { countSegmentMembers, flagIneligibleCellMembersForReview, isEligibleForCell, resolveSegmentMemberIds } from "../services/member-groups.service.js";
 import type { GroupRules } from "../services/member-group-rules.js";
 import { recordActivity } from "../services/activity.service.js";
+import { ensureAgeGroupsForChurch } from "../services/age-groups.service.js";
 
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
 const conditionSchema = z.object({
-  field: z.enum(["gender", "age", "joined_within_months", "ministry_id", "cell_id", "center", "membership_status"]),
+  field: z.enum(["gender", "age", "age_group_id", "relationship_status", "joined_within_months", "ministry_id", "cell_id", "center", "membership_status"]),
   operator: z.enum(["equals", "within", "between"]),
   value: z.union([z.string(), z.number()]).optional(),
   min: z.number().int().min(0).max(120).optional(),
@@ -30,6 +31,10 @@ async function validateRulesForChurch(churchId: string, rules: GroupRules, allow
     if (condition.field === "cell_id") {
       if (typeof condition.value !== "string" || !await db.query.cells.findFirst({ where: and(eq(cells.id, condition.value), eq(cells.churchId, churchId), eq(cells.active, true)) })) return "A segment cell rule references an unavailable cell.";
     }
+    if (condition.field === "age_group_id") {
+      if (typeof condition.value !== "string" || !await db.query.ageGroupDefinitions.findFirst({ where: and(eq(ageGroupDefinitions.id, condition.value), eq(ageGroupDefinitions.churchId, churchId), eq(ageGroupDefinitions.active, true)) })) return "An age-group rule references an unavailable age group.";
+    }
+    if (condition.field === "relationship_status" && !["Single", "Married"].includes(String(condition.value))) return "Relationship status must be Single or Married.";
   }
   return null;
 }
@@ -56,6 +61,7 @@ async function logGroupAction(c: Context, action: string, name: string, id?: str
 
 app.get("/", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
+  await ensureAgeGroupsForChurch(churchId);
   const [ministryRows, cellRows, segmentRows] = await Promise.all([
     db.query.ministries.findMany({ where: eq(ministries.churchId, churchId) }),
     db.query.cells.findMany({ where: eq(cells.churchId, churchId) }),
@@ -67,11 +73,49 @@ app.get("/", async (c) => {
   ]);
   const ministryCountMap = new Map(ministryCounts.map((row) => [row.groupId, Number(row.value)]));
   const cellCountMap = new Map(cellCounts.map((row) => [row.groupId, Number(row.value)]));
+  const ageGroups = await db.query.ageGroupDefinitions.findMany({ where: eq(ageGroupDefinitions.churchId, churchId), orderBy: [asc(ageGroupDefinitions.minAge), asc(ageGroupDefinitions.name)] });
   return c.json({
     ministries: ministryRows.map((item) => ({ ...item, memberCount: ministryCountMap.get(item.id) || 0 })),
     cells: cellRows.map((item) => ({ ...item, memberCount: cellCountMap.get(item.id) || 0 })),
     segments: await Promise.all(segmentRows.map(async (item) => ({ ...item, memberCount: await countSegmentMembers(churchId, item) }))),
+    ageGroups,
   });
+});
+
+const ageGroupInputSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  minAge: z.number().int().min(0).max(120),
+  maxAge: z.number().int().min(0).max(120).nullable(),
+  active: z.boolean().optional(),
+});
+const ageGroupSchema = ageGroupInputSchema.refine((value) => value.maxAge === null || value.maxAge >= value.minAge, { message: "Maximum age must be greater than or equal to minimum age." });
+
+app.post("/age-groups", async (c) => {
+  const parsed = ageGroupSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message || "Invalid age group" }, 400);
+  const churchId = churchIdForUser(c.get("user"));
+  const [ageGroup] = await db.insert(ageGroupDefinitions).values({ churchId, ...parsed.data }).returning();
+  await logGroupAction(c, "Created age group", ageGroup.name, ageGroup.id);
+  return c.json({ ageGroup }, 201);
+});
+
+app.patch("/age-groups/:id", async (c) => {
+  const parsed = ageGroupInputSchema.partial().safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message || "Invalid age group" }, 400);
+  const churchId = churchIdForUser(c.get("user"));
+  const current = await db.query.ageGroupDefinitions.findFirst({ where: and(eq(ageGroupDefinitions.id, c.req.param("id")), eq(ageGroupDefinitions.churchId, churchId)) });
+  if (!current) return c.json({ error: "Age group not found" }, 404);
+  if (parsed.data.active === false) {
+    const [usage] = await db.select({ value: count() }).from(members)
+      .where(and(eq(members.churchId, churchId), eq(members.ageGroupId, current.id)));
+    if (Number(usage?.value || 0) > 0) return c.json({ error: "Move assigned members to another age group before deactivating this option." }, 409);
+  }
+  const nextMin = parsed.data.minAge ?? current.minAge;
+  const nextMax = parsed.data.maxAge === undefined ? current.maxAge : parsed.data.maxAge;
+  if (nextMax !== null && nextMax < nextMin) return c.json({ error: "Maximum age must be greater than or equal to minimum age." }, 400);
+  const [ageGroup] = await db.update(ageGroupDefinitions).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(ageGroupDefinitions.id, current.id), eq(ageGroupDefinitions.churchId, churchId))).returning();
+  await logGroupAction(c, "Updated age group", ageGroup.name, ageGroup.id);
+  return c.json({ ageGroup });
 });
 
 app.get("/audiences", async (c) => {
@@ -211,11 +255,15 @@ async function deactivateGroup(c: Context, kind: "ministry" | "cell") {
 async function listGroupMembers(c: Context, kind: "ministry" | "cell") {
   const churchId = churchIdForUser(c.get("user"));
   const groupId = c.req.param("id") || "";
+  const cellMembershipRows = kind === "cell"
+    ? await db.query.cellMemberships.findMany({ where: and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.cellId, groupId)) })
+    : [];
   const memberIds = kind === "ministry"
     ? (await db.query.ministryMemberships.findMany({ where: and(eq(ministryMemberships.churchId, churchId), eq(ministryMemberships.ministryId, groupId)) })).map((row) => row.memberId)
-    : (await db.query.cellMemberships.findMany({ where: and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.cellId, groupId)) })).map((row) => row.memberId);
+    : cellMembershipRows.map((row) => row.memberId);
   const result = memberIds.length ? await db.query.members.findMany({ where: and(eq(members.churchId, churchId), inArray(members.id, memberIds)) }) : [];
-  return c.json({ members: result });
+  const reviewMap = new Map(cellMembershipRows.map((row) => [row.memberId, row.eligibilityReviewRequired]));
+  return c.json({ members: result.map((member) => ({ ...member, eligibilityReviewRequired: reviewMap.get(member.id) || false })) });
 }
 async function updateGroup(c: any, kind: "ministry" | "cell") {
   const churchId = churchIdForUser(c.get("user"));
@@ -232,6 +280,7 @@ async function updateGroup(c: any, kind: "ministry" | "cell") {
   const [group] = kind === "ministry"
     ? await db.update(ministries).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(ministries.id, current.id), eq(ministries.churchId, churchId))).returning()
     : await db.update(cells).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(cells.id, current.id), eq(cells.churchId, churchId))).returning();
+  if (kind === "cell" && parsed.data.eligibilityRules) await flagIneligibleCellMembersForReview(churchId, group.id, parsed.data.eligibilityRules as GroupRules);
   await logGroupAction(c, `Updated ${kind}`, group.name, group.id);
   return c.json({ [kind]: group });
 }
@@ -253,6 +302,18 @@ app.post("/ministries/:id/members", async (c) => changeMembership(c, "ministry",
 app.delete("/ministries/:id/members/:memberId", async (c) => changeMembership(c, "ministry", false));
 app.post("/cells/:id/members", async (c) => changeMembership(c, "cell", true));
 app.delete("/cells/:id/members/:memberId", async (c) => changeMembership(c, "cell", false));
+app.post("/cells/:id/members/:memberId/review", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const cell = await db.query.cells.findFirst({ where: and(eq(cells.id, c.req.param("id")), eq(cells.churchId, churchId)) });
+  if (!cell) return c.json({ error: "Cell not found" }, 404);
+  const [membership] = await db.update(cellMemberships)
+    .set({ eligibilityReviewRequired: false, updatedAt: new Date() })
+    .where(and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.cellId, cell.id), eq(cellMemberships.memberId, c.req.param("memberId"))))
+    .returning();
+  if (!membership) return c.json({ error: "Cell membership not found" }, 404);
+  await logGroupAction(c, "Reviewed cell eligibility", cell.name, membership.memberId);
+  return c.json({ success: true });
+});
 async function changeMembership(c: any, kind: "ministry" | "cell", add: boolean) {
   const churchId = churchIdForUser(c.get("user"));
   const group = kind === "ministry"
@@ -278,7 +339,7 @@ app.get("/members/:id", async (c) => {
   if (!member) return c.json({ error: "Member not found" }, 404);
   const [ministryRows, cellRows, segmentRows, manualMemberships] = await Promise.all([
     db.select({ id: ministries.id, name: ministries.name }).from(ministryMemberships).innerJoin(ministries, eq(ministryMemberships.ministryId, ministries.id)).where(and(eq(ministryMemberships.churchId, churchId), eq(ministryMemberships.memberId, member.id))),
-    db.select({ id: cells.id, name: cells.name }).from(cellMemberships).innerJoin(cells, eq(cellMemberships.cellId, cells.id)).where(and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.memberId, member.id))),
+    db.select({ id: cells.id, name: cells.name, eligibilityReviewRequired: cellMemberships.eligibilityReviewRequired }).from(cellMemberships).innerJoin(cells, eq(cellMemberships.cellId, cells.id)).where(and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.memberId, member.id))),
     db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), eq(segments.active, true)) }),
     db.query.segmentMemberships.findMany({ where: and(eq(segmentMemberships.churchId, churchId), eq(segmentMemberships.memberId, member.id)) }),
   ]);

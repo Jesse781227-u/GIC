@@ -43,7 +43,8 @@ app.get("/cells", async (c) => {
     db.query.cellMemberships.findMany({ where: and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.memberId, member.id)) }),
   ]);
   const joined = new Set(memberships.map((item) => item.cellId));
-  return c.json({ cells: groups.map((item) => ({ ...item, joined: joined.has(item.id), eligible: isEligibleForCell(member, item.eligibilityRules as { logic?: "and" | "or"; conditions?: Array<{ field: string; operator: string; value?: unknown; min?: number; max?: number }> }) })) });
+  const reviewRequired = new Set(memberships.filter((item) => item.eligibilityReviewRequired).map((item) => item.cellId));
+  return c.json({ cells: groups.map((item) => ({ ...item, joined: joined.has(item.id), eligible: isEligibleForCell(member, item.eligibilityRules as { logic?: "and" | "or"; conditions?: Array<{ field: string; operator: string; value?: unknown; min?: number; max?: number }> }), eligibilityReviewRequired: reviewRequired.has(item.id) })) });
 });
 
 app.post("/cells/:id/join", async (c) => {
@@ -74,7 +75,7 @@ app.get("/profile/memberships", async (c) => {
   const churchId = churchIdForUser(user);
   const [ministryRows, cellRows, segmentRows, manualMemberships] = await Promise.all([
     db.select({ id: ministries.id, name: ministries.name }).from(ministryMemberships).innerJoin(ministries, eq(ministryMemberships.ministryId, ministries.id)).where(and(eq(ministryMemberships.churchId, churchId), eq(ministryMemberships.memberId, user.sub))),
-    db.select({ id: cells.id, name: cells.name }).from(cellMemberships).innerJoin(cells, eq(cellMemberships.cellId, cells.id)).where(and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.memberId, user.sub))),
+    db.select({ id: cells.id, name: cells.name, eligibilityReviewRequired: cellMemberships.eligibilityReviewRequired }).from(cellMemberships).innerJoin(cells, eq(cellMemberships.cellId, cells.id)).where(and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.memberId, user.sub))),
     db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), eq(segments.active, true)) }),
     db.query.segmentMemberships.findMany({ where: and(eq(segmentMemberships.churchId, churchId), eq(segmentMemberships.memberId, user.sub)) }),
   ]);

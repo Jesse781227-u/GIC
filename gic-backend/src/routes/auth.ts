@@ -4,10 +4,14 @@ import { SignJWT } from "jose";
 import { getJwtSecret } from "../middleware/auth.js";
 import { getFirebaseAuth } from "../lib/firebase.js";
 import { db } from "../db/index.js";
-import { members, pushDevices, notificationPreferences, notifications, notificationDeliveries, serviceReminders, ministryApplications, eventRegistrations } from "../db/schema.js";
+import { ageGroupDefinitions, members, pushDevices, notificationPreferences, notifications, notificationDeliveries, serviceReminders, ministryApplications, eventRegistrations } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
 import { churchIdForUser, DEFAULT_CHURCH_ID } from "../lib/tenant.js";
+import { normalizeBirthday } from "../lib/age-groups.js";
+import { recordActivity } from "../services/activity.service.js";
+import { flagIneligibleCellMembershipsForMember } from "../services/member-groups.service.js";
+import { listActiveAgeGroups } from "../services/age-groups.service.js";
 
 const app = new Hono();
 
@@ -25,8 +29,10 @@ const profileSchema = z.object({
   email: z.string().trim().optional(),
   center: z.string().trim().optional(),
   serviceTime: z.string().trim().optional(),
-  birthday: z.string().trim().optional(),
+  birthday: z.string().trim().optional().refine((value) => value === undefined || value === "" || normalizeBirthday(value) !== "", "Birthday must include a valid month and day."),
   gender: z.enum(["male", "female", "other", "prefer_not_to_say"]).optional(),
+  ageGroupId: z.string().uuid().nullable().optional(),
+  relationshipStatus: z.enum(["Single", "Married"]).nullable().optional(),
   membershipStatus: z.string().trim().optional(),
   joinedMonth: z.coerce.number().int().min(1).max(12).nullable().optional(),
   joinedYear: z.coerce.number().int().min(1900).max(new Date().getFullYear()).nullable().optional(),
@@ -63,8 +69,10 @@ function memberResponse(member: typeof members.$inferSelect) {
     ministries: member.ministries || "",
     center: member.center || "",
     serviceTime: member.serviceTime || "",
-    birthday: member.birthday || "",
+    birthday: normalizeBirthday(member.birthday),
     gender: member.gender || "",
+    ageGroupId: member.ageGroupId || null,
+    relationshipStatus: member.relationshipStatus || "",
     membershipStatus: member.membershipStatus || "",
     joinedMonth: member.joinedMonth || null,
     joinedYear: member.joinedYear || null,
@@ -171,11 +179,20 @@ app.post("/recover", async (c) => {
 
 app.use("/profile", authMiddleware);
 
+app.get("/profile/options", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const ageGroups = await listActiveAgeGroups(churchId);
+  return c.json({ ageGroups: ageGroups.map(({ id, name, minAge, maxAge }) => ({ id, name, minAge, maxAge })) });
+});
+
 app.get("/profile", async (c) => {
   const user = c.get("user");
   const churchId = churchIdForUser(user);
   const member = await db.query.members.findFirst({ where: and(eq(members.id, user.sub), eq(members.churchId, churchId)) });
   if (!member) return c.json({ error: "Account not found" }, 404);
+  const ageGroup = member.ageGroupId
+    ? await db.query.ageGroupDefinitions.findFirst({ where: and(eq(ageGroupDefinitions.id, member.ageGroupId), eq(ageGroupDefinitions.churchId, churchId)) })
+    : null;
 
   return c.json({
     profile: {
@@ -186,8 +203,11 @@ app.get("/profile", async (c) => {
       ministries: member.ministries || "",
       center: member.center || "",
       serviceTime: member.serviceTime || "",
-      birthday: member.birthday || "",
+      birthday: normalizeBirthday(member.birthday),
       gender: member.gender || "",
+      ageGroupId: member.ageGroupId || null,
+      ageGroup: ageGroup ? { id: ageGroup.id, name: ageGroup.name } : null,
+      relationshipStatus: member.relationshipStatus || "",
       membershipStatus: member.membershipStatus || "",
       joinedMonth: member.joinedMonth || null,
       joinedYear: member.joinedYear || null,
@@ -207,11 +227,20 @@ app.patch("/profile", async (c) => {
   const submittedPhone = normalizePhone(parsed.data.phone);
   const submittedEmail = parsed.data.email ? normalizeEmail(parsed.data.email) : "";
   const candidates = await db.query.members.findMany({ where: eq(members.churchId, churchId) });
+  const currentMember = candidates.find((candidate) => candidate.id === user.sub);
+  if (!currentMember) return c.json({ error: "Account not found" }, 404);
   const duplicate = candidates.find((candidate) => candidate.id !== c.get("user").sub && (
     (candidate.phone && normalizePhone(candidate.phone) === submittedPhone) ||
     (submittedEmail && candidate.email && normalizeEmail(candidate.email) === submittedEmail)
   ));
   if (duplicate) return c.json({ error: "A member account already exists for this phone number or email address", memberId: duplicate.id }, 409);
+
+  const ageGroupId = parsed.data.ageGroupId === undefined ? currentMember.ageGroupId : parsed.data.ageGroupId;
+  if (ageGroupId && !await db.query.ageGroupDefinitions.findFirst({ where: and(eq(ageGroupDefinitions.id, ageGroupId), eq(ageGroupDefinitions.churchId, churchId), eq(ageGroupDefinitions.active, true)) })) {
+    return c.json({ error: "Choose an active age group for this church." }, 400);
+  }
+  const relationshipStatus = parsed.data.relationshipStatus === undefined ? currentMember.relationshipStatus : parsed.data.relationshipStatus;
+  const birthday = parsed.data.birthday === undefined ? normalizeBirthday(currentMember.birthday) : normalizeBirthday(parsed.data.birthday);
 
   const [member] = await db.update(members)
     .set({
@@ -220,8 +249,10 @@ app.patch("/profile", async (c) => {
       email: parsed.data.email || "",
       center: parsed.data.center || "",
       serviceTime: parsed.data.serviceTime || "",
-      birthday: parsed.data.birthday || "",
+      birthday,
       gender: parsed.data.gender || null,
+      ageGroupId,
+      relationshipStatus: relationshipStatus || null,
       membershipStatus: parsed.data.membershipStatus || "",
       joinedMonth: parsed.data.joinedMonth || null,
       joinedYear: parsed.data.joinedYear || null,
@@ -234,6 +265,19 @@ app.patch("/profile", async (c) => {
     .returning();
   if (!member) return c.json({ error: "Account not found" }, 404);
 
+  await flagIneligibleCellMembershipsForMember(churchId, member);
+  const changedFields = [
+    ...(currentMember.ageGroupId !== member.ageGroupId ? ["ageGroup"] : []),
+    ...(currentMember.relationshipStatus !== member.relationshipStatus ? ["relationshipStatus"] : []),
+    ...(normalizeBirthday(currentMember.birthday) !== birthday ? ["birthday"] : []),
+  ];
+  if (changedFields.length) {
+    await recordActivity({ churchId, actorId: user.sub, actorName: member.displayName, action: "Updated member profile attributes", target: member.displayName, targetId: member.id, metadata: { fields: changedFields } });
+  }
+  const ageGroup = member.ageGroupId
+    ? await db.query.ageGroupDefinitions.findFirst({ where: and(eq(ageGroupDefinitions.id, member.ageGroupId), eq(ageGroupDefinitions.churchId, churchId)) })
+    : null;
+
   return c.json({
     profile: {
       id: member.id,
@@ -243,8 +287,11 @@ app.patch("/profile", async (c) => {
       ministries: member.ministries || "",
       center: member.center || "",
       serviceTime: member.serviceTime || "",
-      birthday: member.birthday || "",
+      birthday: normalizeBirthday(member.birthday),
       gender: member.gender || "",
+      ageGroupId: member.ageGroupId || null,
+      ageGroup: ageGroup ? { id: ageGroup.id, name: ageGroup.name } : null,
+      relationshipStatus: member.relationshipStatus || "",
       membershipStatus: member.membershipStatus || "",
       joinedMonth: member.joinedMonth || null,
       joinedYear: member.joinedYear || null,

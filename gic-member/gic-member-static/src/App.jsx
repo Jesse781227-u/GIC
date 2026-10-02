@@ -6,7 +6,7 @@ import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, listenForForeground
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
-  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX,
+  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Heart, Trash2, Volume2, VolumeX,
   Play, Pause, CheckCircle2, X
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -675,6 +675,9 @@ function storeMemberProfile(profile) {
   localStorage.setItem('gic_member_center', profile.center || '')
   localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
   localStorage.setItem('gic_member_birthday', profile.birthday || '')
+  localStorage.setItem('gic_member_age_group_id', profile.ageGroupId || '')
+  localStorage.setItem('gic_member_age_group', profile.ageGroup?.name || profile.ageGroupName || '')
+  localStorage.setItem('gic_member_relationship_status', profile.relationshipStatus || '')
   localStorage.setItem('gic_member_gender', profile.gender || '')
   localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
   localStorage.setItem('gic_member_joined_month', profile.joinedMonth || '')
@@ -1923,6 +1926,13 @@ function MinistryDetails() {
   return <MemberShell active="ministries" title={ministry.name} backTo="/ministries"><div className="ministry-cover" style={ministry.imageUrl ? { backgroundImage: `url(${ministry.imageUrl})` } : {}}><h1>{ministry.name.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.name}</h2><p>{ministry.description}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this ministry</b><p>{ministry.description || `${ministry.name} is a community growing in faith and serving together.`}</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this ministry will appear here.</span></div>}</div></MemberShell>
 }
 
+function formatBirthday(value) {
+  const birthday = String(value || '').replace(/^\d{4}-/, '')
+  const match = birthday.match(/^(\d{2})-(\d{2})$/)
+  if (!match) return ''
+  return new Date(2000, Number(match[1]) - 1, Number(match[2])).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+}
+
 function Profile() {
   const navigate = useNavigate()
   const memberName = localStorage.getItem('gic_member_name') || 'David'
@@ -1935,7 +1945,9 @@ function Profile() {
     ['Gender', localStorage.getItem('gic_member_gender') || 'Not provided', User],
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
     ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
-    ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
+    ['Birthday', formatBirthday(localStorage.getItem('gic_member_birthday')) || 'Add info', CalendarDays],
+    ['Age group', localStorage.getItem('gic_member_age_group') || 'Add info', Users],
+    ['Relationship status', localStorage.getItem('gic_member_relationship_status') || 'Add info', Heart],
     ['New member?', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
     ...(localStorage.getItem('gic_member_joined_year') ? [['Member since', [localStorage.getItem('gic_member_joined_month') && new Date(2000, Number(localStorage.getItem('gic_member_joined_month')) - 1).toLocaleString('en-US', { month: 'long' }), localStorage.getItem('gic_member_joined_year')].filter(Boolean).join(' '), CalendarDays]] : []),
   ]
@@ -2002,7 +2014,12 @@ function EditProfile() {
   const [email, setEmail] = useState(localStorage.getItem('gic_member_email') || '')
   const [center, setCenter] = useState(localStorage.getItem('gic_member_center') || '')
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
-  const [birthday, setBirthday] = useState(localStorage.getItem('gic_member_birthday') || '')
+  const storedBirthday = (localStorage.getItem('gic_member_birthday') || '').replace(/^\d{4}-/, '')
+  const [birthdayMonth, setBirthdayMonth] = useState(storedBirthday.slice(0, 2))
+  const [birthdayDay, setBirthdayDay] = useState(storedBirthday.slice(3, 5))
+  const [ageGroups, setAgeGroups] = useState([])
+  const [ageGroupId, setAgeGroupId] = useState(localStorage.getItem('gic_member_age_group_id') || '')
+  const [relationshipStatus, setRelationshipStatus] = useState(localStorage.getItem('gic_member_relationship_status') || '')
   const [gender, setGender] = useState(localStorage.getItem('gic_member_gender') || '')
   const [membershipStatus, setMembershipStatus] = useState(localStorage.getItem('gic_membership_status') || '')
   const [joinedMonth, setJoinedMonth] = useState(localStorage.getItem('gic_member_joined_month') || '')
@@ -2010,6 +2027,10 @@ function EditProfile() {
   const [avatar, setAvatar] = useState(localStorage.getItem('gic_member_avatar') || '')
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    fetchMemberApi('/api/auth/profile/options').then(({ ageGroups: options = [] }) => setAgeGroups(options)).catch(() => setAgeGroups([]))
+  }, [])
+  const birthdayDays = birthdayMonth === '02' ? 29 : ['04', '06', '09', '11'].includes(birthdayMonth) ? 30 : 31
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
   const availableServiceTimes = selectedCenter?.times || []
 
@@ -2031,7 +2052,9 @@ function EditProfile() {
           email: email.trim(),
           center,
           serviceTime,
-          birthday,
+          birthday: birthdayMonth && birthdayDay ? `${birthdayMonth}-${birthdayDay}` : '',
+          ageGroupId: ageGroupId || null,
+          relationshipStatus: relationshipStatus || null,
           gender,
           membershipStatus,
           joinedMonth: joinedMonth ? Number(joinedMonth) : null,
@@ -2102,7 +2125,9 @@ function EditProfile() {
           </label>
           <Field label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
           <Field label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
-          <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
+          <div className="field"><span>Birthday (month and day)</span><div className="form-grid"><SelectField label="Month" value={birthdayMonth} onChange={(event) => { setBirthdayMonth(event.target.value); const maxDay = event.target.value === '02' ? 29 : ['04','06','09','11'].includes(event.target.value) ? 30 : 31; if (Number(birthdayDay) > maxDay) setBirthdayDay('') }}><option value="">Month</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}</SelectField><SelectField label="Day" value={birthdayDay} onChange={(event) => setBirthdayDay(event.target.value)} disabled={!birthdayMonth}><option value="">Day</option>{Array.from({ length: birthdayDays }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{index + 1}</option>)}</SelectField></div></div>
+          <SelectField label="Age group" value={ageGroupId} onChange={(event) => setAgeGroupId(event.target.value)}><option value="">Select your age group</option>{ageGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</SelectField>
+          <SelectField label="Relationship status" value={relationshipStatus} onChange={(event) => setRelationshipStatus(event.target.value)}><option value="">Select your relationship status</option><option value="Single">Single</option><option value="Married">Married</option></SelectField>
           <SelectField label="Gender" value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Prefer not to say</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option></SelectField>
         </div>
       </section>

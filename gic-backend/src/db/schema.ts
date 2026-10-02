@@ -10,6 +10,8 @@ import {
   unique,
   uniqueIndex,
   jsonb,
+  check,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -62,6 +64,22 @@ export const churches = pgTable("churches", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
+export const ageGroupDefinitions = pgTable("age_group_definitions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  name: text("name").notNull(),
+  minAge: integer("min_age").notNull(),
+  maxAge: integer("max_age"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uniqueName: unique("age_group_definitions_church_name_unique").on(t.churchId, t.name),
+  tenantIdUnique: unique("age_group_definitions_church_id_id_unique").on(t.churchId, t.id),
+  tenantIdx: index("age_group_definitions_church_idx").on(t.churchId),
+  validRange: check("age_group_definitions_age_range_check", sql`${t.maxAge} IS NULL OR ${t.maxAge} >= ${t.minAge}`),
+}));
+
 // ─── members ──────────────────────────────────────────────────────────────────
 // Device-authenticated members are persisted so their identity survives reloads.
 
@@ -76,6 +94,8 @@ export const members = pgTable("members", {
   serviceTime: text("service_time"),
   birthday: text("birthday"),
   gender: text("gender"),
+  ageGroupId: uuid("age_group_id").references(() => ageGroupDefinitions.id, { onDelete: "set null" }),
+  relationshipStatus: text("relationship_status"),
   membershipStatus: text("membership_status"),
   joinedMonth: integer("joined_month"),
   joinedYear: integer("joined_year"),
@@ -88,6 +108,9 @@ export const members = pgTable("members", {
 }, (t) => ({
   phoneIdentityUnique: uniqueIndex("members_phone_identity_unique").on(t.churchId, sql`regexp_replace(${t.phone}, '[^0-9]', '', 'g')`).where(sql`${t.phone} IS NOT NULL AND btrim(${t.phone}) <> ''`),
   emailIdentityUnique: uniqueIndex("members_email_identity_unique").on(t.churchId, sql`lower(btrim(${t.email}))`).where(sql`${t.email} IS NOT NULL AND btrim(${t.email}) <> ''`),
+  relationshipStatusCheck: check("members_relationship_status_check", sql`${t.relationshipStatus} IS NULL OR ${t.relationshipStatus} IN ('Single', 'Married')`),
+  ageGroupIdx: index("members_church_age_group_idx").on(t.churchId, t.ageGroupId),
+  ageGroupTenantFk: foreignKey({ name: "members_age_group_tenant_fk", columns: [t.churchId, t.ageGroupId], foreignColumns: [ageGroupDefinitions.churchId, ageGroupDefinitions.id] }),
 }));
 
 export const ministries = pgTable("ministries", {
@@ -130,6 +153,7 @@ export const cellMemberships = pgTable("cell_memberships", {
   memberId: text("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  eligibilityReviewRequired: boolean("eligibility_review_required").notNull().default(false),
 }, (t) => ({ uniqueMember: unique("cell_memberships_unique").on(t.churchId, t.cellId, t.memberId), tenantIdx: index("cell_memberships_church_idx").on(t.churchId), memberIdx: index("cell_memberships_member_idx").on(t.memberId) }));
 
 export const segments = pgTable("segments", {

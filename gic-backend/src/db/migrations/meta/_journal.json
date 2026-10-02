@@ -9,6 +9,7 @@
     { "idx": 4, "version": "7", "when": 1789459200000, "tag": "0005_task_46_events", "breakpoints": true },
     { "idx": 5, "version": "7", "when": 1789459300000, "tag": "0006_task_47_reference_data", "breakpoints": true },
     { "idx": 6, "version": "7", "when": 1790899200000, "tag": "0007_notification_destinations", "breakpoints": true },
-    { "idx": 7, "version": "7", "when": 1790902800000, "tag": "0008_member_groups", "breakpoints": true }
+    { "idx": 7, "version": "7", "when": 1790902800000, "tag": "0008_member_groups", "breakpoints": true },
+    { "idx": 8, "version": "7", "when": 1790962000000, "tag": "0009_profile_demographics_and_cell_review", "breakpoints": true }
   ]
 }
