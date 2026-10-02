@@ -12,7 +12,7 @@ import {
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
-import { validateMemberRoute } from './notificationDestination'
+import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -884,11 +884,12 @@ function ProtectedRoute({ children }) {
           if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
           return
         }
-        if (!isStandalonePwa() && location.pathname !== '/onboarding') {
+        const isNotificationDestination = isNotificationDestinationRoute(location.pathname)
+        if (!isStandalonePwa() && location.pathname !== '/onboarding' && !isNotificationDestination) {
           navigate('/onboarding?stage=install', { replace: true })
           return
         }
-        if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding') {
+        if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding' && !isNotificationDestination) {
           navigate('/onboarding?stage=notifications', { replace: true })
           return
         }

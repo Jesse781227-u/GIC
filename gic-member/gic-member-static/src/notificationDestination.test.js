@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { validateMemberRoute } from './notificationDestination.js'
+import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination.js'
+
+test('recognizes notification tap and media paths for cold-start routing', () => {
+  assert.equal(isNotificationDestinationRoute('/notification-open'), true)
+  assert.equal(isNotificationDestinationRoute('/notification/123e4567-e89b-12d3-a456-426614174000'), true)
+  assert.equal(isNotificationDestinationRoute('/home'), false)
+  assert.equal(isNotificationDestinationRoute('/notification/not-a-uuid'), false)
+})
 
 test('allows supported exact and parameterized member routes', () => {
   for (const route of ['/home', '/profile', '/messages', '/registrations', '/events', '/events/123', '/events/123/register', '/events/123/registration', '/events/event_123/success']) {

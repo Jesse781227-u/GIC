@@ -21,6 +21,10 @@ const allowedRoutes = [
   /^\/events\/[A-Za-z0-9_-]+\/registration$/,
 ]
 
+export function isNotificationDestinationRoute(pathname) {
+  return pathname === '/notification-open' || /^\/notification\/[A-Fa-f0-9-]+$/.test(pathname)
+}
+
 export function validateMemberRoute(route) {
   if (typeof route !== 'string' || route.length > 500 || !route.startsWith('/') || route.startsWith('//')) return null
   if (/[\\?#\u0000-\u001f]/.test(route) || /%(?:2e|2f|5c)/i.test(route)) return null
