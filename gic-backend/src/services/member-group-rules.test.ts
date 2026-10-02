@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { matchesGroupRules, matchesProfileCondition } from "./member-group-rules.js";
+import { describeGroupRules, matchesGroupRules, matchesProfileCondition } from "./member-group-rules.js";
 
 test("new-member window uses the configured number of months", () => {
   const member = { joinedYear: 2026, joinedMonth: 8, birthday: null, gender: null, center: null, membershipStatus: null };
@@ -28,4 +28,13 @@ test("age and gender rules combine with AND or OR semantics", () => {
 test("relation rules are delegated to tenant-scoped membership checks", () => {
   const member = { joinedYear: 2020, joinedMonth: 1, birthday: "2000-01-01", gender: "male", center: "Lagos", membershipStatus: "Active" };
   assert.equal(matchesGroupRules(member as never, { conditions: [{ field: "cell_id", operator: "equals", value: "cell-a" }] }, (condition) => condition.value === "cell-a"), true);
+});
+
+test("automatic segment rules are summarized in user-friendly text", () => {
+  const description = describeGroupRules({ logic: "and", conditions: [
+    { field: "gender", operator: "equals", value: "female" },
+    { field: "joined_within_months", operator: "within", value: 5 },
+  ] });
+  assert.match(description, /female/i);
+  assert.match(description, /5 months|within the last 5 months/i);
 });

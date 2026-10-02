@@ -35,6 +35,24 @@ export function matchesProfileCondition(member: GroupMember, condition: GroupCon
   }
 }
 
+export function describeGroupRules(rules: GroupRules) {
+  const conditions = rules.conditions || [];
+  if (!conditions.length) return "All members";
+  const descriptions = conditions.map((condition) => {
+    switch (condition.field) {
+      case "gender": return `gender is ${String(condition.value)}`;
+      case "center": return `center is ${String(condition.value)}`;
+      case "membership_status": return `membership status is ${String(condition.value)}`;
+      case "age": return `age is between ${condition.min ?? 0} and ${condition.max ?? 120}`;
+      case "joined_within_months": return `joined within the last ${Number(condition.value ?? 0)} month${Number(condition.value ?? 0) === 1 ? "" : "s"}`;
+      case "ministry_id": return `belongs to ministry ${String(condition.value ?? "")}`;
+      case "cell_id": return `belongs to fellowship/cell ${String(condition.value ?? "")}`;
+      default: return "matches the configured criteria";
+    }
+  });
+  return descriptions.length === 1 ? descriptions[0] : descriptions.join(rules.logic === "or" ? " or " : " and ");
+}
+
 export function matchesGroupRules(member: GroupMember, rules: GroupRules, relationMatch: (condition: GroupCondition) => boolean = () => false, now = new Date()) {
   const conditions = rules.conditions || [];
   if (!conditions.length) return true;

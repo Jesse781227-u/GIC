@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { cells, cellMemberships, members, ministries, ministryApplications, ministryMemberships, segmentMemberships, segments } from "../db/schema.js";
 import { churchIdForUser } from "../lib/tenant.js";
+import { describeGroupRules } from "../services/member-group-rules.js";
 import { isEligibleForCell, resolveSegmentMemberIds } from "../services/member-groups.service.js";
 
 const app = new Hono();
@@ -72,11 +72,26 @@ app.delete("/cells/:id/join", async (c) => {
 app.get("/profile/memberships", async (c) => {
   const user = c.get("user");
   const churchId = churchIdForUser(user);
-  const [ministryRows, cellRows] = await Promise.all([
+  const [ministryRows, cellRows, segmentRows, manualMemberships] = await Promise.all([
     db.select({ id: ministries.id, name: ministries.name }).from(ministryMemberships).innerJoin(ministries, eq(ministryMemberships.ministryId, ministries.id)).where(and(eq(ministryMemberships.churchId, churchId), eq(ministryMemberships.memberId, user.sub))),
     db.select({ id: cells.id, name: cells.name }).from(cellMemberships).innerJoin(cells, eq(cellMemberships.cellId, cells.id)).where(and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.memberId, user.sub))),
+    db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), eq(segments.active, true)) }),
+    db.query.segmentMemberships.findMany({ where: and(eq(segmentMemberships.churchId, churchId), eq(segmentMemberships.memberId, user.sub)) }),
   ]);
-  return c.json({ ministries: ministryRows, fellowships: cellRows, cells: cellRows, segments: [] });
+  const manualIds = new Set(manualMemberships.map((row) => row.segmentId));
+  const memberSegments = [] as Array<{ id: string; name: string; reason: string; type: string }>; 
+  for (const segment of segmentRows) {
+    const isManualMatch = segment.segmentType === "manual" && manualIds.has(segment.id);
+    const isAutomaticMatch = segment.segmentType !== "manual" && (await resolveSegmentMemberIds(churchId, segment)).includes(user.sub);
+    if (!isManualMatch && !isAutomaticMatch) continue;
+    memberSegments.push({
+      id: segment.id,
+      name: segment.name,
+      type: segment.segmentType,
+      reason: segment.segmentType === "manual" ? "Manual assignment" : describeGroupRules(segment.rules as { logic?: "and" | "or"; conditions?: Array<{ field: string; operator: string; value?: unknown; min?: number; max?: number }> }),
+    });
+  }
+  return c.json({ ministries: ministryRows, fellowships: cellRows, cells: cellRows, groups: [], segments: memberSegments });
 });
 
 export default app;
