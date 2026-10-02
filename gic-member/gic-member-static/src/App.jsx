@@ -1821,30 +1821,30 @@ function PrayerRequest() {
 function MinistriesPage() {
   const [tab, setTab] = useState('Ministries')
   const [ministryRows, setMinistryRows] = useState([])
-  const [cellRows, setCellRows] = useState([])
-  const [busyCell, setBusyCell] = useState('')
+  const [fellowshipRows, setFellowshipRows] = useState([])
+  const [busyFellowship, setBusyFellowship] = useState('')
   const [error, setError] = useState('')
   const load = () => Promise.all([fetchMemberApi('/api/groups/ministries'), fetchMemberApi('/api/groups/cells')])
-    .then(([ministryData, cellData]) => { setMinistryRows(ministryData.ministries || []); setCellRows(cellData.cells || []) })
+    .then(([ministryData, cellData]) => { setMinistryRows(ministryData.ministries || []); setFellowshipRows(cellData.cells || []) })
     .catch((requestError) => setError(requestError.message || 'Groups are unavailable.'))
   useEffect(() => { load() }, [])
-  const changeCellMembership = async (cell) => {
-    setBusyCell(cell.id); setError('')
+  const changeFellowshipMembership = async (fellowship) => {
+    setBusyFellowship(fellowship.id); setError('')
     try {
-      if (cell.joined) await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'DELETE' })
-      else await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'POST', body: JSON.stringify({}) })
+      if (fellowship.joined) await fetchMemberApi(`/api/groups/cells/${fellowship.id}/join`, { method: 'DELETE' })
+      else await fetchMemberApi(`/api/groups/cells/${fellowship.id}/join`, { method: 'POST', body: JSON.stringify({}) })
       await load()
-    } catch (requestError) { setError(requestError.message || 'Cell membership could not be updated.') }
-    finally { setBusyCell('') }
+    } catch (requestError) { setError(requestError.message || 'Fellowship membership could not be updated.') }
+    finally { setBusyFellowship('') }
   }
   const joinedMinistries = ministryRows.filter((item) => item.joined)
   const pendingMinistries = ministryRows.filter((item) => item.applicationStatus === 'pending')
-  const joinedCells = cellRows.filter((item) => item.joined)
-  return <MemberShell active="ministries" title="Ministries & Cells" backTo="/home">
-    <div className="tabs big"><button className={tab === 'Ministries' ? 'active' : ''} onClick={() => setTab('Ministries')}>Ministries</button><button className={tab === 'Cells' ? 'active' : ''} onClick={() => setTab('Cells')}>Cells</button></div>
+  const joinedFellowships = fellowshipRows.filter((item) => item.joined)
+  return <MemberShell active="ministries" title="Ministries & Fellowships" backTo="/home">
+    <div className="tabs big"><button className={tab === 'Ministries' ? 'active' : ''} onClick={() => setTab('Ministries')}>Ministries</button><button className={tab === 'Fellowships' ? 'active' : ''} onClick={() => setTab('Fellowships')}>Fellowships</button></div>
     {error && <p className="center muted">{error}</p>}
     {tab === 'Ministries' && <section className="ministries-list"><div className="section-head"><span>My Ministries</span><Link to="/ministries/browse">Browse</Link></div>{joinedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>{ministry.description || 'Approved member'}</small></div><span className="badge success">Member</span></Link>)}{pendingMinistries.map((ministry) => <div className="ministry-row" key={ministry.id}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>Application pending</small></div><span className="badge blue">Pending</span></div>)}{!joinedMinistries.length && !pendingMinistries.length && <p className="center muted">You have not joined a ministry yet.</p>}<Link className="btn primary wide" to="/ministries/browse">Browse Ministries</Link></section>}
-    {tab === 'Cells' && <section className="ministries-list"><div className="section-head"><span>My Cells</span></div>{joinedCells.map((cell) => <div className="ministry-row" key={`joined-${cell.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{cell.name}</b><small>{cell.description || 'Cell member'}</small></div><button className="tool" disabled={busyCell === cell.id} onClick={() => changeCellMembership(cell)}>{busyCell === cell.id ? 'Saving…' : 'Leave'}</button></div>)}{cellRows.filter((cell) => !cell.joined).map((cell) => <div className="ministry-row" key={cell.id}><div className="action-icon"><Users size={17}/></div><div><b>{cell.name}</b><small>{cell.eligible ? cell.description || 'Open to eligible members' : 'Not eligible based on your profile'}</small></div><button className="tool" disabled={!cell.eligible || busyCell === cell.id} onClick={() => changeCellMembership(cell)}>{busyCell === cell.id ? 'Joining…' : 'Join'}</button></div>)}{!cellRows.length && <p className="center muted">No cells are currently available.</p>}</section>}
+    {tab === 'Fellowships' && <section className="ministries-list"><div className="section-head"><span>My Fellowships</span></div>{joinedFellowships.map((fellowship) => <div className="ministry-row" key={`joined-${fellowship.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{fellowship.name}</b><small>{fellowship.description || 'Fellowship member'}</small></div><button className="tool" disabled={busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Saving…' : 'Leave'}</button></div>)}{fellowshipRows.filter((fellowship) => !fellowship.joined).map((fellowship) => <div className="ministry-row" key={fellowship.id}><div className="action-icon"><Users size={17}/></div><div><b>{fellowship.name}</b><small>{fellowship.eligible ? fellowship.description || 'Open to eligible members' : 'Not eligible based on your profile'}</small></div><button className="tool" disabled={!fellowship.eligible || busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Joining…' : 'Join'}</button></div>)}{!fellowshipRows.length && <p className="center muted">No fellowships are currently available.</p>}</section>}
   </MemberShell>
 }
 
@@ -1922,8 +1922,8 @@ function Profile() {
   const navigate = useNavigate()
   const memberName = localStorage.getItem('gic_member_name') || 'David'
   const avatar = localStorage.getItem('gic_member_avatar')
-  const [groups, setGroups] = useState({ ministries: [], cells: [], segments: [] })
-  useEffect(() => { fetchMemberApi('/api/groups/profile/memberships').then(setGroups).catch(() => {}) }, [])
+  const [groups, setGroups] = useState({ ministries: [], cells: [], fellowships: [] })
+  useEffect(() => { fetchMemberApi('/api/groups/profile/memberships').then((payload) => setGroups({ ministries: payload.ministries || [], cells: payload.cells || payload.fellowships || [], fellowships: payload.fellowships || payload.cells || [] })).catch(() => {}) }, [])
   const profileDetails = [
     ['Phone Number', localStorage.getItem('gic_member_phone') || 'Add info', Phone],
     ['Email Address', localStorage.getItem('gic_member_email') || 'Add info', Mail],
@@ -1964,7 +1964,7 @@ function Profile() {
       </div>
     </section>
 
-    <section className="profile-details"><div className="profile-details-head"><div><b>Ministries & Cells</b><small>Your current church groups</small></div><Link to="/ministries">View</Link></div><div className="profile-detail-grid"><div><Users size={15}/><span><small>Ministries</small><b>{groups.ministries?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Cells</small><b>{groups.cells?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Segments</small><b>{groups.segments?.join(', ') || 'None'}</b></span></div></div></section>
+    <section className="profile-details"><div className="profile-details-head"><div><b>Ministries & Fellowships</b><small>Your current church groups</small></div><Link to="/ministries">View</Link></div><div className="profile-detail-grid"><div><Users size={15}/><span><small>Ministries</small><b>{groups.ministries?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Fellowships</small><b>{(groups.fellowships || groups.cells)?.map((item) => item.name).join(', ') || 'None'}</b></span></div></div></section>
 
     <div className="profile-menu">
       <button
@@ -2107,7 +2107,7 @@ function EditProfile() {
           <small>Help us personalize your GIC experience</small>
         </div>
         <div className="profile-form-fields">
-          <div className="field"><span>Ministry and cell memberships</span><p className="profile-form-help">Manage memberships from the Ministries and Cells pages. Ministry membership requires approval; eligible cells can be joined directly.</p><Link to="/ministries">Manage groups</Link></div>
+          <div className="field"><span>Ministry and fellowship memberships</span><p className="profile-form-help">Manage memberships from the Ministries and Fellowships pages. Ministry membership requires approval; eligible fellowships can be joined directly.</p><Link to="/ministries">Manage groups</Link></div>
           <SelectField label="Center you attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
             {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
           </SelectField>

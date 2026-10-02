@@ -72,18 +72,11 @@ app.delete("/cells/:id/join", async (c) => {
 app.get("/profile/memberships", async (c) => {
   const user = c.get("user");
   const churchId = churchIdForUser(user);
-  const [ministryRows, cellRows, segmentRows] = await Promise.all([
+  const [ministryRows, cellRows] = await Promise.all([
     db.select({ id: ministries.id, name: ministries.name }).from(ministryMemberships).innerJoin(ministries, eq(ministryMemberships.ministryId, ministries.id)).where(and(eq(ministryMemberships.churchId, churchId), eq(ministryMemberships.memberId, user.sub))),
     db.select({ id: cells.id, name: cells.name }).from(cellMemberships).innerJoin(cells, eq(cellMemberships.cellId, cells.id)).where(and(eq(cellMemberships.churchId, churchId), eq(cellMemberships.memberId, user.sub))),
-    db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), eq(segments.active, true)) }),
   ]);
-  const memberships = await db.query.segmentMemberships.findMany({ where: and(eq(segmentMemberships.churchId, churchId), eq(segmentMemberships.memberId, user.sub)) });
-  const manualIds = new Set(memberships.map((item) => item.segmentId));
-  const segmentNames: string[] = [];
-  for (const segment of segmentRows) {
-    if (segment.segmentType === "manual" ? manualIds.has(segment.id) : (await resolveSegmentMemberIds(churchId, segment)).includes(user.sub)) segmentNames.push(segment.name);
-  }
-  return c.json({ ministries: ministryRows, cells: cellRows, segments: segmentNames });
+  return c.json({ ministries: ministryRows, fellowships: cellRows, cells: cellRows, segments: [] });
 });
 
 export default app;
