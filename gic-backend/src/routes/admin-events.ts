@@ -13,13 +13,15 @@ import {
 } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
 import { recordActivity } from "../services/activity.service.js";
+import { churchIdForUser } from "../lib/tenant.js";
 
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
 
 app.get("/summary", async (c) => {
   const now = new Date();
-  const [upcoming] = await db.select({ value: count() }).from(events).where(and(eq(events.status, "PUBLISHED"), gte(events.startsAt, now)));
+  const churchId = churchIdForUser(c.get("user"));
+  const [upcoming] = await db.select({ value: count() }).from(events).where(and(eq(events.churchId, churchId), eq(events.status, "PUBLISHED"), gte(events.startsAt, now)));
   return c.json({ upcomingEvents: Number(upcoming?.value || 0), asOf: now.toISOString() });
 });
 
@@ -92,8 +94,9 @@ const reminderSchema = z.object({
   offsets: z.array(z.number().int().positive()).max(20),
 });
 
-function eventValues(value: z.infer<typeof eventSchema>, createdBy: string) {
+function eventValues(value: z.infer<typeof eventSchema>, createdBy: string, churchId: string) {
   return {
+    churchId,
     title: value.title,
     description: value.description ?? null,
     startsAt: new Date(value.startsAt),
@@ -136,14 +139,16 @@ async function eventWithCounts(event: typeof events.$inferSelect) {
 }
 
 app.get("/", async (c) => {
-  const records = await db.query.events.findMany({ orderBy: [desc(events.startsAt)] });
+  const churchId = churchIdForUser(c.get("user"));
+  const records = await db.query.events.findMany({ where: eq(events.churchId, churchId), orderBy: [desc(events.startsAt)] });
   return c.json({ events: await Promise.all(records.map(eventWithCounts)) });
 });
 
 app.post("/", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
   const parsed = eventSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid event", details: parsed.error.issues }, 400);
-  const [event] = await db.insert(events).values(eventValues(parsed.data, c.get("user").sub)).returning();
+  const [event] = await db.insert(events).values(eventValues(parsed.data, c.get("user").sub, churchId)).returning();
   if (event.notifyOnPublish && event.status === "PUBLISHED") {
     // Event creation must not fail after the event has been saved just because
     // notification delivery is slow or unavailable. The existing notification
@@ -151,6 +156,7 @@ app.post("/", async (c) => {
     void (async () => {
       try {
         const notification = await notificationService.createDraft({
+          churchId,
           title: event.title,
           body: event.description || `${event.title} has been published.`,
           type: "EVENT_PUBLISHED",
@@ -164,31 +170,34 @@ app.post("/", async (c) => {
       }
     })();
   }
-  await recordActivity({ actorId: c.get("user").sub, actorName: c.get("user").name, action: "Created event", target: event.title, targetId: event.id, metadata: { status: event.status } });
+  await recordActivity({ churchId, actorId: c.get("user").sub, actorName: c.get("user").name, action: "Created event", target: event.title, targetId: event.id, metadata: { status: event.status } });
   return c.json({ event }, 201);
 });
 
 app.put("/:id", async (c) => {
   const id = c.req.param("id");
+  const churchId = churchIdForUser(c.get("user"));
   const parsed = eventSchemaBase.partial().extend({ startsAt: z.string().datetime() }).safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid event", details: parsed.error.issues }, 400);
-  const existing = await db.query.events.findFirst({ where: eq(events.id, id) });
+  const existing = await db.query.events.findFirst({ where: and(eq(events.id, id), eq(events.churchId, churchId)) });
   if (!existing) return c.json({ error: "Event not found" }, 404);
   const next = { ...existing, ...parsed.data };
   const normalized = eventSchema.safeParse(next);
   if (!normalized.success) return c.json({ error: "Invalid event", details: normalized.error.issues }, 400);
-  const [event] = await db.update(events).set(eventValues(normalized.data, existing.createdBy)).where(eq(events.id, id)).returning();
+  const [event] = await db.update(events).set(eventValues(normalized.data, existing.createdBy, churchId)).where(and(eq(events.id, id), eq(events.churchId, churchId))).returning();
   return c.json({ event });
 });
 
 app.get("/:id", async (c) => {
-  const event = await db.query.events.findFirst({ where: eq(events.id, c.req.param("id")) });
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.churchId, churchId)) });
   if (!event) return c.json({ error: "Event not found" }, 404);
   return c.json({ event: await eventWithCounts(event) });
 });
 
 app.get("/:id/pickup-locations", async (c) => {
-  const event = await db.query.events.findFirst({ where: eq(events.id, c.req.param("id")) });
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.churchId, churchId)) });
   if (!event) return c.json({ error: "Event not found" }, 404);
   const pickupLocations = await db.query.eventPickupLocations.findMany({
     where: eq(eventPickupLocations.eventId, event.id),
@@ -200,7 +209,8 @@ app.get("/:id/pickup-locations", async (c) => {
 
 app.post("/:id/pickup-locations", async (c) => {
   const eventId = c.req.param("id");
-  const event = await db.query.events.findFirst({ where: eq(events.id, eventId) });
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, eventId), eq(events.churchId, churchId)) });
   if (!event) return c.json({ error: "Event not found" }, 404);
   const parsed = pickupSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid pickup location", details: parsed.error.issues }, 400);
@@ -224,6 +234,9 @@ app.post("/:id/pickup-locations", async (c) => {
 
 app.put("/:id/pickup-locations/:pickupId", async (c) => {
   const eventId = c.req.param("id");
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, eventId), eq(events.churchId, churchId)) });
+  if (!event) return c.json({ error: "Event not found" }, 404);
   const pickupId = c.req.param("pickupId");
   const existing = await db.query.eventPickupLocations.findFirst({ where: and(eq(eventPickupLocations.id, pickupId), eq(eventPickupLocations.eventId, eventId)) });
   if (!existing) return c.json({ error: "Pickup location not found" }, 404);
@@ -247,6 +260,9 @@ app.put("/:id/pickup-locations/:pickupId", async (c) => {
 });
 
 app.delete("/:id/pickup-locations/:pickupId", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.churchId, churchId)) });
+  if (!event) return c.json({ error: "Event not found" }, 404);
   const deleted = await db.delete(eventPickupLocations).where(and(eq(eventPickupLocations.id, c.req.param("pickupId")), eq(eventPickupLocations.eventId, c.req.param("id")))).returning({ id: eventPickupLocations.id });
   if (!deleted.length) return c.json({ error: "Pickup location not found" }, 404);
   return c.json({ success: true });
@@ -254,7 +270,8 @@ app.delete("/:id/pickup-locations/:pickupId", async (c) => {
 
 app.get("/:id/registrations", async (c) => {
   const eventId = c.req.param("id");
-  const event = await db.query.events.findFirst({ where: eq(events.id, eventId) });
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, eventId), eq(events.churchId, churchId)) });
   if (!event) return c.json({ error: "Event not found" }, 404);
   const registrations = await db.select({
     id: eventRegistrations.id,
@@ -282,13 +299,17 @@ app.get("/:id/registrations", async (c) => {
 });
 
 app.get("/:id/reminders", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.churchId, churchId)) });
+  if (!event) return c.json({ error: "Event not found" }, 404);
   const reminders = await db.query.eventReminders.findMany({ where: eq(eventReminders.eventId, c.req.param("id")), orderBy: [desc(eventReminders.offsetMinutes)] });
   return c.json({ reminders });
 });
 
 app.put("/:id/reminders", async (c) => {
   const eventId = c.req.param("id");
-  const event = await db.query.events.findFirst({ where: eq(events.id, eventId) });
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, eventId), eq(events.churchId, churchId)) });
   if (!event) return c.json({ error: "Event not found" }, 404);
   const parsed = reminderSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid reminders", details: parsed.error.issues }, 400);

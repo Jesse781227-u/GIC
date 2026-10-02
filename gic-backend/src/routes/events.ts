@@ -11,6 +11,7 @@ import {
   busPickupPoints,
 } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
+import { churchIdForUser } from "../lib/tenant.js";
 
 const app = new Hono();
 app.use("*", authMiddleware);
@@ -43,8 +44,9 @@ function formatEvent(event: typeof events.$inferSelect, pickupLocations: EventPi
 }
 
 app.get("/", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
   const records = await db.query.events.findMany({
-    where: eq(events.status, "PUBLISHED"),
+    where: and(eq(events.churchId, churchId), eq(events.status, "PUBLISHED")),
     orderBy: [asc(events.startsAt)],
   });
   const ids = records.map((event) => event.id);
@@ -55,13 +57,16 @@ app.get("/", async (c) => {
 });
 
 app.post("/:id/registrations", async (c) => {
-  const event = await db.query.events.findFirst({ where: eq(events.id, c.req.param("id")) });
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.churchId, churchId)) });
   if (!event) return c.json({ error: "Event not found" }, 404);
   if (!isRegistrationOpen(event)) return c.json({ error: "Registration is not open for this event" }, 409);
   const parsed = registrationSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid registration", details: parsed.error.issues }, 400);
 
   const memberId = c.get("user").sub;
+  const member = await db.query.members.findFirst({ where: and(eq(members.id, memberId), eq(members.churchId, churchId), eq(members.active, true)) });
+  if (!member) return c.json({ error: "Member account not found" }, 404);
   const existing = await db.query.eventRegistrations.findFirst({
     where: and(eq(eventRegistrations.eventId, event.id), eq(eventRegistrations.memberId, memberId)),
   });
@@ -94,6 +99,7 @@ app.post("/:id/registrations", async (c) => {
   if (isFull && !event.allowWaitlist) return c.json({ error: "This event is full" }, 409);
   const status = isFull ? "WAITLISTED" : "CONFIRMED";
   const [registration] = await db.insert(eventRegistrations).values({
+    churchId,
     eventId: event.id,
     memberId,
     status,
@@ -114,6 +120,7 @@ app.post("/:id/registrations", async (c) => {
 });
 
 app.get("/registrations", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
   const registrations = await db.select({
     id: eventRegistrations.id,
     eventId: eventRegistrations.eventId,
@@ -131,13 +138,14 @@ app.get("/registrations", async (c) => {
   }).from(eventRegistrations)
     .innerJoin(events, eq(events.id, eventRegistrations.eventId))
     .leftJoin(eventPickupLocations, eq(eventPickupLocations.id, eventRegistrations.pickupLocationId))
-    .where(eq(eventRegistrations.memberId, c.get("user").sub))
+    .where(and(eq(eventRegistrations.memberId, c.get("user").sub), eq(events.churchId, churchId)))
     .orderBy(desc(events.startsAt));
   return c.json({ registrations });
 });
 
 app.get("/:id", async (c) => {
-  const event = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.status, "PUBLISHED")) });
+  const churchId = churchIdForUser(c.get("user"));
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.churchId, churchId), eq(events.status, "PUBLISHED")) });
   if (!event) return c.json({ error: "Event not found" }, 404);
   const pickupLocations = await db.query.eventPickupLocations.findMany({
     where: and(eq(eventPickupLocations.eventId, event.id), eq(eventPickupLocations.active, true)),

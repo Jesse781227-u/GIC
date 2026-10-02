@@ -31,7 +31,9 @@ export default function NotificationMessageComposer() {
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
-  const [audience, setAudience] = useState('everyone')
+  const [audienceSelection, setAudienceSelection] = useState('everyone:')
+  const [audiences, setAudiences] = useState([])
+  const [audiencesError, setAudiencesError] = useState('')
   const [category, setCategory] = useState('General Announcement')
   const [destinationType, setDestinationType] = useState('')
   const [destinationRoute, setDestinationRoute] = useState('')
@@ -44,6 +46,11 @@ export default function NotificationMessageComposer() {
   const [message, setMessage] = useState('')
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
+  useEffect(() => {
+    requestAdminApi('/api/admin/groups/audiences')
+      .then(({ audiences: choices = [] }) => setAudiences(choices))
+      .catch((error) => setAudiencesError(error.message || 'Audience options are unavailable.'))
+  }, [])
 
   const uploadMedia = async (event) => {
     const file = event.target.files?.[0]
@@ -80,11 +87,16 @@ export default function NotificationMessageComposer() {
     if (destinationType === 'media_page' && !media?.id) return setMessage('Upload media before saving this destination.')
     setSaving(true)
     try {
+      const [audience, audienceId = ''] = audienceSelection.split(':')
       const type = category === 'Event' ? 'EVENT_PUBLISHED' : category === 'Reminder' ? 'EVENT_REMINDER' : category === 'Registration' ? 'REGISTRATION_CONFIRMATION' : 'GENERAL_ANNOUNCEMENT'
       const created = await requestAdminApi('/api/admin/notifications', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(), body: body.trim(), type, audience, destinationType,
+          ...(audience === 'ministry' ? { audienceMinistryId: audienceId } : {}),
+          ...(audience === 'cell' ? { audienceCellId: audienceId } : {}),
+          ...(audience === 'segment' ? { audienceSegmentId: audienceId } : {}),
+          ...(audience === 'event_registrants' ? { audienceEventId: audienceId } : {}),
           ...(destinationType === 'internal_route' ? { destinationRoute: destinationRoute.trim() } : {}),
           ...(destinationType === 'media_page' ? { destinationMediaId: media.id } : {}),
           ...(mode === 'SCHEDULED' ? { scheduledAt: new Date(scheduledAt).toISOString() } : {}),
@@ -104,6 +116,7 @@ export default function NotificationMessageComposer() {
     ? `Events → Event Details → ${destinationRoute.split('/')[2]}${destinationRoute.endsWith('/register') || destinationRoute.endsWith('/registration') ? ' → Registration' : ''}`
     : routeOptions.find(([, route]) => route === destinationRoute)?.[0] || destinationRoute || 'Choose a page'
 
+  const selectedAudience = audiences.find((item) => `${item.kind}:${item.id || ''}` === audienceSelection)
   return <main className="page">
     <div className="page-head"><div><h1>New Message</h1><p>Compose a push notification for GIC members</p></div></div>
     <div className="composer-layout"><section className="card composer-card">
@@ -112,8 +125,10 @@ export default function NotificationMessageComposer() {
       <label className="form-field">Message<textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write your notification message..." rows="5"/></label>
       <div className="composer-grid">
         <label className="form-field">Category<select value={category} onChange={(event) => setCategory(event.target.value)}>{['General Announcement', 'Event', 'Registration', 'Reminder', 'Church Update'].map((item) => <option key={item}>{item}</option>)}</select></label>
-        <label className="form-field">Audience<select value={audience} onChange={(event) => setAudience(event.target.value)}><option value="everyone">Everyone</option><option value="event_registrants">Event registrants</option><option value="members">Selected members</option><option value="ministry">Ministry members</option></select></label>
+        <label className="form-field">Audience<select value={audienceSelection} onChange={(event) => setAudienceSelection(event.target.value)}>{audiences.map((item) => <option key={`${item.kind}:${item.id}`} value={`${item.kind}:${item.id || ''}`}>{item.name} ({item.memberCount})</option>)}</select></label>
       </div>
+      {audiencesError && <div className="empty-message" role="alert">{audiencesError}</div>}
+      {selectedAudience && <p className="audience-help">Estimated audience: {selectedAudience.memberCount} members with current group membership.</p>}
       <section className="composer-section notification-destination"><div className="destination-heading"><b>Notification Destination</b><span className="destination-required">Required</span></div>
         <div className="audience-options destination-options">{[['internal_route', 'Open app page'], ['media_page', 'Open media page']].map(([value, label]) => <label key={value}><input type="radio" name="notificationDestination" checked={destinationType === value} onChange={() => setDestinationType(value)}/>{label}</label>)}</div>
         {destinationType === 'internal_route' && <div className="destination-fields">

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { birthdayCelebration, getLagosDateParts } from "../services/notifications/birthday.service.js";
 import { notificationMediaService } from "../services/notifications/media.service.js";
 import { isAllowedMemberRoute } from "../lib/member-routes.js";
+import { churchIdForUser } from "../lib/tenant.js";
 
 const preferencesSchema = z.object({
   pushEnabled: z.boolean().optional(),
@@ -24,21 +25,24 @@ app.use("*", authMiddleware);
 
 app.get("/birthday", async (c) => {
   const user = c.get("user");
-  const member = await db.query.members.findFirst({ where: eq(members.id, user.sub) });
+  const churchId = churchIdForUser(user);
+  const member = await db.query.members.findFirst({ where: and(eq(members.id, user.sub), eq(members.churchId, churchId)) });
   if (!member) return c.json({ celebration: null }, 404);
   return c.json({ celebration: birthdayCelebration(member, getLagosDateParts()) });
 });
 
 app.get("/preferences", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
 
   const preferences = await db.query.notificationPreferences.findFirst({
-    where: eq(notificationPreferences.memberId, user.sub),
+    where: and(eq(notificationPreferences.memberId, user.sub), eq(notificationPreferences.churchId, churchId)),
   });
 
   if (!preferences) {
     const defaults = {
       memberId: user.sub,
+      churchId,
       pushEnabled: true,
       emailEnabled: false,
       generalAnnouncements: true,
@@ -57,6 +61,7 @@ app.get("/preferences", async (c) => {
 
 app.put("/preferences", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const body = await c.req.json();
   const parsed = preferencesSchema.safeParse(body);
 
@@ -65,7 +70,7 @@ app.put("/preferences", async (c) => {
   }
 
   const existing = await db.query.notificationPreferences.findFirst({
-    where: eq(notificationPreferences.memberId, user.sub),
+    where: and(eq(notificationPreferences.memberId, user.sub), eq(notificationPreferences.churchId, churchId)),
   });
 
   const updates = {
@@ -78,6 +83,7 @@ app.put("/preferences", async (c) => {
       .insert(notificationPreferences)
       .values({
         memberId: user.sub,
+        churchId,
         pushEnabled: true,
         emailEnabled: false,
         generalAnnouncements: true,
@@ -94,7 +100,7 @@ app.put("/preferences", async (c) => {
   const [updated] = await db
     .update(notificationPreferences)
     .set(updates)
-    .where(eq(notificationPreferences.memberId, user.sub))
+    .where(and(eq(notificationPreferences.memberId, user.sub), eq(notificationPreferences.churchId, churchId)))
     .returning();
 
   return c.json({ preferences: updated });
@@ -102,8 +108,9 @@ app.put("/preferences", async (c) => {
 
 app.get("/", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const items = await db.query.notifications.findMany({
-    where: eq(notifications.memberId, user.sub),
+    where: and(eq(notifications.memberId, user.sub), eq(notifications.churchId, churchId)),
     orderBy: [desc(notifications.createdAt)],
     limit: 50,
   });
@@ -112,9 +119,10 @@ app.get("/", async (c) => {
 
 app.get("/tap/:id", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const id = c.req.param("id");
   const notification = await db.query.notifications.findFirst({
-    where: and(eq(notifications.id, id), eq(notifications.memberId, user.sub)),
+    where: and(eq(notifications.id, id), eq(notifications.memberId, user.sub), eq(notifications.churchId, churchId)),
   });
   if (!notification) return c.json({ destinationType: "none", route: "/home" }, 404);
 
@@ -124,16 +132,16 @@ app.get("/tap/:id", async (c) => {
   if (isAllowedMemberRoute(destinationRoute)) {
     const eventId = destinationRoute.match(/^\/events\/([A-Za-z0-9_-]+)(?:\/|$)/)?.[1];
     if (eventId && !["sunday-service", "midweek-service"].includes(eventId)) {
-      const event = await db.query.events.findFirst({ where: and(eq(eventRecords.id, eventId), eq(eventRecords.status, "PUBLISHED")) });
+      const event = await db.query.events.findFirst({ where: and(eq(eventRecords.id, eventId), eq(eventRecords.churchId, churchId), eq(eventRecords.status, "PUBLISHED")) });
       if (!event) return c.json({ destinationType: "none", route: "/home" });
     }
     await db.update(notifications).set({ destinationOpenedAt: now }).where(eq(notifications.id, id));
     return c.json({ destinationType: "internal_route", route: destinationRoute });
   }
   if (notification.destinationType === "media_page" && notification.destinationMediaId) {
-    const media = await db.query.notificationMedia.findFirst({ where: (table, { eq }) => eq(table.id, notification.destinationMediaId!) });
+    const media = await db.query.notificationMedia.findFirst({ where: (table, { and, eq }) => and(eq(table.id, notification.destinationMediaId!), eq(table.churchId, churchId)) });
     if (media) {
-      const asset = await notificationMediaService.getMemberAsset(media.id);
+      const asset = await notificationMediaService.getMemberAsset(media.id, churchId);
       if (asset) return c.json({ destinationType: "media_page", route: `/notification/${id}` });
     }
   }
@@ -142,14 +150,15 @@ app.get("/tap/:id", async (c) => {
 
 app.get("/tap/:id/media", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const id = c.req.param("id");
   const notification = await db.query.notifications.findFirst({
-    where: and(eq(notifications.id, id), eq(notifications.memberId, user.sub)),
+    where: and(eq(notifications.id, id), eq(notifications.memberId, user.sub), eq(notifications.churchId, churchId)),
   });
   if (!notification || notification.destinationType !== "media_page" || !notification.destinationMediaId) {
     return c.json({ error: "Media destination is unavailable." }, 404);
   }
-  const asset = await notificationMediaService.getMemberAsset(notification.destinationMediaId);
+  const asset = await notificationMediaService.getMemberAsset(notification.destinationMediaId, churchId);
   if (!asset) return c.json({ error: "Media destination is unavailable." }, 404);
   await db.update(notifications).set({ destinationOpenedAt: notification.destinationOpenedAt || new Date() }).where(eq(notifications.id, id));
   return c.json({ media: { mediaType: asset.media.mediaType, mimeType: asset.media.mimeType, originalFilename: asset.media.originalFilename, url: asset.url } });
@@ -157,19 +166,21 @@ app.get("/tap/:id/media", async (c) => {
 
 app.get("/unread-count", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const [result] = await db
     .select({ count: count() })
     .from(notifications)
-    .where(and(eq(notifications.memberId, user.sub), isNull(notifications.readAt)));
+    .where(and(eq(notifications.memberId, user.sub), eq(notifications.churchId, churchId), isNull(notifications.readAt)));
   return c.json({ count: result?.count ?? 0 });
 });
 
 app.patch("/:id/read", async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
 
   const notif = await db.query.notifications.findFirst({
-    where: eq(notifications.id, id),
+    where: and(eq(notifications.id, id), eq(notifications.churchId, churchId)),
   });
 
   if (!notif) return c.json({ error: "Not found" }, 404);
@@ -179,17 +190,18 @@ app.patch("/:id/read", async (c) => {
   await db
     .update(notifications)
     .set({ readAt: new Date() })
-    .where(eq(notifications.id, id));
+    .where(and(eq(notifications.id, id), eq(notifications.churchId, churchId)));
 
   return c.json({ success: true });
 });
 
 app.patch("/read-all", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   await db
     .update(notifications)
     .set({ readAt: new Date() })
-    .where(eq(notifications.memberId, user.sub));
+    .where(and(eq(notifications.memberId, user.sub), eq(notifications.churchId, churchId)));
   return c.json({ success: true });
 });
 

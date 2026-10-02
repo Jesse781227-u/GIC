@@ -5,6 +5,7 @@ import { getFirebaseAuth } from "../lib/firebase.js";
 export interface GicJwtPayload extends JWTPayload {
   sub: string;       // member / admin user ID
   role: "MEMBER" | "ADMIN";
+  churchId?: string;
   email?: string;
   name?: string;
 }
@@ -53,16 +54,20 @@ export async function authMiddleware(c: Context, next: Next) {
       const firebaseUser = await verifyFirebaseToken(token);
       const firebaseRole = String(firebaseUser.role || "").toUpperCase();
       const isAdmin = firebaseUser.admin === true || firebaseUser.isAdmin === true || firebaseRole === "ADMIN";
+      const churchId = String(firebaseUser.church_id || firebaseUser.churchId || process.env.DEFAULT_CHURCH_ID || "");
       c.set("user", {
         sub: firebaseUser.uid || String(firebaseUser.sub),
         role: isAdmin ? "ADMIN" : "MEMBER",
+        churchId,
         email: firebaseUser.email,
         name: firebaseUser.name,
       });
       return await next();
     } catch {
       const { payload } = await jwtVerify(token, getJwtSecret());
-      c.set("user", payload as GicJwtPayload);
+      const user = payload as GicJwtPayload;
+      user.churchId ||= process.env.DEFAULT_CHURCH_ID;
+      c.set("user", user);
       return await next();
     }
   } catch {

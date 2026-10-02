@@ -9,6 +9,7 @@ import {
   index,
   unique,
   uniqueIndex,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -46,15 +47,27 @@ export const notificationStatusEnum = pgEnum("notification_status", [
 export const audienceTypeEnum = pgEnum("audience_type", [
   "everyone",
   "ministry",
+  "cell",
+  "segment",
   "event_registrants",
   "members",
 ]);
+
+export const churches = pgTable("churches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
 
 // ─── members ──────────────────────────────────────────────────────────────────
 // Device-authenticated members are persisted so their identity survives reloads.
 
 export const members = pgTable("members", {
   id: text("id").primaryKey(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
   displayName: text("display_name").notNull().default("Member"),
   phone: text("phone"),
   email: text("email"),
@@ -62,6 +75,7 @@ export const members = pgTable("members", {
   center: text("center"),
   serviceTime: text("service_time"),
   birthday: text("birthday"),
+  gender: text("gender"),
   membershipStatus: text("membership_status"),
   joinedMonth: integer("joined_month"),
   joinedYear: integer("joined_year"),
@@ -72,12 +86,78 @@ export const members = pgTable("members", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({
-  phoneIdentityUnique: uniqueIndex("members_phone_identity_unique").on(sql`regexp_replace(${t.phone}, '[^0-9]', '', 'g')`).where(sql`${t.phone} IS NOT NULL AND btrim(${t.phone}) <> ''`),
-  emailIdentityUnique: uniqueIndex("members_email_identity_unique").on(sql`lower(btrim(${t.email}))`).where(sql`${t.email} IS NOT NULL AND btrim(${t.email}) <> ''`),
+  phoneIdentityUnique: uniqueIndex("members_phone_identity_unique").on(t.churchId, sql`regexp_replace(${t.phone}, '[^0-9]', '', 'g')`).where(sql`${t.phone} IS NOT NULL AND btrim(${t.phone}) <> ''`),
+  emailIdentityUnique: uniqueIndex("members_email_identity_unique").on(t.churchId, sql`lower(btrim(${t.email}))`).where(sql`${t.email} IS NOT NULL AND btrim(${t.email}) <> ''`),
 }));
+
+export const ministries = pgTable("ministries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ uniqueName: unique("ministries_church_name_unique").on(t.churchId, t.name), tenantIdx: index("ministries_church_idx").on(t.churchId) }));
+
+export const ministryMemberships = pgTable("ministry_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  ministryId: uuid("ministry_id").notNull().references(() => ministries.id),
+  memberId: text("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  source: text("source").notNull().default("admin"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ uniqueMember: unique("ministry_memberships_unique").on(t.churchId, t.ministryId, t.memberId), tenantIdx: index("ministry_memberships_church_idx").on(t.churchId), memberIdx: index("ministry_memberships_member_idx").on(t.memberId) }));
+
+export const cells = pgTable("cells", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  eligibilityRules: jsonb("eligibility_rules").notNull().default({}),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ uniqueName: unique("cells_church_name_unique").on(t.churchId, t.name), tenantIdx: index("cells_church_idx").on(t.churchId) }));
+
+export const cellMemberships = pgTable("cell_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  cellId: uuid("cell_id").notNull().references(() => cells.id),
+  memberId: text("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ uniqueMember: unique("cell_memberships_unique").on(t.churchId, t.cellId, t.memberId), tenantIdx: index("cell_memberships_church_idx").on(t.churchId), memberIdx: index("cell_memberships_member_idx").on(t.memberId) }));
+
+export const segments = pgTable("segments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  segmentType: text("segment_type").notNull(),
+  rules: jsonb("rules").notNull().default({}),
+  isSystem: boolean("is_system").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ uniqueName: unique("segments_church_name_unique").on(t.churchId, t.name), tenantIdx: index("segments_church_idx").on(t.churchId) }));
+
+export const segmentMemberships = pgTable("segment_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  segmentId: uuid("segment_id").notNull().references(() => segments.id, { onDelete: "cascade" }),
+  memberId: text("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ uniqueMember: unique("segment_memberships_unique").on(t.churchId, t.segmentId, t.memberId), tenantIdx: index("segment_memberships_church_idx").on(t.churchId), memberIdx: index("segment_memberships_member_idx").on(t.memberId) }));
 
 export const memberMergeLogs = pgTable("member_merge_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
   canonicalMemberId: text("canonical_member_id").notNull(),
   mergedMemberId: text("merged_member_id").notNull(),
   reason: text("reason").notNull(),
@@ -87,6 +167,7 @@ export const memberMergeLogs = pgTable("member_merge_logs", {
 
 export const activityLogs = pgTable("activity_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
   actorId: text("actor_id").notNull(),
   actorName: text("actor_name"),
   action: text("action").notNull(),
@@ -103,6 +184,8 @@ export const ministryApplications = pgTable(
   "ministry_applications",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
+    ministryId: uuid("ministry_id").references(() => ministries.id),
     memberId: text("member_id").notNull(),
     memberName: text("member_name").notNull(),
     ministry: text("ministry").notNull(),
@@ -121,6 +204,7 @@ export const ministryApplications = pgTable(
 
 export const notificationMedia = pgTable("notification_media", {
   id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
   storagePath: text("storage_path").notNull().unique(),
   mediaType: text("media_type").notNull(),
   originalFilename: text("original_filename").notNull(),
@@ -160,6 +244,7 @@ export const busPickupPoints = pgTable("bus_pickup_points", {
 
 export const events = pgTable("events", {
   id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
   title: text("title").notNull(),
   description: text("description"),
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
@@ -219,6 +304,7 @@ export const eventRegistrations = pgTable(
   "event_registrations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
     eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
     memberId: text("member_id").notNull(),
     status: text("status").notNull().default("CONFIRMED"),
@@ -238,6 +324,7 @@ export const eventReminders = pgTable(
   "event_reminders",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
     eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
     offsetMinutes: integer("offset_minutes").notNull(),
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
@@ -260,6 +347,7 @@ export const pushDevices = pgTable(
   "push_devices",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
     memberId: text("member_id").notNull(),
     firebaseInstallationId: text("firebase_installation_id"),
     token: text("token").notNull(),
@@ -286,6 +374,7 @@ export const notificationPreferences = pgTable(
   "notification_preferences",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
     memberId: text("member_id").notNull().unique(),
     pushEnabled: boolean("push_enabled").notNull().default(true),
     emailEnabled: boolean("email_enabled").notNull().default(false),
@@ -309,12 +398,15 @@ export const adminNotifications = pgTable(
   "admin_notifications",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
     title: text("title").notNull(),
     body: text("body").notNull(),
     type: notificationTypeEnum("type").notNull(),
     audience: audienceTypeEnum("audience").notNull(),
     // Audience filter context — which ministry / event / members
     audienceMinistryId: text("audience_ministry_id"),
+    audienceCellId: uuid("audience_cell_id").references(() => cells.id, { onDelete: "set null" }),
+    audienceSegmentId: uuid("audience_segment_id").references(() => segments.id, { onDelete: "set null" }),
     audienceEventId: text("audience_event_id"),
     audienceMemberIds: text("audience_member_ids").array(),
     // Where does tapping this notification go in the member app?
@@ -348,6 +440,7 @@ export const notifications = pgTable(
   "notifications",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
     memberId: text("member_id").notNull(),
     messageId: uuid("message_id").references(() => adminNotifications.id, {
       onDelete: "cascade",

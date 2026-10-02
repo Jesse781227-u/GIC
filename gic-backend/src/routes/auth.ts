@@ -5,8 +5,9 @@ import { getJwtSecret } from "../middleware/auth.js";
 import { getFirebaseAuth } from "../lib/firebase.js";
 import { db } from "../db/index.js";
 import { members, pushDevices, notificationPreferences, notifications, notificationDeliveries, serviceReminders, ministryApplications, eventRegistrations } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
+import { churchIdForUser, DEFAULT_CHURCH_ID } from "../lib/tenant.js";
 
 const app = new Hono();
 
@@ -22,10 +23,10 @@ const profileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   phone: z.string().trim().min(1, "Phone number is required"),
   email: z.string().trim().optional(),
-  ministries: z.string().trim().optional(),
   center: z.string().trim().optional(),
   serviceTime: z.string().trim().optional(),
   birthday: z.string().trim().optional(),
+  gender: z.enum(["male", "female", "other", "prefer_not_to_say"]).optional(),
   membershipStatus: z.string().trim().optional(),
   joinedMonth: z.coerce.number().int().min(1).max(12).nullable().optional(),
   joinedYear: z.coerce.number().int().min(1900).max(new Date().getFullYear()).nullable().optional(),
@@ -45,7 +46,7 @@ function isProfileComplete(member: typeof members.$inferSelect) {
 }
 
 async function issueMemberToken(member: typeof members.$inferSelect, platform = "web") {
-  return new SignJWT({ sub: member.id, role: "MEMBER", name: member.displayName, platform })
+  return new SignJWT({ sub: member.id, churchId: member.churchId, role: "MEMBER", name: member.displayName, platform })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30d")
@@ -55,6 +56,7 @@ async function issueMemberToken(member: typeof members.$inferSelect, platform = 
 function memberResponse(member: typeof members.$inferSelect) {
   return {
     id: member.id,
+    churchId: member.churchId,
     name: member.displayName,
     phone: member.phone,
     email: member.email || "",
@@ -62,6 +64,7 @@ function memberResponse(member: typeof members.$inferSelect) {
     center: member.center || "",
     serviceTime: member.serviceTime || "",
     birthday: member.birthday || "",
+    gender: member.gender || "",
     membershipStatus: member.membershipStatus || "",
     joinedMonth: member.joinedMonth || null,
     joinedYear: member.joinedYear || null,
@@ -88,8 +91,9 @@ app.post("/device", async (c) => {
     }
 
     const { deviceId, accountId, deviceName, platform, name } = parsed.data;
+    const churchId = DEFAULT_CHURCH_ID;
     if (accountId) {
-      const existingAccount = await db.query.members.findFirst({ where: eq(members.id, accountId) });
+      const existingAccount = await db.query.members.findFirst({ where: and(eq(members.id, accountId), eq(members.churchId, churchId)) });
       if (existingAccount) {
         const [member] = await db.update(members)
           .set({
@@ -102,13 +106,16 @@ app.post("/device", async (c) => {
         return c.json({ token: await issueMemberToken(member, platform || "web"), member: memberResponse(member) });
       }
     }
-    const existingMember = await db.query.members.findFirst({ where: eq(members.id, deviceId) });
+    const existingMember = await db.query.members.findFirst({ where: and(eq(members.id, deviceId), eq(members.churchId, churchId)) });
+    const deviceIdOwner = await db.query.members.findFirst({ where: eq(members.id, deviceId) });
+    if (deviceIdOwner && deviceIdOwner.churchId !== churchId) return c.json({ error: "Device session is assigned to a different church." }, 409);
     const memberName = name?.trim() || existingMember?.displayName || "Member";
 
     const [member] = await db
       .insert(members)
       .values({
         id: deviceId,
+        churchId: existingMember?.churchId || churchId,
         displayName: memberName,
         authMethod: "device_auth",
         lastSeenAt: new Date(),
@@ -145,7 +152,8 @@ app.post("/recover", async (c) => {
     const phoneNumber = firebaseUser.phone_number;
     if (!phoneNumber) return c.json({ error: "A verified phone number is required" }, 400);
 
-    const candidates = await db.select().from(members);
+    const churchId = DEFAULT_CHURCH_ID;
+    const candidates = await db.select().from(members).where(eq(members.churchId, churchId));
     const member = candidates.find((item) => item.phone && normalizePhone(item.phone) === normalizePhone(phoneNumber));
     if (!member) return c.json({ error: "No GIC account was found for this phone number" }, 404);
 
@@ -165,7 +173,8 @@ app.use("/profile", authMiddleware);
 
 app.get("/profile", async (c) => {
   const user = c.get("user");
-  const member = await db.query.members.findFirst({ where: eq(members.id, user.sub) });
+  const churchId = churchIdForUser(user);
+  const member = await db.query.members.findFirst({ where: and(eq(members.id, user.sub), eq(members.churchId, churchId)) });
   if (!member) return c.json({ error: "Account not found" }, 404);
 
   return c.json({
@@ -178,6 +187,7 @@ app.get("/profile", async (c) => {
       center: member.center || "",
       serviceTime: member.serviceTime || "",
       birthday: member.birthday || "",
+      gender: member.gender || "",
       membershipStatus: member.membershipStatus || "",
       joinedMonth: member.joinedMonth || null,
       joinedYear: member.joinedYear || null,
@@ -190,12 +200,13 @@ app.get("/profile", async (c) => {
 
 app.patch("/profile", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const parsed = profileSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message || "Invalid profile" }, 400);
 
   const submittedPhone = normalizePhone(parsed.data.phone);
   const submittedEmail = parsed.data.email ? normalizeEmail(parsed.data.email) : "";
-  const candidates = await db.query.members.findMany();
+  const candidates = await db.query.members.findMany({ where: eq(members.churchId, churchId) });
   const duplicate = candidates.find((candidate) => candidate.id !== c.get("user").sub && (
     (candidate.phone && normalizePhone(candidate.phone) === submittedPhone) ||
     (submittedEmail && candidate.email && normalizeEmail(candidate.email) === submittedEmail)
@@ -207,10 +218,10 @@ app.patch("/profile", async (c) => {
       displayName: parsed.data.name,
       phone: parsed.data.phone,
       email: parsed.data.email || "",
-      ministries: parsed.data.ministries || "",
       center: parsed.data.center || "",
       serviceTime: parsed.data.serviceTime || "",
       birthday: parsed.data.birthday || "",
+      gender: parsed.data.gender || null,
       membershipStatus: parsed.data.membershipStatus || "",
       joinedMonth: parsed.data.joinedMonth || null,
       joinedYear: parsed.data.joinedYear || null,
@@ -219,7 +230,7 @@ app.patch("/profile", async (c) => {
       updatedAt: new Date(),
       lastSeenAt: new Date(),
     })
-    .where(eq(members.id, user.sub))
+    .where(and(eq(members.id, user.sub), eq(members.churchId, churchId)))
     .returning();
   if (!member) return c.json({ error: "Account not found" }, 404);
 
@@ -233,6 +244,7 @@ app.patch("/profile", async (c) => {
       center: member.center || "",
       serviceTime: member.serviceTime || "",
       birthday: member.birthday || "",
+      gender: member.gender || "",
       membershipStatus: member.membershipStatus || "",
       joinedMonth: member.joinedMonth || null,
       joinedYear: member.joinedYear || null,
@@ -245,18 +257,19 @@ app.patch("/profile", async (c) => {
 
 app.delete("/profile", async (c) => {
   const user = c.get("user");
-  const member = await db.query.members.findFirst({ where: eq(members.id, user.sub) });
+  const churchId = churchIdForUser(user);
+  const member = await db.query.members.findFirst({ where: and(eq(members.id, user.sub), eq(members.churchId, churchId)) });
   if (!member) return c.json({ error: "Account not found" }, 404);
 
   await db.transaction(async (tx) => {
     await tx.delete(notificationDeliveries).where(eq(notificationDeliveries.memberId, user.sub));
-    await tx.delete(notifications).where(eq(notifications.memberId, user.sub));
-    await tx.delete(pushDevices).where(eq(pushDevices.memberId, user.sub));
-    await tx.delete(notificationPreferences).where(eq(notificationPreferences.memberId, user.sub));
+    await tx.delete(notifications).where(and(eq(notifications.memberId, user.sub), eq(notifications.churchId, churchId)));
+    await tx.delete(pushDevices).where(and(eq(pushDevices.memberId, user.sub), eq(pushDevices.churchId, churchId)));
+    await tx.delete(notificationPreferences).where(and(eq(notificationPreferences.memberId, user.sub), eq(notificationPreferences.churchId, churchId)));
     await tx.delete(serviceReminders).where(eq(serviceReminders.memberId, user.sub));
-    await tx.delete(ministryApplications).where(eq(ministryApplications.memberId, user.sub));
-    await tx.delete(eventRegistrations).where(eq(eventRegistrations.memberId, user.sub));
-    await tx.delete(members).where(eq(members.id, user.sub));
+    await tx.delete(ministryApplications).where(and(eq(ministryApplications.memberId, user.sub), eq(ministryApplications.churchId, churchId)));
+    await tx.delete(eventRegistrations).where(and(eq(eventRegistrations.memberId, user.sub), eq(eventRegistrations.churchId, churchId)));
+    await tx.delete(members).where(and(eq(members.id, user.sub), eq(members.churchId, churchId)));
   });
 
   return c.json({ success: true, deletedMemberId: user.sub });

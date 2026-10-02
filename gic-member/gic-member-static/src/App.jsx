@@ -27,21 +27,6 @@ const events = [
   { id: 'midweek-service', title: 'Midweek Service', date: 'Wed, 7 Oct 2026', time: '6:00 PM WAT', location: 'Global Impact Church', image: 'https://i.ibb.co/VYtgTk3b/Screenshot-2026-09-08-131313.png', tag: 'Service', isService: true },
 ]
 
-const ministries = [
-  { id: 'ushering', title: 'Ushering Ministry', desc: 'Serving with excellence and a heart.', requirements: 'A welcoming heart, punctuality, a neat appearance, and willingness to serve during church gatherings.', image: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=700&q=80' },
-  { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", requirements: 'Interest or experience in photography, video, graphics, livestreaming, audio, or communications.', image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
-  { id: 'choir', title: 'Choir', desc: 'Leading the church in worship through music.', requirements: 'A love for worship, regular attendance, willingness to rehearse, and a teachable spirit.', image: 'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=700&q=80' },
-  { id: 'children', title: "Children's Ministry", desc: 'Helping children discover faith and grow with joy.', requirements: 'Patience, care for children, reliability, and willingness to complete the church safeguarding process.', image: 'https://images.unsplash.com/photo-1504159506876-f8338247a14a?auto=format&fit=crop&w=700&q=80' },
-  { id: 'prayer', title: 'Prayer Ministry', desc: 'Standing together in prayer for the church and community.', requirements: 'A committed prayer life, confidentiality, consistency, and willingness to join prayer gatherings.', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=700&q=80' },
-  { id: 'acts-of-mercy', title: 'Acts Of Mercy', desc: 'Serving people in need through practical charity and compassion.', requirements: 'A compassionate heart, reliability, willingness to serve communities in need, and respect for every person.', image: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=700&q=80' },
-  { id: 'evangelism', title: 'Evangelism', desc: 'Sharing the gospel and helping people encounter the love of Christ.', requirements: 'A growing relationship with Christ, courage to connect with people, and willingness to participate in outreach.', image: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?auto=format&fit=crop&w=700&q=80' },
-]
-
-const ministryOptions = [
-  'Ushering Ministry', 'Media Ministry', 'Choir', "Children's Ministry", 'Prayer Ministry',
-  'Acts Of Mercy', 'Evangelism'
-]
-
 const serviceCenters = [
   { name: 'The Goodland', times: ['Sunday Services: 07:00AM', 'Sunday Services: 08:45AM', 'Sunday Services: 10:30AM'] },
   { name: 'Surulere Center', times: ['Sunday Services: 07:30AM', 'Sunday Services: 09:30AM', 'Sunday Services: 11:30AM'] },
@@ -690,6 +675,7 @@ function storeMemberProfile(profile) {
   localStorage.setItem('gic_member_center', profile.center || '')
   localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
   localStorage.setItem('gic_member_birthday', profile.birthday || '')
+  localStorage.setItem('gic_member_gender', profile.gender || '')
   localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
   localStorage.setItem('gic_member_joined_month', profile.joinedMonth || '')
   localStorage.setItem('gic_member_joined_year', profile.joinedYear || '')
@@ -1833,56 +1819,50 @@ function PrayerRequest() {
 }
 
 function MinistriesPage() {
-  const memberName = localStorage.getItem('gic_member_name') || ''
-  const [selectedNames, setSelectedNames] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
-  const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
-  const [applications, setApplications] = useState([])
-
-  useEffect(() => {
-    fetchMemberApi('/api/ministry-applications')
-      .then((response) => {
-        const records = response.applications || []
-        setApplications(records)
-        const approved = records.filter((application) => application.status === 'APPROVED').map((application) => application.ministry)
-        const merged = [...new Set([...selectedNames, ...approved])]
-        if (merged.length !== selectedNames.length) {
-          localStorage.setItem('gic_member_ministries', merged.join(', '))
-          setSelectedNames(merged)
-        }
-      })
-      .catch(() => setApplications([]))
-  }, [])
-
-  const pendingMinistries = new Set(applications.filter((application) => application.status === 'PENDING').map((application) => application.ministry))
-
-  return <MemberShell active="ministries" title="My Ministries" backTo="/home">
-    <p className="ministries-subtitle"></p>
-    {pendingMinistries.size > 0 && <section className="ministries-list"><b>Pending requests</b>{[...pendingMinistries].map((name) => { const ministry = ministries.find((item) => item.title === name); return ministry ? <div className="ministry-row" key={`pending-${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>Pending approval</small></div><span className="badge blue">Pending</span></div> : null })}</section>}
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>You have been blessed to be a blessing. Come serve the Lord and make impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a ministry? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
+  const [tab, setTab] = useState('Ministries')
+  const [ministryRows, setMinistryRows] = useState([])
+  const [cellRows, setCellRows] = useState([])
+  const [busyCell, setBusyCell] = useState('')
+  const [error, setError] = useState('')
+  const load = () => Promise.all([fetchMemberApi('/api/groups/ministries'), fetchMemberApi('/api/groups/cells')])
+    .then(([ministryData, cellData]) => { setMinistryRows(ministryData.ministries || []); setCellRows(cellData.cells || []) })
+    .catch((requestError) => setError(requestError.message || 'Groups are unavailable.'))
+  useEffect(() => { load() }, [])
+  const changeCellMembership = async (cell) => {
+    setBusyCell(cell.id); setError('')
+    try {
+      if (cell.joined) await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'DELETE' })
+      else await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'POST', body: JSON.stringify({}) })
+      await load()
+    } catch (requestError) { setError(requestError.message || 'Cell membership could not be updated.') }
+    finally { setBusyCell('') }
+  }
+  const joinedMinistries = ministryRows.filter((item) => item.joined)
+  const pendingMinistries = ministryRows.filter((item) => item.applicationStatus === 'pending')
+  const joinedCells = cellRows.filter((item) => item.joined)
+  return <MemberShell active="ministries" title="Ministries & Cells" backTo="/home">
+    <div className="tabs big"><button className={tab === 'Ministries' ? 'active' : ''} onClick={() => setTab('Ministries')}>Ministries</button><button className={tab === 'Cells' ? 'active' : ''} onClick={() => setTab('Cells')}>Cells</button></div>
+    {error && <p className="center muted">{error}</p>}
+    {tab === 'Ministries' && <section className="ministries-list"><div className="section-head"><span>My Ministries</span><Link to="/ministries/browse">Browse</Link></div>{joinedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>{ministry.description || 'Approved member'}</small></div><span className="badge success">Member</span></Link>)}{pendingMinistries.map((ministry) => <div className="ministry-row" key={ministry.id}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>Application pending</small></div><span className="badge blue">Pending</span></div>)}{!joinedMinistries.length && !pendingMinistries.length && <p className="center muted">You have not joined a ministry yet.</p>}<Link className="btn primary wide" to="/ministries/browse">Browse Ministries</Link></section>}
+    {tab === 'Cells' && <section className="ministries-list"><div className="section-head"><span>My Cells</span></div>{joinedCells.map((cell) => <div className="ministry-row" key={`joined-${cell.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{cell.name}</b><small>{cell.description || 'Cell member'}</small></div><button className="tool" disabled={busyCell === cell.id} onClick={() => changeCellMembership(cell)}>{busyCell === cell.id ? 'Saving…' : 'Leave'}</button></div>)}{cellRows.filter((cell) => !cell.joined).map((cell) => <div className="ministry-row" key={cell.id}><div className="action-icon"><Users size={17}/></div><div><b>{cell.name}</b><small>{cell.eligible ? cell.description || 'Open to eligible members' : 'Not eligible based on your profile'}</small></div><button className="tool" disabled={!cell.eligible || busyCell === cell.id} onClick={() => changeCellMembership(cell)}>{busyCell === cell.id ? 'Joining…' : 'Join'}</button></div>)}{!cellRows.length && <p className="center muted">No cells are currently available.</p>}</section>}
   </MemberShell>
 }
 
 function MinistryDirectory() {
-  const [approvedMinistries, setApprovedMinistries] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
-
-  useEffect(() => {
-    fetchMemberApi('/api/ministry-applications')
-      .then((response) => {
-        const approved = response.applications?.filter((application) => application.status === 'APPROVED').map((application) => application.ministry) || []
-        setApprovedMinistries((current) => [...new Set([...current, ...approved])])
-      })
-      .catch(() => {})
-  }, [])
+  const [items, setItems] = useState([])
+  const [error, setError] = useState('')
+  useEffect(() => { fetchMemberApi('/api/groups/ministries').then(({ministries: groups = []}) => setItems(groups)).catch((requestError) => setError(requestError.message || 'Ministries are unavailable.')) }, [])
 
   return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
     <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
-    <div className="directory-list">{ministries.map((ministry) => <article className="directory-card" key={ministry.id}>
-      <img src={ministry.image} alt="" />
+    {error && <p className="center muted">{error}</p>}
+    {!error && !items.length && <p className="center muted">No active ministries are available right now.</p>}
+    <div className="directory-list">{items.map((ministry) => <article className="directory-card" key={ministry.id}>
+      {ministry.imageUrl ? <img src={ministry.imageUrl} alt="" /> : <div className="event-image-placeholder"><Users size={24}/></div>}
       <div className="directory-card-body">
-        <h2>{ministry.title}</h2>
-        <p>{ministry.desc}</p>
-        <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
-        {approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
+        <h2>{ministry.name}</h2>
+        <p>{ministry.description || 'A community serving and growing together.'}</p>
+        {ministry.joined ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : ministry.applicationStatus === 'pending' ? <button className="btn secondary wide" disabled>Application pending</button> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
       </div>
     </article>)}</div>
   </MemberShell>
@@ -1891,12 +1871,15 @@ function MinistryDirectory() {
 function MinistryApplication() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const ministry = ministries.find((item) => item.id === id)
+  const [ministry, setMinistry] = useState(null)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  if (!ministry) return <Navigate to="/ministries/browse" replace />
+  useEffect(() => { fetchMemberApi(`/api/groups/ministries/${encodeURIComponent(id)}`).then(({ministry: item}) => setMinistry(item)).catch(() => setMinistry(false)) }, [id])
+
+  if (ministry === false) return <Navigate to="/ministries/browse" replace />
+  if (!ministry) return <MemberShell active="ministries" title="Apply to serve" backTo="/ministries/browse"><p className="center muted">Loading ministry...</p></MemberShell>
 
   const submitApplication = async (event) => {
     event.preventDefault()
@@ -1905,9 +1888,8 @@ function MinistryApplication() {
       await fetchMemberApi('/api/ministry-applications', {
         method: 'POST',
         body: JSON.stringify({
-          ministry: ministry.title,
+          ministryId: ministry.id,
           message,
-          memberName: localStorage.getItem('gic_member_name') || '',
         }),
       })
       setSubmitted(true)
@@ -1918,29 +1900,34 @@ function MinistryApplication() {
     }
   }
 
-  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application being processed</h2><p>Your application to serve in {ministry.title} has been sent and is being processed by the GIC team.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
+  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application being processed</h2><p>Your application to serve in {ministry.name} has been sent and is being processed by the GIC team.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
 
   return <MemberShell active="ministries" title="Apply to serve" backTo="/ministries/browse">
-    <div className="detail-body"><span className="eyebrow">Ministry application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
+    <div className="detail-body"><span className="eyebrow">Ministry application</span><h1>{ministry.name}</h1><p>{ministry.description}</p><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label>{message && <p className="center muted">{message}</p>}<button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
   </MemberShell>
 }
 
 function MinistryDetails() {
   const { id } = useParams()
-  const ministry = ministries.find((item) => item.id === id) || ministries[0]
+  const [ministry, setMinistry] = useState(null)
   const [tab, setTab] = useState('about')
+  useEffect(() => { fetchMemberApi(`/api/groups/ministries/${encodeURIComponent(id)}`).then(({ministry: item}) => setMinistry(item)).catch(() => setMinistry(false)) }, [id])
+  if (ministry === false) return <Navigate to="/ministries" replace />
+  if (!ministry) return <MemberShell active="ministries" title="Ministry" backTo="/ministries"><p className="center muted">Loading ministry...</p></MemberShell>
 
-  return <MemberShell active="ministries" title={ministry.title} backTo="/ministries"><div className="ministry-cover" style={{ backgroundImage: `url(${ministry.image})` }}><h1>{ministry.title.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.title}</h2><p>{ministry.desc}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this ministry</b><p>{ministry.title} is a community of people growing in faith, serving with purpose, and making a meaningful impact together. Find your place, build relationships, and use your gifts to serve.</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <><div className="upcoming-box"><b>Upcoming Meeting</b><span><CalendarDays size={14} /> Friday, 24 May 2024 · 6:00 PM</span><span><MapPin size={14} /> Youth Hall</span></div><div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this ministry will appear here.</span></div></>}</div></MemberShell>
+  return <MemberShell active="ministries" title={ministry.name} backTo="/ministries"><div className="ministry-cover" style={ministry.imageUrl ? { backgroundImage: `url(${ministry.imageUrl})` } : {}}><h1>{ministry.name.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.name}</h2><p>{ministry.description}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this ministry</b><p>{ministry.description || `${ministry.name} is a community growing in faith and serving together.`}</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this ministry will appear here.</span></div>}</div></MemberShell>
 }
 
 function Profile() {
   const navigate = useNavigate()
   const memberName = localStorage.getItem('gic_member_name') || 'David'
   const avatar = localStorage.getItem('gic_member_avatar')
+  const [groups, setGroups] = useState({ ministries: [], cells: [], segments: [] })
+  useEffect(() => { fetchMemberApi('/api/groups/profile/memberships').then(setGroups).catch(() => {}) }, [])
   const profileDetails = [
     ['Phone Number', localStorage.getItem('gic_member_phone') || 'Add info', Phone],
     ['Email Address', localStorage.getItem('gic_member_email') || 'Add info', Mail],
-    ['Ministries', localStorage.getItem('gic_member_ministries') || 'Add info', Users],
+    ['Gender', localStorage.getItem('gic_member_gender') || 'Not provided', User],
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
     ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
     ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
@@ -1977,6 +1964,8 @@ function Profile() {
       </div>
     </section>
 
+    <section className="profile-details"><div className="profile-details-head"><div><b>Ministries & Cells</b><small>Your current church groups</small></div><Link to="/ministries">View</Link></div><div className="profile-detail-grid"><div><Users size={15}/><span><small>Ministries</small><b>{groups.ministries?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Cells</small><b>{groups.cells?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Segments</small><b>{groups.segments?.join(', ') || 'None'}</b></span></div></div></section>
+
     <div className="profile-menu">
       <button
         onClick={handleReauth}
@@ -2006,13 +1995,10 @@ function EditProfile() {
   const [name, setName] = useState(localStorage.getItem('gic_member_name') || '')
   const [phone, setPhone] = useState(localStorage.getItem('gic_member_phone') || '')
   const [email, setEmail] = useState(localStorage.getItem('gic_member_email') || '')
-  const [ministriesValue, setMinistriesValue] = useState(() => {
-    const savedMinistries = localStorage.getItem('gic_member_ministries') || ''
-    return savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
-  })
   const [center, setCenter] = useState(localStorage.getItem('gic_member_center') || '')
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
   const [birthday, setBirthday] = useState(localStorage.getItem('gic_member_birthday') || '')
+  const [gender, setGender] = useState(localStorage.getItem('gic_member_gender') || '')
   const [membershipStatus, setMembershipStatus] = useState(localStorage.getItem('gic_membership_status') || '')
   const [joinedMonth, setJoinedMonth] = useState(localStorage.getItem('gic_member_joined_month') || '')
   const [joinedYear, setJoinedYear] = useState(localStorage.getItem('gic_member_joined_year') || '')
@@ -2038,10 +2024,10 @@ function EditProfile() {
           name: name.trim(),
           phone: phone.trim(),
           email: email.trim(),
-          ministries: ministriesValue.join(', '),
           center,
           serviceTime,
           birthday,
+          gender,
           membershipStatus,
           joinedMonth: joinedMonth ? Number(joinedMonth) : null,
           joinedYear: joinedYear ? Number(joinedYear) : null,
@@ -2112,6 +2098,7 @@ function EditProfile() {
           <Field label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
           <Field label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
           <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
+          <SelectField label="Gender" value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Prefer not to say</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option></SelectField>
         </div>
       </section>
       <section className="profile-form-section">
@@ -2120,10 +2107,7 @@ function EditProfile() {
           <small>Help us personalize your GIC experience</small>
         </div>
         <div className="profile-form-fields">
-          <div className="field">
-            <span>Ministries</span>
-            <p className="profile-form-help">Ministry membership is added after admin approval. Apply from Browse Ministries to request to join.</p>
-          </div>
+          <div className="field"><span>Ministry and cell memberships</span><p className="profile-form-help">Manage memberships from the Ministries and Cells pages. Ministry membership requires approval; eligible cells can be joined directly.</p><Link to="/ministries">Manage groups</Link></div>
           <SelectField label="Center you attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
             {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
           </SelectField>

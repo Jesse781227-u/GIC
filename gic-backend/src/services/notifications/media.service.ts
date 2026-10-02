@@ -33,7 +33,7 @@ function getR2Client() {
 }
 
 export class NotificationMediaService {
-  async upload(file: File, createdBy: string) {
+  async upload(file: File, createdBy: string, churchId: string) {
     const declaredMimeType = file.type.toLowerCase();
     const mimeType = declaredMimeType === "image/jpg" ? "image/jpeg" : declaredMimeType;
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -56,6 +56,7 @@ export class NotificationMediaService {
       const originalFilename = file.name.replace(/[\\/\u0000-\u001f]/g, "_").slice(0, 255) || "notification-media";
       const [media] = await db.insert(notificationMedia).values({
         id,
+        churchId,
         storagePath,
         mediaType,
         originalFilename,
@@ -70,9 +71,9 @@ export class NotificationMediaService {
     }
   }
 
-  async getMemberAsset(mediaId: string) {
+  async getMemberAsset(mediaId: string, churchId: string) {
     const media = await db.query.notificationMedia.findFirst({
-      where: (table, { eq }) => eq(table.id, mediaId),
+      where: (table, { and, eq }) => and(eq(table.id, mediaId), eq(table.churchId, churchId)),
     });
     if (!media) return null;
     const { bucketName } = getR2Config();

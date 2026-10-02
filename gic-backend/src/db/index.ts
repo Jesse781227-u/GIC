@@ -81,7 +81,8 @@ export async function ensureDatabaseSchema() {
       const [canonical] = await client`SELECT display_name, phone, email, ministries, center, service_time, birthday, membership_status, joined_month, joined_year, avatar FROM members WHERE id = ${canonicalId}`;
       const [merged] = await client`SELECT display_name, phone, email, ministries, center, service_time, birthday, membership_status, joined_month, joined_year, avatar FROM members WHERE id = ${mergedId}`;
       if (!canonical || !merged) continue;
-      await client`INSERT INTO member_merge_logs (canonical_member_id, merged_member_id, reason, differences) VALUES (${canonicalId}, ${mergedId}, ${group.reason}, ${JSON.stringify({ canonical, merged })})`;
+      const [canonicalMember] = await client`SELECT church_id FROM members WHERE id = ${canonicalId}`;
+      await client`INSERT INTO member_merge_logs (church_id, canonical_member_id, merged_member_id, reason, differences) VALUES (${canonicalMember?.church_id || process.env.DEFAULT_CHURCH_ID}, ${canonicalId}, ${mergedId}, ${group.reason}, ${JSON.stringify({ canonical, merged })})`;
       await client`UPDATE push_devices SET member_id = ${canonicalId} WHERE member_id = ${mergedId}`;
       await client`UPDATE notification_preferences SET member_id = ${canonicalId} WHERE member_id = ${mergedId} AND NOT EXISTS (SELECT 1 FROM notification_preferences WHERE member_id = ${canonicalId})`;
       await client`UPDATE notifications SET member_id = ${canonicalId} WHERE member_id = ${mergedId}`;

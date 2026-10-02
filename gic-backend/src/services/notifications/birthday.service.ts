@@ -68,12 +68,13 @@ export class BirthdayService {
 
     const [preferences] = await db.select({ pushEnabled: notificationPreferences.pushEnabled })
       .from(notificationPreferences)
-      .where(eq(notificationPreferences.memberId, member.id));
+      .where(and(eq(notificationPreferences.churchId, member.churchId), eq(notificationPreferences.memberId, member.id)));
     const devices = await db.query.pushDevices.findMany({
-      where: and(eq(pushDevices.memberId, member.id), eq(pushDevices.active, true)),
+      where: and(eq(pushDevices.churchId, member.churchId), eq(pushDevices.memberId, member.id), eq(pushDevices.active, true)),
     });
 
     const [inboxItem] = await db.insert(notifications).values({
+      churchId: member.churchId,
       memberId: member.id,
       title: celebration.title,
       body: `${celebration.message} ${celebration.blessing}`,
