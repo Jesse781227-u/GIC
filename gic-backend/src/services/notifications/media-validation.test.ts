@@ -4,6 +4,8 @@ import { validateNotificationMedia } from "./media-validation.js";
 
 test("accepts supported image and MP4 signatures", () => {
   assert.equal(validateNotificationMedia("image/jpeg", 3, Buffer.from([0xff, 0xd8, 0xff])), "image");
+  assert.equal(validateNotificationMedia("image/jpg", 3, Buffer.from([0xff, 0xd8, 0xff])), "image");
+  assert.equal(validateNotificationMedia("image/gif", 6, Buffer.from("GIF89a")), "image");
   assert.equal(validateNotificationMedia("video/mp4", 8, Buffer.from([0, 0, 0, 8, 0x66, 0x74, 0x79, 0x70])), "video");
 });
 

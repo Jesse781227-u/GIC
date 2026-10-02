@@ -12,7 +12,8 @@ function storageBucket() {
 
 export class NotificationMediaService {
   async upload(file: File, createdBy: string) {
-    const mimeType = file.type.toLowerCase();
+    const declaredMimeType = file.type.toLowerCase();
+    const mimeType = declaredMimeType === "image/jpg" ? "image/jpeg" : declaredMimeType;
     const buffer = Buffer.from(await file.arrayBuffer());
     const mediaType = validateNotificationMedia(mimeType, file.size, buffer);
 

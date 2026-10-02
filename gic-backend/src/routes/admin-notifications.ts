@@ -9,6 +9,7 @@ import { eq, desc } from "drizzle-orm";
 import { recordActivity } from "../services/activity.service.js";
 import { notificationMediaService } from "../services/notifications/media.service.js";
 import { isAllowedMemberRoute } from "../lib/member-routes.js";
+import { NotificationMediaValidationError } from "../services/notifications/media-validation.js";
 
 const app = new Hono();
 
@@ -129,14 +130,22 @@ app.post("/:id/send", async (c) => {
 
 app.post("/media", bodyLimit({ maxSize: 26 * 1024 * 1024 }), async (c) => {
   const user = c.get("user");
-  const form = await c.req.formData();
+  let form: FormData;
+  try {
+    form = await c.req.formData();
+  } catch (error) {
+    console.warn("Invalid notification media multipart request:", error);
+    return c.json({ error: "Choose an image or MP4 file and try again." }, 400);
+  }
   const file = form.get("file");
-  if (!(file instanceof File)) return c.json({ error: "Choose an image or MP4 file." }, 400);
+  if (!isUploadFile(file)) return c.json({ error: "Choose an image or MP4 file." }, 400);
   try {
     const media = await notificationMediaService.upload(file, user.sub);
     return c.json({ media: { id: media.id, mediaType: media.mediaType, originalFilename: media.originalFilename, mimeType: media.mimeType, fileSize: media.fileSize } }, 201);
   } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : "Media upload failed." }, 400);
+    if (error instanceof NotificationMediaValidationError) return c.json({ error: error.message }, 400);
+    console.error("Notification media upload failed:", error);
+    return c.json({ error: "Media storage is temporarily unavailable. Try again shortly." }, 500);
   }
 });
 
@@ -147,3 +156,12 @@ app.post("/:id/cancel", async (c) => {
 });
 
 export default app;
+
+function isUploadFile(value: unknown): value is File {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { name?: unknown; type?: unknown; size?: unknown; arrayBuffer?: unknown };
+  return typeof candidate.name === "string"
+    && typeof candidate.type === "string"
+    && typeof candidate.size === "number"
+    && typeof candidate.arrayBuffer === "function";
+}

@@ -48,10 +48,10 @@ export default function NotificationMessageComposer() {
   const uploadMedia = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4']
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'video/mp4']
     const maxSize = file.type === 'video/mp4' ? 25 * 1024 * 1024 : 8 * 1024 * 1024
     if (!allowedTypes.includes(file.type) || file.size > maxSize) {
-      setMessage(file.size > maxSize ? 'Images must be 8 MB or less and MP4 videos 25 MB or less.' : 'Choose a JPEG, PNG, WebP image, or MP4 video.')
+      setMessage(file.size > maxSize ? 'Images must be 8 MB or less and MP4 videos 25 MB or less.' : 'Choose a JPEG, PNG, WebP, GIF image, or MP4 video.')
       event.target.value = ''
       return
     }
@@ -120,7 +120,7 @@ export default function NotificationMessageComposer() {
           <label className="form-field">Exact internal route<input value={destinationRoute} onChange={(event) => setDestinationRoute(event.target.value)} placeholder="/events/123/register" autoComplete="off"/></label>
           <div className="destination-preview">Destination: <b>{routeLabel}</b></div>
         </div>}
-        {destinationType === 'media_page' && <div className="destination-fields"><label className="form-field">Image or MP4<input type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={uploadMedia}/></label>{uploading && <div className="empty-message">Uploading media…</div>}{preview && <div className="destination-media-preview">{media?.mediaType === 'video' ? <video src={preview} controls playsInline preload="metadata"/> : <img src={preview} alt="Notification destination preview"/>}<div><b>{media?.originalFilename || 'Preview'}</b><small>{media ? `${media.mimeType} · ${(media.fileSize / 1048576).toFixed(1)} MB` : 'Uploading…'}</small></div></div>}</div>}
+        {destinationType === 'media_page' && <div className="destination-fields"><label className="form-field">Image or MP4<input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,video/mp4" onChange={uploadMedia}/></label>{uploading && <div className="empty-message">Uploading media…</div>}{preview && <div className="destination-media-preview">{media?.mediaType === 'video' ? <video src={preview} controls playsInline preload="metadata"/> : <img src={preview} alt="Notification destination preview"/>}<div><b>{media?.originalFilename || 'Preview'}</b><small>{media ? `${media.mimeType} · ${(media.fileSize / 1048576).toFixed(1)} MB` : 'Uploading…'}</small></div></div>}</div>}
       </section>
       {delivery === 'schedule' && <label className="form-field">Send at<input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)}/></label>}
       {message && <div className="empty-message" role="status">{message}</div>}

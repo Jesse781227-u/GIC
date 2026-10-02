@@ -17,6 +17,12 @@ import { recordActivity } from "../services/activity.service.js";
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
 
+app.get("/summary", async (c) => {
+  const now = new Date();
+  const [upcoming] = await db.select({ value: count() }).from(events).where(and(eq(events.status, "PUBLISHED"), gte(events.startsAt, now)));
+  return c.json({ upcomingEvents: Number(upcoming?.value || 0), asOf: now.toISOString() });
+});
+
 const eventTypes = ["Service", "Conference", "Meeting", "Outreach", "Special Event", "Other"] as const;
 const locationTypes = ["CHURCH", "PHYSICAL", "ONLINE"] as const;
 const dateValue = z.string().datetime().nullable().optional();
@@ -301,12 +307,6 @@ app.put("/:id/reminders", async (c) => {
     }
   });
   return c.json({ reminders: await db.query.eventReminders.findMany({ where: eq(eventReminders.eventId, eventId), orderBy: [desc(eventReminders.offsetMinutes)] }) });
-});
-
-app.get("/summary", async (c) => {
-  const now = new Date();
-  const [upcoming] = await db.select({ value: count() }).from(events).where(and(eq(events.status, "PUBLISHED"), gte(events.startsAt, now)));
-  return c.json({ upcomingEvents: Number(upcoming?.value || 0), asOf: now.toISOString() });
 });
 
 export default app;

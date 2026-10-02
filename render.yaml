@@ -22,6 +22,8 @@ services:
         sync: false
       - key: FIREBASE_PROJECT_ID
         value: global-impact-church-9b8fd
+      - key: FIREBASE_STORAGE_BUCKET
+        value: global-impact-church-9b8fd.firebasestorage.app
       - key: JWT_SECRET
         sync: false
 
