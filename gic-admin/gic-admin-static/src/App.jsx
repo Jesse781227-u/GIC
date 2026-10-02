@@ -10,6 +10,7 @@ import {
 import {Link, Routes, Route, useLocation, useNavigate, useParams} from 'react-router-dom'
 import {ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell} from 'recharts'
 import {adminAuth} from './firebase'
+import NotificationMessageComposer from './NotificationMessageComposer'
 import {onAuthStateChanged, signInWithEmailAndPassword, signOut} from 'firebase/auth'
 
 const purple='#4b20b5'
@@ -611,7 +612,7 @@ export default function App(){
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<ModernMemberDetails/>}/>
   <Route path="/events" element={<ModernEvents/>}/><Route path="/events/registrations" element={<AdminRegistrations/>}/><Route path="/events/:id" element={<AdminEventDetails/>}/>
-  <Route path="/messages" element={<MessagesWithDelete/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NewMessage/>}/>
+  <Route path="/messages" element={<MessagesWithDelete/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NotificationMessageComposer/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<LiveActivityLog/>}/>
     <Route path="/ministry-applications" element={<MinistryApplications/>}/>
  </Routes></Shell></AdminGate>

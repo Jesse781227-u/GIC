@@ -16,27 +16,21 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const title = payload?.notification?.title || 'Global Impact Church';
   const body = payload?.notification?.body || 'You have a new update.';
-  const url = payload?.data?.url || '/home';
+  const notificationId = payload?.data?.notificationId || '';
 
   self.registration.showNotification(title, {
     body,
     icon: 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png',
     badge: 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png',
-    data: { url },
+    data: { notificationId },
     tag: 'gic-fcm-bg',
   });
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || event.notification.data?.route || '/home';
-  let targetUrl;
-  try {
-    const parsed = new URL(url, self.location.origin);
-    targetUrl = ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : new URL('/home', self.location.origin).href;
-  } catch {
-    targetUrl = new URL('/home', self.location.origin).href;
-  }
+  const notificationId = event.notification.data?.notificationId || '';
+  const targetUrl = new URL(notificationId ? `/notification-open?notificationId=${encodeURIComponent(notificationId)}` : '/home', self.location.origin).href;
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
     const matchingClient = clients.find((client) => 'focus' in client);
     if (matchingClient) return matchingClient.navigate(targetUrl).then((client) => client?.focus());

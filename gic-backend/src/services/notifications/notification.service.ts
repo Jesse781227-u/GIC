@@ -26,6 +26,9 @@ export interface NotificationDraft {
   type: any;
   audience: any;
   destinationUrl?: string;
+  destinationType?: "none" | "internal_route" | "media_page";
+  destinationRoute?: string;
+  destinationMediaId?: string;
   scheduledAt?: string;
   createdBy: string;
   audienceMinistryId?: string;
@@ -116,6 +119,9 @@ export class NotificationService {
         type: draft.type,
         audience: draft.audience,
         destinationUrl: draft.destinationUrl,
+        destinationType: draft.destinationType || "none",
+        destinationRoute: draft.destinationRoute,
+        destinationMediaId: draft.destinationMediaId,
         scheduledAt: scheduledDate,
         createdBy: draft.createdBy,
         audienceMinistryId: draft.audienceMinistryId,
@@ -191,6 +197,9 @@ export class NotificationService {
               body: adminNotif.body,
               type: adminNotif.type,
               destinationUrl: adminNotif.destinationUrl,
+              destinationType: adminNotif.destinationType,
+              destinationRoute: adminNotif.destinationRoute,
+              destinationMediaId: adminNotif.destinationMediaId,
             })
             .returning();
 

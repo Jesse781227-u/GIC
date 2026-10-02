@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
@@ -6,6 +7,8 @@ import { adminNotifications } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
 import { eq, desc } from "drizzle-orm";
 import { recordActivity } from "../services/activity.service.js";
+import { notificationMediaService } from "../services/notifications/media.service.js";
+import { isAllowedMemberRoute } from "../lib/member-routes.js";
 
 const app = new Hono();
 
@@ -27,7 +30,9 @@ const createSchema = z.object({
     "SYSTEM_NOTIFICATION"
   ]),
   audience: z.enum(["everyone", "ministry", "event_registrants", "members"]),
-  destinationUrl: z.string().optional(),
+  destinationType: z.enum(["none", "internal_route", "media_page"]).default("none"),
+  destinationRoute: z.string().optional(),
+  destinationMediaId: z.string().uuid().optional(),
   scheduledAt: z.string().optional(),
   audienceMinistryId: z.string().optional(),
   audienceEventId: z.string().optional(),
@@ -41,6 +46,20 @@ app.post("/", async (c) => {
   
   if (!parsed.success) {
     return c.json({ error: "Invalid data", details: parsed.error.issues }, 400);
+  }
+
+  const { destinationType, destinationRoute, destinationMediaId } = parsed.data;
+  if (destinationType === "internal_route" && !isAllowedMemberRoute(destinationRoute)) {
+    return c.json({ error: "Destination must be a supported internal member route." }, 400);
+  }
+  if (destinationType === "media_page" && !destinationMediaId) {
+    return c.json({ error: "Choose uploaded media for the media destination." }, 400);
+  }
+  if (destinationType !== "internal_route" && destinationRoute) return c.json({ error: "Unexpected destination route." }, 400);
+  if (destinationType !== "media_page" && destinationMediaId) return c.json({ error: "Unexpected destination media." }, 400);
+  if (destinationMediaId) {
+    const media = await db.query.notificationMedia.findFirst({ where: (table, { eq }) => eq(table.id, destinationMediaId) });
+    if (!media) return c.json({ error: "Uploaded media is unavailable." }, 400);
   }
 
   const result = await notificationService.createDraft({
@@ -105,6 +124,19 @@ app.post("/:id/send", async (c) => {
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 400);
+  }
+});
+
+app.post("/media", bodyLimit({ maxSize: 26 * 1024 * 1024 }), async (c) => {
+  const user = c.get("user");
+  const form = await c.req.formData();
+  const file = form.get("file");
+  if (!(file instanceof File)) return c.json({ error: "Choose an image or MP4 file." }, 400);
+  try {
+    const media = await notificationMediaService.upload(file, user.sub);
+    return c.json({ media: { id: media.id, mediaType: media.mediaType, originalFilename: media.originalFilename, mimeType: media.mimeType, fileSize: media.fileSize } }, 201);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Media upload failed." }, 400);
   }
 });
 

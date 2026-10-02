@@ -2,16 +2,17 @@ import React, { useState, useEffect, useMemo, useRef, useContext, useCallback, c
 import { createPortal } from 'react-dom'
 import './bugfix.css'
 import './birthday.css'
-import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, signInWithPhoneNumber } from './firebase'
+import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, listenForForegroundMessages, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX,
-  Play, Pause, CheckCircle2
+  Play, Pause, CheckCircle2, X
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
+import { validateMemberRoute } from './notificationDestination'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -2183,13 +2184,76 @@ function MyRegistrations() {
   </MemberShell>
 }
 
+function NotificationTapResolver() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    let active = true
+    const notificationId = new URLSearchParams(location.search).get('notificationId')
+    if (!notificationId || !/^[A-Fa-f0-9-]{16,64}$/.test(notificationId)) {
+      navigate('/home', { replace: true })
+      return () => { active = false }
+    }
+    fetchMemberApi(`/api/notifications/tap/${encodeURIComponent(notificationId)}`)
+      .then(({ destinationType, route }) => {
+        if (!active) return
+        const safeRoute = validateMemberRoute(route)
+        if (destinationType === 'media_page' && safeRoute === `/notification/${notificationId}`) navigate(safeRoute, { replace: true })
+        else navigate(destinationType === 'internal_route' ? safeRoute || '/home' : '/home', { replace: true })
+      })
+      .catch(() => { if (active) navigate('/home', { replace: true }) })
+    return () => { active = false }
+  }, [location.search, navigate])
+  return <div className="app-loading-state"><span className="loading-spinner" aria-hidden="true"/><span>Opening notification…</span></div>
+}
+
+function NotificationMediaPage() {
+  const { id } = useParams()
+  const [media, setMedia] = useState(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
+  useEffect(() => {
+    let active = true
+    fetchMemberApi(`/api/notifications/tap/${encodeURIComponent(id)}/media`)
+      .then(({ media: item }) => { if (active) setMedia(item) })
+      .catch(() => { if (active) setError('This notification media is unavailable.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [id])
+  return <MemberShell active="home" title="Notification" backTo="/home"><section className="notification-media-page">
+    <button type="button" className="notification-media-close" aria-label="Close notification media" onClick={() => navigate('/home', { replace: true })}><X size={20}/></button>
+    {loading && <div className="app-loading-state"><span className="loading-spinner" aria-hidden="true"/><span>Loading media…</span></div>}
+    {error && <div className="empty"><h2>Media unavailable</h2><p>{error}</p><button className="btn primary" onClick={() => navigate('/home', { replace: true })}>Go to Home</button></div>}
+    {media?.mediaType === 'image' && <img src={media.url} alt={media.originalFilename || 'Notification media'} onError={() => setError('This image could not be loaded.')}/>}
+    {media?.mediaType === 'video' && <video src={media.url} controls playsInline preload="metadata" onError={() => setError('This video could not be played.')}/>}
+  </section></MemberShell>
+}
+
+function EventRegistrationAlias() {
+  const { id } = useParams()
+  return <Navigate to={`/events/${id}/register`} replace />
+}
+
 export default function App() {
+  useEffect(() => listenForForegroundMessages((payload) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return
+    navigator.serviceWorker.ready.then((registration) => registration.showNotification(payload?.notification?.title || 'Global Impact Church', {
+      body: payload?.notification?.body || 'You have a new update.',
+      icon: GIC_LOGO,
+      badge: GIC_LOGO,
+      data: { notificationId: payload?.data?.notificationId || '' },
+      tag: payload?.data?.notificationId || 'gic-fcm-foreground',
+    })).catch(() => {})
+  }), [])
   return <NotificationProvider>
     <AudioPlayerProvider>
       <Routes>
         <Route path="/" element={<Welcome />} />
         <Route path="/recover" element={<Recovery />} />
         <Route path="/onboarding" element={<OnboardingFlow />} />
+        <Route path="/notification-open" element={<ProtectedRoute><NotificationTapResolver /></ProtectedRoute>} />
+        <Route path="/notification/:id" element={<ProtectedRoute><NotificationMediaPage /></ProtectedRoute>} />
         <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
         <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
         <Route path="/announcements/birthday" element={<ProtectedRoute><BirthdayPage /></ProtectedRoute>} />
@@ -2197,8 +2261,11 @@ export default function App() {
         <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
         <Route path="/events/:id" element={<ProtectedRoute><EventDetails /></ProtectedRoute>} />
         <Route path="/events/:id/register" element={<ProtectedRoute><EventRegistration /></ProtectedRoute>} />
+        <Route path="/events/:id/registration" element={<ProtectedRoute><EventRegistrationAlias /></ProtectedRoute>} />
         <Route path="/events/:id/success" element={<ProtectedRoute><RegistrationSuccess /></ProtectedRoute>} />
         <Route path="/my-registrations" element={<ProtectedRoute><MyRegistrations /></ProtectedRoute>} />
+        <Route path="/registrations" element={<Navigate to="/my-registrations" replace />} />
+        <Route path="/messages" element={<Navigate to="/announcements" replace />} />
         <Route path="/forms" element={<ProtectedRoute><FormsPage /></ProtectedRoute>} />
         <Route path="/forms/prayer-request" element={<ProtectedRoute><PrayerRequest /></ProtectedRoute>} />
         <Route path="/ministries" element={<ProtectedRoute><MinistriesPage /></ProtectedRoute>} />

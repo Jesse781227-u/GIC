@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
-import { members, notificationPreferences, notifications } from "../db/schema.js";
+import { events as eventRecords, members, notificationPreferences, notifications } from "../db/schema.js";
 import { eq, isNull, desc, count, and } from "drizzle-orm";
 import { z } from "zod";
 import { birthdayCelebration, getLagosDateParts } from "../services/notifications/birthday.service.js";
+import { notificationMediaService } from "../services/notifications/media.service.js";
+import { isAllowedMemberRoute } from "../lib/member-routes.js";
 
 const preferencesSchema = z.object({
   pushEnabled: z.boolean().optional(),
@@ -106,6 +108,51 @@ app.get("/", async (c) => {
     limit: 50,
   });
   return c.json({ items });
+});
+
+app.get("/tap/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const notification = await db.query.notifications.findFirst({
+    where: and(eq(notifications.id, id), eq(notifications.memberId, user.sub)),
+  });
+  if (!notification) return c.json({ destinationType: "none", route: "/home" }, 404);
+
+  const now = new Date();
+  await db.update(notifications).set({ openedAt: notification.openedAt || now, readAt: notification.readAt || now }).where(eq(notifications.id, id));
+  const destinationRoute = notification.destinationType === "internal_route" ? notification.destinationRoute : notification.destinationUrl;
+  if (isAllowedMemberRoute(destinationRoute)) {
+    const eventId = destinationRoute.match(/^\/events\/([A-Za-z0-9_-]+)(?:\/|$)/)?.[1];
+    if (eventId && !["sunday-service", "midweek-service"].includes(eventId)) {
+      const event = await db.query.events.findFirst({ where: and(eq(eventRecords.id, eventId), eq(eventRecords.status, "PUBLISHED")) });
+      if (!event) return c.json({ destinationType: "none", route: "/home" });
+    }
+    await db.update(notifications).set({ destinationOpenedAt: now }).where(eq(notifications.id, id));
+    return c.json({ destinationType: "internal_route", route: destinationRoute });
+  }
+  if (notification.destinationType === "media_page" && notification.destinationMediaId) {
+    const media = await db.query.notificationMedia.findFirst({ where: (table, { eq }) => eq(table.id, notification.destinationMediaId!) });
+    if (media) {
+      const asset = await notificationMediaService.getMemberAsset(media.id);
+      if (asset) return c.json({ destinationType: "media_page", route: `/notification/${id}` });
+    }
+  }
+  return c.json({ destinationType: "none", route: "/home" });
+});
+
+app.get("/tap/:id/media", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const notification = await db.query.notifications.findFirst({
+    where: and(eq(notifications.id, id), eq(notifications.memberId, user.sub)),
+  });
+  if (!notification || notification.destinationType !== "media_page" || !notification.destinationMediaId) {
+    return c.json({ error: "Media destination is unavailable." }, 404);
+  }
+  const asset = await notificationMediaService.getMemberAsset(notification.destinationMediaId);
+  if (!asset) return c.json({ error: "Media destination is unavailable." }, 404);
+  await db.update(notifications).set({ destinationOpenedAt: notification.destinationOpenedAt || new Date() }).where(eq(notifications.id, id));
+  return c.json({ media: { mediaType: asset.media.mediaType, mimeType: asset.media.mimeType, originalFilename: asset.media.originalFilename, url: asset.url } });
 });
 
 app.get("/unread-count", async (c) => {

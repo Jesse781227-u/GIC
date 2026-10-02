@@ -119,6 +119,17 @@ export const ministryApplications = pgTable(
   })
 );
 
+export const notificationMedia = pgTable("notification_media", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storagePath: text("storage_path").notNull().unique(),
+  mediaType: text("media_type").notNull(),
+  originalFilename: text("original_filename").notNull(),
+  mimeType: text("mime_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 export const churchLocations = pgTable("church_locations", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -308,6 +319,9 @@ export const adminNotifications = pgTable(
     audienceMemberIds: text("audience_member_ids").array(),
     // Where does tapping this notification go in the member app?
     destinationUrl: text("destination_url"),
+    destinationType: text("destination_type").notNull().default("none"),
+    destinationRoute: text("destination_route"),
+    destinationMediaId: uuid("destination_media_id").references(() => notificationMedia.id, { onDelete: "set null" }),
     status: notificationStatusEnum("status").notNull().default("DRAFT"),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
     sentAt: timestamp("sent_at", { withTimezone: true }),
@@ -342,7 +356,12 @@ export const notifications = pgTable(
     body: text("body").notNull(),
     type: notificationTypeEnum("type").notNull(),
     destinationUrl: text("destination_url"),
+    destinationType: text("destination_type").notNull().default("none"),
+    destinationRoute: text("destination_route"),
+    destinationMediaId: uuid("destination_media_id").references(() => notificationMedia.id, { onDelete: "set null" }),
     readAt: timestamp("read_at", { withTimezone: true }),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    destinationOpenedAt: timestamp("destination_opened_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (t) => ({
