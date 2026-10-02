@@ -32,19 +32,31 @@ ALTER TABLE notification_media ALTER COLUMN church_id SET NOT NULL;
 DO $$ BEGIN ALTER TABLE notification_media ADD CONSTRAINT notification_media_church_id_fk FOREIGN KEY (church_id) REFERENCES churches(id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS church_id uuid;
-UPDATE push_devices d SET church_id = m.church_id FROM members m WHERE d.church_id IS NULL AND d.member_id = m.id;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'members' AND column_name = 'church_id') THEN
+    UPDATE push_devices d SET church_id = m.church_id FROM members m WHERE d.church_id IS NULL AND d.member_id = m.id;
+  END IF;
+END $$;
 UPDATE push_devices SET church_id = '11111111-1111-4111-8111-111111111111' WHERE church_id IS NULL;
 ALTER TABLE push_devices ALTER COLUMN church_id SET NOT NULL;
 DO $$ BEGIN ALTER TABLE push_devices ADD CONSTRAINT push_devices_church_id_fk FOREIGN KEY (church_id) REFERENCES churches(id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 ALTER TABLE notification_preferences ADD COLUMN IF NOT EXISTS church_id uuid;
-UPDATE notification_preferences p SET church_id = m.church_id FROM members m WHERE p.church_id IS NULL AND p.member_id = m.id;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'members' AND column_name = 'church_id') THEN
+    UPDATE notification_preferences p SET church_id = m.church_id FROM members m WHERE p.church_id IS NULL AND p.member_id = m.id;
+  END IF;
+END $$;
 UPDATE notification_preferences SET church_id = '11111111-1111-4111-8111-111111111111' WHERE church_id IS NULL;
 ALTER TABLE notification_preferences ALTER COLUMN church_id SET NOT NULL;
 DO $$ BEGIN ALTER TABLE notification_preferences ADD CONSTRAINT notification_preferences_church_id_fk FOREIGN KEY (church_id) REFERENCES churches(id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 ALTER TABLE event_registrations ADD COLUMN IF NOT EXISTS church_id uuid;
-UPDATE event_registrations r SET church_id = e.church_id FROM events e WHERE r.church_id IS NULL AND r.event_id = e.id;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'events' AND column_name = 'church_id') THEN
+    UPDATE event_registrations r SET church_id = e.church_id FROM events e WHERE r.church_id IS NULL AND r.event_id = e.id;
+  END IF;
+END $$;
 UPDATE event_registrations SET church_id = '11111111-1111-4111-8111-111111111111' WHERE church_id IS NULL;
 ALTER TABLE event_registrations ALTER COLUMN church_id SET NOT NULL;
 DO $$ BEGIN ALTER TABLE event_registrations ADD CONSTRAINT event_registrations_church_id_fk FOREIGN KEY (church_id) REFERENCES churches(id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -54,7 +66,12 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS gender text;
 UPDATE members SET church_id = '11111111-1111-4111-8111-111111111111' WHERE church_id IS NULL;
 ALTER TABLE members ALTER COLUMN church_id SET NOT NULL;
 DO $$ BEGIN ALTER TABLE members ADD CONSTRAINT members_church_id_fk FOREIGN KEY (church_id) REFERENCES churches(id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-UPDATE member_merge_logs l SET church_id = m.church_id FROM members m WHERE l.church_id IS NULL AND l.canonical_member_id = m.id;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'members' AND column_name = 'church_id')
+     AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_merge_logs' AND column_name = 'church_id') THEN
+    UPDATE member_merge_logs l SET church_id = m.church_id FROM members m WHERE l.church_id IS NULL AND l.canonical_member_id = m.id;
+  END IF;
+END $$;
 UPDATE member_merge_logs SET church_id = '11111111-1111-4111-8111-111111111111' WHERE church_id IS NULL;
 ALTER TABLE member_merge_logs ALTER COLUMN church_id SET NOT NULL;
 DO $$ BEGIN ALTER TABLE member_merge_logs ADD CONSTRAINT member_merge_logs_church_id_fk FOREIGN KEY (church_id) REFERENCES churches(id); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
