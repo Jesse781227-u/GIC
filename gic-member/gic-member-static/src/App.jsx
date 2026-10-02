@@ -1449,14 +1449,41 @@ function BirthdayPage() {
 
 function AnnouncementDetails() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { refreshUnreadCount } = useNotificationCount()
+  const refreshUnreadCountRef = useRef(refreshUnreadCount)
+  refreshUnreadCountRef.current = refreshUnreadCount
   const [announcement, setAnnouncement] = useState(null)
   useEffect(() => {
+    let active = true
     fetchMemberApi('/api/notifications')
-      .then(({ items = [] }) => {
+      .then(async ({ items = [] }) => {
         const notification = items.find((item) => item.id === id)
-        fetchMemberApi(`/api/notifications/${id}/read`, { method: 'PATCH' }).then(() => refreshUnreadCount()).catch(() => {})
-        if (notification) setAnnouncement({
+        if (!notification) {
+          if (active) setAnnouncement({ missing: true })
+          return
+        }
+        const destinationExists = notification.destinationType === 'internal_route'
+          || notification.destinationType === 'media_page'
+          || Boolean(notification.destinationUrl)
+        if (destinationExists) {
+          const { destinationType, route } = await fetchMemberApi(`/api/notifications/tap/${encodeURIComponent(id)}`)
+          if (!active) return
+          await refreshUnreadCountRef.current()
+          const safeRoute = validateMemberRoute(route)
+          if (destinationType === 'media_page' && safeRoute === `/notification/${id}`) {
+            navigate(safeRoute, { replace: true })
+          } else if (destinationType === 'internal_route') {
+            navigate(safeRoute || '/home', { replace: true })
+          } else {
+            navigate('/home', { replace: true })
+          }
+          return
+        }
+        await fetchMemberApi(`/api/notifications/${id}/read`, { method: 'PATCH' }).catch(() => {})
+        if (!active) return
+        await refreshUnreadCountRef.current()
+        setAnnouncement({
           id: notification.id,
           category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
           title: notification.title,
@@ -1464,11 +1491,11 @@ function AnnouncementDetails() {
           body: [notification.body],
         })
       })
-      .catch(() => {})
-  }, [id])
-  const sundayServiceCopy = getSundayServiceCopy()
-
+      .catch(() => { if (active) setAnnouncement({ missing: true }) })
+    return () => { active = false }
+  }, [id, navigate])
   if (!announcement) return <MemberShell active="home" title="Announcement" backTo="/announcements"><p className="center muted">Loading announcement...</p></MemberShell>
+  if (announcement.missing) return <MemberShell active="home" title="Announcement" backTo="/announcements"><p className="center muted">This announcement is unavailable.</p></MemberShell>
 
   return <MemberShell active="home" title="Announcement" backTo="/announcements">
     <div className="detail-body">
