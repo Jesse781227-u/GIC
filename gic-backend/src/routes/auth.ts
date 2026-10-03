@@ -178,6 +178,7 @@ app.post("/recover", async (c) => {
 });
 
 app.use("/profile", authMiddleware);
+app.use("/profile/*", authMiddleware);
 
 app.get("/profile/options", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
