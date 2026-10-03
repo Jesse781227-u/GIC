@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Plus, RefreshCw, Users } from 'lucide-react'
+import { ArrowLeft, Plus, RefreshCw, Users, Search, Layers3 } from 'lucide-react'
 import { adminAuth } from './firebase'
+import './admin-organizations.css'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
 
@@ -37,6 +38,8 @@ export default function AdminGroupManagement() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [query, setQuery] = useState('')
+  const [segmentFilter, setSegmentFilter] = useState('all')
 
   const load = async () => {
     const [groups, memberData] = await Promise.all([groupsApi('/api/admin/groups'), groupsApi('/api/admin/ministry-applications/members')])
@@ -135,6 +138,7 @@ export default function AdminGroupManagement() {
   }
 
   const list = tab === 'ageGroups' ? (data.ageGroups || []) : (data[tab] || [])
+  const visibleList = tab === 'segments' ? list.filter((item) => (segmentFilter === 'all' || item.segmentType === segmentFilter) && `${item.name} ${item.description || ''}`.toLowerCase().includes(query.toLowerCase())) : list
   const ruleFields = tab === 'segments' ? ['gender','age_group_id','relationship_status','joined_within_months','center','membership_status','ministry_id','cell_id'] : ['gender','age_group_id','relationship_status']
   const changeRule = (index, key, value) => setRules((items) => items.map((item, current) => {
     if (current !== index) return item
@@ -148,13 +152,15 @@ export default function AdminGroupManagement() {
   }))
 
   return <main className="page">
-    <div className="page-head"><div><h1>Segments</h1><p>Manage audience classifications and age groups independently of church organizations.</p></div><Link className="btn secondary" to="/ministries"><ArrowLeft size={14}/> Units</Link></div>
+    <div className="page-head"><div><h1>Segments</h1><p>Audience classifications for member communications</p></div><Link className="btn secondary" to="/ministries"><ArrowLeft size={14}/> Units</Link></div>
     <div className="tabs big">{[['segments','Segments'],['ageGroups','Age Groups']].map(([value,label]) => <button key={value} className={tab===value?'active':''} onClick={() => {setTab(value);setSelected(null);resetForm()}}>{label}</button>)}</div>
     {error && <div className="empty-message" role="alert">{error}</div>}{notice && <div className="empty-message" role="status">{notice}</div>}
-    <div className="grid-2">
-      <section className="card table-card"><div className="card-head"><div><b>{tab[0].toUpperCase()+tab.slice(1)}</b><small>{list.length} groups</small></div><button className="tool" onClick={() => load().catch((err)=>setError(err.message))}><RefreshCw size={14}/> Refresh</button></div>
-        {list.map((item) => <div className="application-row" key={item.id}><div className="application-applicant"><div className="avatar"><Users size={16}/></div><div><b>{item.name} {item.isSystem && <span className="badge blue">System</span>}</b><small>{tab==='segments' ? `${item.segmentType} · ${item.rules?.conditions?.length || 0} rules` : tab==='ageGroups' ? `${item.minAge}+${item.maxAge === null ? '' : `–${item.maxAge}`} years` : item.description || (tab==='cells' ? 'Open cell' : 'Ministry')}</small><small>{item.memberCount ?? 0} members · {item.active ? 'Active' : 'Inactive'}</small></div></div><div className="application-actions">{tab!=='ageGroups'&&<button className="tool" onClick={()=>inspect(item)}>Members</button>}<button className="tool" onClick={()=>edit(item)}>Edit</button>{!item.isSystem && item.active && <button className="tool" onClick={()=>deactivate(item)}>Deactivate</button>}</div></div>)}
-        {!list.length && <div className="empty-message">No {tab} configured.</div>}
+    {tab==='segments'&&<section className="organization-toolbar segment-toolbar"><label className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search segments..."/></label><select aria-label="Filter segment type" value={segmentFilter} onChange={(event)=>setSegmentFilter(event.target.value)}><option value="all">All types</option><option value="automatic">Automatic</option><option value="manual">Manual</option></select><span>{visibleList.length} segments</span><button className="btn primary" onClick={()=>{resetForm();setSelected(null)}}><Plus size={15}/> New segment</button></section>}
+    <div className={tab==='segments'?'segment-management-layout':'grid-2'}>
+      <section className={tab==='segments'?'segment-directory':'card table-card'}>
+        {tab!=='segments'&&<div className="card-head"><div><b>{tab[0].toUpperCase()+tab.slice(1)}</b><small>{list.length} groups</small></div><button className="tool" onClick={() => load().catch((err)=>setError(err.message))}><RefreshCw size={14}/> Refresh</button></div>}
+        {tab==='segments'?<div className="organization-directory segment-cards">{visibleList.map((item)=><article className="organization-card" key={item.id}><div className="organization-card-head"><span className="organization-symbol"><Layers3 size={17}/></span><span className={`badge ${item.active?'success':'gray'}`}>{item.active?'Active':'Inactive'}</span></div><h2>{item.name}</h2><span className="organization-type">{item.segmentType==='automatic'?'Automatic segment':'Manual segment'}{item.isSystem?' · System':''}</span><p>{item.description||`${item.rules?.conditions?.length||0} matching rules`}</p><div className="organization-card-meta"><span><Users size={14}/>{item.memberCount??0} members</span><span>{item.rules?.conditions?.length||0} rules</span></div><div className="segment-card-actions"><button className="tool" onClick={()=>inspect(item)}>Members</button><button className="tool" onClick={()=>edit(item)}>Edit</button>{!item.isSystem&&item.active&&<button className="tool" onClick={()=>deactivate(item)}>Deactivate</button>}</div></article>)}{!visibleList.length&&<div className="empty-message">No matching segments.</div>}</div>:list.map((item) => <div className="application-row" key={item.id}><div className="application-applicant"><div className="avatar"><Users size={16}/></div><div><b>{item.name} {item.isSystem && <span className="badge blue">System</span>}</b><small>{`${item.minAge}+${item.maxAge === null ? '' : `–${item.maxAge}`} years`}</small><small>{item.memberCount ?? 0} members · {item.active ? 'Active' : 'Inactive'}</small></div></div><div className="application-actions"><button className="tool" onClick={()=>edit(item)}>Edit</button></div></div>)}
+        {tab!=='segments'&&!list.length&&<div className="empty-message">No {tab} configured.</div>}
       </section>
       <section className="card settings-form"><div className="card-head"><div><b>{editing ? `Edit ${tab.slice(0,-1)}` : `Create ${tab.slice(0,-1)}`}</b><small>Changes apply to future message audiences.</small></div></div>
         <form className="stack" onSubmit={save}>
