@@ -14,6 +14,10 @@ const REMINDER_OPTIONS = [
   { label: '30 minutes before', minutes: 30 },
 ]
 const AUDIENCE_OPTIONS = ['All Members', 'Segment', 'Ministry', 'Unit', 'Fellowship', 'Cell', 'Group']
+const FORM_FIELD_TYPES = [
+  ['text', 'Short text'], ['textarea', 'Long text'], ['number', 'Number'], ['phone', 'Phone'],
+  ['email', 'Email'], ['date', 'Date'], ['select', 'Dropdown'], ['radio', 'Radio'], ['checkbox', 'Checkbox'],
+]
 
 async function adminApi(path, options = {}) {
   const user = adminAuth.currentUser
@@ -57,6 +61,10 @@ function readImageFile(file, onReady) {
   reader.readAsDataURL(file)
 }
 
+function makeRegistrationField(label = '') {
+  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, label, type: 'text', required: false }
+}
+
 export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [organizations, setOrganizations] = useState([])
   const [title, setTitle] = useState('')
@@ -93,6 +101,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [waitlistEnabled, setWaitlistEnabled] = useState(false)
   const [sendConfirmation, setSendConfirmation] = useState(false)
   const [registrationFormMode, setRegistrationFormMode] = useState('NO_FORM')
+  const [registrationFields, setRegistrationFields] = useState([])
+  const [savedForms, setSavedForms] = useState([])
   const [churchBusAvailable, setChurchBusAvailable] = useState(false)
   const [pickupLocations, setPickupLocations] = useState([makePickupLocation()])
   const [sendReminders, setSendReminders] = useState(false)
@@ -103,6 +113,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [notificationTitle, setNotificationTitle] = useState('')
   const [notificationMessage, setNotificationMessage] = useState('')
   const [audience, setAudience] = useState('All Members')
+  const [audienceId, setAudienceId] = useState('')
+  const [audienceCollections, setAudienceCollections] = useState({ ministries: [], cells: [], segments: [], groups: [] })
   const [visibility, setVisibility] = useState('Members only')
   const [status, setStatus] = useState('DRAFT')
   const [saving, setSaving] = useState(false)
@@ -110,8 +122,22 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [previewMode, setPreviewMode] = useState(false)
 
   useEffect(() => {
-    adminApi('/api/admin/organizations').then(({ organizations: items = [] }) => setOrganizations(items)).catch(() => {})
+    Promise.all([
+      adminApi('/api/admin/organizations').then(({ organizations: items = [] }) => setOrganizations(items)),
+      adminApi('/api/admin/groups').then((items) => setAudienceCollections({ ministries: items.ministries || [], cells: items.cells || [], segments: items.segments || [], groups: items.groups || [] })),
+      adminApi('/api/admin/events').then(({ events: items = [] }) => setSavedForms(items.filter((item) => Array.isArray(item.registrationForm) && item.registrationForm.length).map((item) => ({ id: item.id, name: item.title, fields: item.registrationForm })))),
+    ]).catch(() => {})
   }, [])
+
+  const audienceChoices = audience === 'Ministry' || audience === 'Unit'
+    ? audienceCollections.ministries
+    : audience === 'Fellowship' || audience === 'Cell'
+      ? audienceCollections.cells
+      : audience === 'Segment'
+        ? audienceCollections.segments
+        : audience === 'Group' ? audienceCollections.groups : []
+
+  const changeAudience = (value) => { setAudience(value); setAudienceId('') }
 
   const speakerUpdate = (id, field, value) => {
     setSpeakers((current) => current.map((speaker) => speaker.id === id ? { ...speaker, [field]: value } : speaker))
@@ -169,7 +195,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       status: 'DRAFT',
       timeZone: 'Africa/Lagos',
       allowRegistrationCancellation: true,
-      registrationForm: [],
+      registrationForm: registrationRequired ? registrationFields : [],
       registrationRequired,
       registrationOpensAt: registrationRequired ? toIso(registrationOpensDate, registrationOpensTime) : null,
       registrationClosesAt: registrationRequired ? toIso(registrationClosesDate, registrationClosesTime) : null,
@@ -198,6 +224,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       notificationTitle: notifyOnPublish ? notificationTitle.trim() : null,
       notificationMessage: notifyOnPublish ? notificationMessage.trim() : null,
       audience,
+      audienceId: audience === 'All Members' ? null : audienceId || null,
       visibility,
       recurringEvent,
       recurringRule: recurringEvent ? { repeat: repeatType } : null,
@@ -319,9 +346,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                       <label className="modern-field"><span>Speaker name</span><input value={speaker.name} onChange={(event) => speakerUpdate(speaker.id, 'name', event.target.value)} /></label>
                       <label className="modern-field"><span>Speaker title / role</span><input value={speaker.title} onChange={(event) => speakerUpdate(speaker.id, 'title', event.target.value)} placeholder="Pastor / Guest Minister" /></label>
                     </div>
-                    <label className="modern-field full"><span>Speaker photo</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) { try { readImageFile(file, (url) => speakerUpdate(speaker.id, 'photoUrl', url)) } catch (requestError) { setError(requestError.message || 'Speaker photo upload failed.') } } }} /></label>
-                    {speaker.photoUrl && <div className="speaker-photo-preview"><img src={speaker.photoUrl} alt={speaker.name || 'Speaker'} /></div>}
-                    <label className="modern-field full"><span>Speaker description</span><textarea value={speaker.description} onChange={(event) => speakerUpdate(speaker.id, 'description', event.target.value)} rows="2" /></label>
                   </div>
                 ))}
                 <button type="button" className="btn secondary" onClick={addSpeaker}><Plus size={14}/> Add Speaker</button>
@@ -394,7 +418,11 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                     {capacityType === 'LIMITED' && <label className="modern-field full"><span>Maximum number of registrations</span><input type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} /></label>}
                     <label className="check"><input type="checkbox" checked={waitlistEnabled} onChange={(event) => setWaitlistEnabled(event.target.checked)} /> Enable waitlist when event is full</label>
                     <label className="check"><input type="checkbox" checked={sendConfirmation} onChange={(event) => setSendConfirmation(event.target.checked)} /> Send registration confirmation notification</label>
-                    <label className="modern-field full"><span>Registration form</span><select value={registrationFormMode} onChange={(event) => setRegistrationFormMode(event.target.value)}><option value="NO_FORM">No additional form</option><option value="EXISTING_FORM">Existing form</option><option value="CREATE_NEW_FORM">Create new form</option></select></label>
+                    <label className="modern-field full"><span>Registration form</span><select value={registrationFormMode} onChange={(event) => { const value = event.target.value; setRegistrationFormMode(value); if (value === 'NO_FORM') setRegistrationFields([]); if (value === 'CREATE_NEW_FORM' && !registrationFields.length) setRegistrationFields([makeRegistrationField('Full name')]); if (value.startsWith('EXISTING_FORM:')) { const form = savedForms.find((item) => item.id === value.slice(14)); setRegistrationFields(form?.fields || []) } }}><option value="NO_FORM">No additional form</option>{savedForms.map((form) => <option key={form.id} value={`EXISTING_FORM:${form.id}`}>{form.name}</option>)}<option value="CREATE_NEW_FORM">Create new form</option></select></label>
+                    {registrationFormMode === 'CREATE_NEW_FORM' && <div className="registration-builder">
+                      <div className="registration-builder-head"><b>Registration fields</b><button type="button" className="btn secondary" onClick={() => setRegistrationFields((current) => [...current, makeRegistrationField()])}><Plus size={12}/> Add field</button></div>
+                      {registrationFields.map((field) => <div className="registration-field-row" key={field.id}><input value={field.label} onChange={(event) => setRegistrationFields((current) => current.map((item) => item.id === field.id ? { ...item, label: event.target.value } : item))} placeholder="Field label" /><select value={field.type} onChange={(event) => setRegistrationFields((current) => current.map((item) => item.id === field.id ? { ...item, type: event.target.value } : item))}>{FORM_FIELD_TYPES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><label className="check"><input type="checkbox" checked={field.required} onChange={(event) => setRegistrationFields((current) => current.map((item) => item.id === field.id ? { ...item, required: event.target.checked } : item))}/> Required</label><button type="button" className="icon-btn" onClick={() => setRegistrationFields((current) => current.filter((item) => item.id !== field.id))} aria-label="Remove form field"><Trash2 size={13}/></button></div>)}
+                    </div>}
                   </>
                 )}
               </div>
@@ -451,7 +479,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                   <>
                     <label className="modern-field full"><span>Notification title</span><input value={notificationTitle} onChange={(event) => setNotificationTitle(event.target.value)} placeholder={title || 'Event title'} /></label>
                     <label className="modern-field full"><span>Notification message</span><textarea value={notificationMessage} onChange={(event) => setNotificationMessage(event.target.value)} rows="3" placeholder="Join us this Sunday for our Celebration Service." /></label>
-                    <label className="modern-field full"><span>Audience</span><select value={audience} onChange={(event) => setAudience(event.target.value)}>{AUDIENCE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+                    <div className="audience-controls"><label className="modern-field"><span>Audience type</span><select value={audience} onChange={(event) => changeAudience(event.target.value)}>{AUDIENCE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></label>{audience !== 'All Members' && <label className="modern-field"><span>Select {audience.toLowerCase()}</span><select value={audienceId} onChange={(event) => setAudienceId(event.target.value)}><option value="">{audienceChoices.length ? `Select ${audience.toLowerCase()}` : `No ${audience.toLowerCase()} available`}</option>{audienceChoices.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}</div>
                   </>
                 )}
               </div>

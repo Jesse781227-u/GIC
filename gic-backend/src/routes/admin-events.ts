@@ -35,7 +35,7 @@ const dateValue = z.string().datetime().nullable().optional();
 const registrationFieldSchema = z.object({
   id: z.string().trim().min(1).max(80),
   label: z.string().trim().min(1).max(160),
-  type: z.enum(["text", "email", "phone", "textarea", "checkbox"]),
+  type: z.enum(["text", "email", "phone", "textarea", "checkbox", "number", "date", "select", "radio"]),
   required: z.boolean().default(false),
 });
 

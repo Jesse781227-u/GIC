@@ -33,15 +33,16 @@ export function canTransitionEvent(from: string, to: string) {
   return eventStatuses.includes(from as EventStatus) && eventTransitions[from as EventStatus].includes(to as EventStatus);
 }
 
-export type RegistrationField = { id: string; label: string; type: "text" | "email" | "phone" | "textarea" | "checkbox"; required?: boolean };
+export type RegistrationField = { id: string; label: string; type: "text" | "email" | "phone" | "textarea" | "checkbox" | "number" | "date" | "select" | "radio"; required?: boolean };
 
 export function validateEventForm(fields: RegistrationField[], answers: Record<string, unknown>) {
   const errors: string[] = [];
   for (const field of fields) {
     const value = answers[field.id];
-    const present = field.type === "checkbox" ? value === true : typeof value === "string" && value.trim().length > 0;
+    const present = field.type === "checkbox" ? value === true : (typeof value === "string" && value.trim().length > 0) || (field.type === "number" && typeof value === "number");
     if (field.required && !present) errors.push(`${field.label} is required.`);
     if (present && field.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value))) errors.push(`${field.label} must be a valid email address.`);
+    if (present && field.type === "number" && Number.isNaN(Number(value))) errors.push(`${field.label} must be a number.`);
   }
   const allowed = new Set(fields.map((field) => field.id));
   if (Object.keys(answers).some((key) => !allowed.has(key))) errors.push("The form contains an unknown field.");
