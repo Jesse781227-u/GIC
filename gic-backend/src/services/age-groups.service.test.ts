@@ -4,7 +4,6 @@ import { birthdayOccursOn, DEFAULT_AGE_GROUPS, normalizeBirthday } from "../lib/
 
 test("default age-group options use configurable ranges and include an open-ended senior range", () => {
   assert.deepEqual(DEFAULT_AGE_GROUPS.map(({ name, minAge, maxAge }) => [name, minAge, maxAge]), [
-    ["Children", 0, 12],
     ["Teenagers", 13, 17],
     ["Young Adults", 18, 30],
     ["Adults", 31, 59],

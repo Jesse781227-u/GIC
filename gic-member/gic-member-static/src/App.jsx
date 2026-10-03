@@ -836,7 +836,6 @@ function MemberShell({ children, active = 'home', title, backTo, lockProfile = f
   const { unreadCount, notificationPulse } = useNotificationCount()
   const showPersistentConsole = isPersistentConsoleAllowed(location.pathname)
   return <div className="member-page">
-    <div className="ios-status-bar" aria-label="Status bar"><span>9:41</span><span className="ios-status-icons"><span className="ios-signal" /><span className="ios-wifi">⌁</span><span className="ios-battery">▰</span></span></div>
     <header className="mobile-header">
       {backTo && !lockProfile ? <Back to={backTo} /> : <div style={{ width: '30px' }} />}
       {title ? <strong>{title}</strong> : <Logo />}

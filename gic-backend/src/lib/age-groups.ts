@@ -1,5 +1,4 @@
 export const DEFAULT_AGE_GROUPS = [
-  { name: "Children", minAge: 0, maxAge: 12 },
   { name: "Teenagers", minAge: 13, maxAge: 17 },
   { name: "Young Adults", minAge: 18, maxAge: 30 },
   { name: "Adults", minAge: 31, maxAge: 59 },
