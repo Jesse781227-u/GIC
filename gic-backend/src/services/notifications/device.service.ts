@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 
 export interface PushDeviceCreate {
   memberId: string;
+  churchId: string;
   firebaseInstallationId?: string;
   token: string;
   platform?: string;
@@ -22,7 +23,7 @@ export class DeviceService {
     });
 
     if (existing) {
-      if (existing.memberId !== data.memberId) {
+      if (existing.memberId !== data.memberId || existing.churchId !== data.churchId) {
         throw new Error("This push token is already registered to a different member");
       }
 
@@ -67,9 +68,9 @@ export class DeviceService {
     return created;
   }
 
-  async deactivateForMember(memberId: string, tokenOrId: string) {
+  async deactivateForMember(churchId: string, memberId: string, tokenOrId: string) {
     const device = await db.query.pushDevices.findFirst({
-      where: and(eq(pushDevices.id, tokenOrId), eq(pushDevices.memberId, memberId)),
+      where: and(eq(pushDevices.churchId, churchId), eq(pushDevices.id, tokenOrId), eq(pushDevices.memberId, memberId)),
     });
 
     if (!device) {

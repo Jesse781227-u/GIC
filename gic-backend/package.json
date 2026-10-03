@@ -7,11 +7,14 @@
   "scripts": {
     "dev": "tsx --watch src/index.ts",
     "build": "tsc",
+    "test": "tsx --test src/lib/member-routes.test.ts src/services/age-groups.service.test.ts src/services/notifications/media-validation.test.ts src/services/member-group-rules.test.ts src/services/notifications/audience.service.test.ts src/services/event-domain.test.ts",
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1145.0",
+    "@aws-sdk/s3-request-presigner": "^3.1145.0",
     "@hono/node-server": "^1.13.7",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.3",

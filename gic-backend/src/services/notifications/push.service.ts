@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { notificationDeliveries, pushDevices } from "../../db/schema.js";
 import { eq, inArray } from "drizzle-orm";
 import { deviceService } from "./device.service.js";
+import { isAllowedMemberRoute } from "../../lib/member-routes.js";
 
 export class PushService {
   async processDeliveries(deliveryIds: string[], title: string, body: string, url?: string, data?: Record<string, string>) {
@@ -13,6 +14,7 @@ export class PushService {
       where: inArray(notificationDeliveries.id, deliveryIds),
       with: {
         device: true,
+        notification: true,
       },
     });
 
@@ -34,28 +36,31 @@ export class PushService {
 
     // Use sendEachForMulticast to batch the sends (up to 500 at a time)
     // We construct a mapping from index -> delivery ID so we can correlate results
-    const tokens = validDeliveries.map(d => d.device.token);
-    
-    // Construct base payload
-    const message = {
-      tokens,
-      notification: {
-        title,
-        body,
-      },
-      data: {
+    const messages = validDeliveries.map((delivery) => {
+      const notification = delivery.notification;
+      const destinationType = notification?.destinationType || "none";
+      const destinationRoute = destinationType === "internal_route" ? notification?.destinationRoute ?? undefined : undefined;
+      const mediaId = destinationType === "media_page" ? notification?.destinationMediaId : undefined;
+      const safeLegacyRoute = destinationType === "none" && isAllowedMemberRoute(notification?.destinationUrl) ? notification?.destinationUrl ?? undefined : undefined;
+      const notificationData = {
+        type: "gic_notification",
+        notificationId: notification?.id || "",
+        destinationType: mediaId ? "media_page" : destinationRoute || safeLegacyRoute ? "internal_route" : "none",
+        ...(destinationRoute || safeLegacyRoute ? { destinationRoute: destinationRoute || safeLegacyRoute } : {}),
+        ...(mediaId ? { mediaId } : {}),
         ...data,
-        ...(url ? { url, route: url } : {}),
-      },
-      webpush: url ? {
-        fcmOptions: {
-          link: new URL(url, process.env.MEMBER_APP_URL || "http://localhost:3000").toString(),
-        },
-      } : undefined,
-    };
+      };
+      const tapUrl = new URL(`/notification-open?notificationId=${encodeURIComponent(notification?.id || "")}`, process.env.MEMBER_APP_URL || "http://localhost:3000").toString();
+      return {
+        token: delivery.device.token,
+        notification: { title, body },
+        data: notificationData,
+        webpush: { fcmOptions: { link: tapUrl } },
+      };
+    });
 
     try {
-      const response = await messaging.sendEachForMulticast(message);
+      const response = await messaging.sendEach(messages);
       
       const successIds: string[] = [];
       const failedUpdates: { id: string, error: string }[] = [];
@@ -106,5 +111,6 @@ export class PushService {
     }
   }
 }
+
 
 export const pushService = new PushService();

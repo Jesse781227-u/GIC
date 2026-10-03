@@ -59,7 +59,8 @@ export function formatServiceOccurrenceLabel(serviceDate, now = new Date()) {
   const nowDay = Date.UTC(nowParts.year, nowParts.month - 1, nowParts.day)
   const serviceDay = Date.UTC(serviceParts.year, serviceParts.month - 1, serviceParts.day)
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long' }).format(serviceDate)
-  return serviceDay === nowDay ? `This ${weekday}` : `Next ${weekday}`
+  const daysUntilService = Math.round((serviceDay - nowDay) / (24 * 60 * 60 * 1000))
+  return daysUntilService >= 0 && daysUntilService <= 3 ? `This ${weekday}` : `Next ${weekday}`
 }
 
 export { TIME_ZONE }

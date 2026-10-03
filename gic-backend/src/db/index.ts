@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema.js";
 import * as relations from "./relations.js";
+import { busPickupPointSeed, churchLocationSeed } from "./reference-data.js";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
@@ -27,12 +28,48 @@ export async function ensureDatabaseSchema() {
       ADD COLUMN IF NOT EXISTS joined_year integer,
       ADD COLUMN IF NOT EXISTS avatar text
   `;
+  await client`CREATE TABLE IF NOT EXISTS age_group_definitions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), church_id uuid NOT NULL REFERENCES churches(id) ON DELETE CASCADE,
+    name text NOT NULL, min_age integer NOT NULL CHECK (min_age >= 0), max_age integer CHECK (max_age IS NULL OR max_age >= min_age),
+    active boolean NOT NULL DEFAULT true, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
+    CONSTRAINT age_group_definitions_church_name_unique UNIQUE (church_id, name),
+    CONSTRAINT age_group_definitions_church_id_id_unique UNIQUE (church_id, id)
+  )`;
+  await client`CREATE INDEX IF NOT EXISTS age_group_definitions_church_idx ON age_group_definitions(church_id)`;
+  await client`ALTER TABLE members ADD COLUMN IF NOT EXISTS age_group_id uuid REFERENCES age_group_definitions(id) ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS relationship_status text`;
+  await client`DO $$ BEGIN ALTER TABLE members ADD CONSTRAINT members_age_group_tenant_fk FOREIGN KEY (church_id, age_group_id) REFERENCES age_group_definitions(church_id, id); EXCEPTION WHEN duplicate_object THEN NULL; END $$`;
+  await client`DO $$ BEGIN ALTER TABLE members ADD CONSTRAINT members_relationship_status_check CHECK (relationship_status IS NULL OR relationship_status IN ('Single', 'Married')); EXCEPTION WHEN duplicate_object THEN NULL; END $$`;
+  await client`CREATE INDEX IF NOT EXISTS members_church_age_group_idx ON members(church_id, age_group_id)`;
+  await client`UPDATE members SET birthday = substring(birthday FROM 6 FOR 5) WHERE birthday ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`;
+  await client`ALTER TABLE cell_memberships ADD COLUMN IF NOT EXISTS eligibility_review_required boolean NOT NULL DEFAULT false`;
+  await client`CREATE INDEX IF NOT EXISTS cell_memberships_review_idx ON cell_memberships(church_id, cell_id) WHERE eligibility_review_required = true`;
   await client`CREATE TABLE IF NOT EXISTS member_merge_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), canonical_member_id text NOT NULL, merged_member_id text NOT NULL, reason text NOT NULL, differences text, created_at timestamptz DEFAULT now())`;
   await client`CREATE TABLE IF NOT EXISTS activity_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), actor_id text NOT NULL, actor_name text, action text NOT NULL, target text NOT NULL, target_id text, metadata text, created_at timestamptz DEFAULT now())`;
   await client`CREATE INDEX IF NOT EXISTS activity_logs_created_at_idx ON activity_logs(created_at)`;
   await client`CREATE INDEX IF NOT EXISTS activity_logs_actor_id_idx ON activity_logs(actor_id)`;
-  await client`CREATE TABLE IF NOT EXISTS events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), title text NOT NULL, description text, starts_at timestamptz NOT NULL, ends_at timestamptz, location text, image_url text, is_paid boolean NOT NULL DEFAULT false, price integer, notify_on_publish boolean NOT NULL DEFAULT false, status text NOT NULL DEFAULT 'DRAFT', created_by text NOT NULL, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
-  await client`ALTER TABLE events ADD COLUMN IF NOT EXISTS ends_at timestamptz, ADD COLUMN IF NOT EXISTS image_url text, ADD COLUMN IF NOT EXISTS is_paid boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS price integer, ADD COLUMN IF NOT EXISTS notify_on_publish boolean NOT NULL DEFAULT false`;
+  await client`CREATE TABLE IF NOT EXISTS events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), title text NOT NULL, description text, starts_at timestamptz NOT NULL, ends_at timestamptz, location text, image_url text, is_paid boolean NOT NULL DEFAULT false, price integer, notify_on_publish boolean NOT NULL DEFAULT false, status text NOT NULL DEFAULT 'DRAFT', event_type text NOT NULL DEFAULT 'Service', registration_required boolean NOT NULL DEFAULT false, registration_opens_at timestamptz, registration_closes_at timestamptz, registration_capacity integer, allow_waitlist boolean NOT NULL DEFAULT false, organizer_unit text, organizer_contact_person text, organizer_contact_phone text, is_online boolean NOT NULL DEFAULT false, online_url text, online_access_instructions text, bus_transport_enabled boolean NOT NULL DEFAULT false, location_type text NOT NULL DEFAULT 'CHURCH', venue_name text, address text, map_info text, send_registration_confirmation boolean NOT NULL DEFAULT false, created_by text NOT NULL, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
+  await client`ALTER TABLE events ADD COLUMN IF NOT EXISTS ends_at timestamptz, ADD COLUMN IF NOT EXISTS image_url text, ADD COLUMN IF NOT EXISTS is_paid boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS price integer, ADD COLUMN IF NOT EXISTS notify_on_publish boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS event_type text NOT NULL DEFAULT 'Service', ADD COLUMN IF NOT EXISTS registration_required boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS registration_opens_at timestamptz, ADD COLUMN IF NOT EXISTS registration_closes_at timestamptz, ADD COLUMN IF NOT EXISTS registration_capacity integer, ADD COLUMN IF NOT EXISTS allow_waitlist boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS organizer_unit text, ADD COLUMN IF NOT EXISTS organizer_contact_person text, ADD COLUMN IF NOT EXISTS organizer_contact_phone text, ADD COLUMN IF NOT EXISTS is_online boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS online_url text, ADD COLUMN IF NOT EXISTS online_access_instructions text, ADD COLUMN IF NOT EXISTS bus_transport_enabled boolean NOT NULL DEFAULT false, ADD COLUMN IF NOT EXISTS location_type text NOT NULL DEFAULT 'CHURCH', ADD COLUMN IF NOT EXISTS venue_name text, ADD COLUMN IF NOT EXISTS address text, ADD COLUMN IF NOT EXISTS map_info text, ADD COLUMN IF NOT EXISTS send_registration_confirmation boolean NOT NULL DEFAULT false`;
+  await client`CREATE TABLE IF NOT EXISTS event_pickup_locations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE, location_name text NOT NULL, address_landmark text NOT NULL, pickup_time timestamptz NOT NULL, capacity integer NOT NULL, notes text, active boolean NOT NULL DEFAULT true, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
+  await client`CREATE INDEX IF NOT EXISTS event_pickup_locations_event_id_idx ON event_pickup_locations(event_id)`;
+  await client`CREATE INDEX IF NOT EXISTS event_pickup_locations_active_idx ON event_pickup_locations(active)`;
+  await client`CREATE TABLE IF NOT EXISTS event_registrations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE, member_id text NOT NULL, status text NOT NULL DEFAULT 'CONFIRMED', pickup_location_id uuid REFERENCES event_pickup_locations(id) ON DELETE SET NULL, registered_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE(event_id, member_id))`;
+  await client`CREATE INDEX IF NOT EXISTS event_registrations_event_id_idx ON event_registrations(event_id)`;
+  await client`CREATE INDEX IF NOT EXISTS event_registrations_member_id_idx ON event_registrations(member_id)`;
+  await client`CREATE INDEX IF NOT EXISTS event_registrations_pickup_location_id_idx ON event_registrations(pickup_location_id)`;
+  await client`CREATE TABLE IF NOT EXISTS event_reminders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), event_id uuid NOT NULL REFERENCES events(id) ON DELETE CASCADE, offset_minutes integer NOT NULL, scheduled_for timestamptz NOT NULL, status text NOT NULL DEFAULT 'pending', sent_at timestamptz, created_by text NOT NULL, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE(event_id, offset_minutes))`;
+  await client`CREATE INDEX IF NOT EXISTS event_reminders_due_idx ON event_reminders(status, scheduled_for)`;
+  await client`CREATE TABLE IF NOT EXISTS church_locations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL UNIQUE, address text NOT NULL, service_times text, contact_info text, active boolean NOT NULL DEFAULT true, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
+  await client`CREATE INDEX IF NOT EXISTS church_locations_active_idx ON church_locations(active)`;
+  await client`CREATE TABLE IF NOT EXISTS bus_pickup_points (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL UNIQUE, address text NOT NULL, manager_name text NOT NULL, manager_phone text NOT NULL, active boolean NOT NULL DEFAULT true, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`;
+  await client`CREATE INDEX IF NOT EXISTS bus_pickup_points_active_idx ON bus_pickup_points(active)`;
+  await client`ALTER TABLE event_pickup_locations ADD COLUMN IF NOT EXISTS bus_pickup_point_id uuid REFERENCES bus_pickup_points(id) ON DELETE SET NULL`;
+  await client`CREATE INDEX IF NOT EXISTS event_pickup_locations_bus_pickup_point_id_idx ON event_pickup_locations(bus_pickup_point_id)`;
+  for (const location of churchLocationSeed) {
+    await client`INSERT INTO church_locations (name, address, service_times, contact_info) VALUES (${location.name}, ${location.address}, ${location.serviceTimes}, ${location.contactInfo}) ON CONFLICT (name) DO NOTHING`;
+  }
+  for (const pickupPoint of busPickupPointSeed) {
+    await client`INSERT INTO bus_pickup_points (name, address, manager_name, manager_phone) VALUES (${pickupPoint.name}, ${pickupPoint.address}, ${pickupPoint.managerName}, ${pickupPoint.managerPhone}) ON CONFLICT (name) DO NOTHING`;
+  }
   await client`CREATE TABLE IF NOT EXISTS service_reminders (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id text NOT NULL, service_type text NOT NULL, occurrence_key text NOT NULL, service_starts_at timestamptz NOT NULL, offset_minutes text NOT NULL, scheduled_for timestamptz NOT NULL, status text NOT NULL DEFAULT 'pending', created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE(member_id, occurrence_key, offset_minutes))`;
   await client`CREATE INDEX IF NOT EXISTS service_reminders_due_idx ON service_reminders(status, scheduled_for)`;
   await client`CREATE TABLE IF NOT EXISTS birthday_notification_sends (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id text NOT NULL, birthday_date text NOT NULL, status text NOT NULL DEFAULT 'processing', sent_at timestamptz, error text, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE(member_id, birthday_date))`;
@@ -59,7 +96,8 @@ export async function ensureDatabaseSchema() {
       const [canonical] = await client`SELECT display_name, phone, email, ministries, center, service_time, birthday, membership_status, joined_month, joined_year, avatar FROM members WHERE id = ${canonicalId}`;
       const [merged] = await client`SELECT display_name, phone, email, ministries, center, service_time, birthday, membership_status, joined_month, joined_year, avatar FROM members WHERE id = ${mergedId}`;
       if (!canonical || !merged) continue;
-      await client`INSERT INTO member_merge_logs (canonical_member_id, merged_member_id, reason, differences) VALUES (${canonicalId}, ${mergedId}, ${group.reason}, ${JSON.stringify({ canonical, merged })})`;
+      const [canonicalMember] = await client`SELECT church_id FROM members WHERE id = ${canonicalId}`;
+      await client`INSERT INTO member_merge_logs (church_id, canonical_member_id, merged_member_id, reason, differences) VALUES (${canonicalMember?.church_id || process.env.DEFAULT_CHURCH_ID}, ${canonicalId}, ${mergedId}, ${group.reason}, ${JSON.stringify({ canonical, merged })})`;
       await client`UPDATE push_devices SET member_id = ${canonicalId} WHERE member_id = ${mergedId}`;
       await client`UPDATE notification_preferences SET member_id = ${canonicalId} WHERE member_id = ${mergedId} AND NOT EXISTS (SELECT 1 FROM notification_preferences WHERE member_id = ${canonicalId})`;
       await client`UPDATE notifications SET member_id = ${canonicalId} WHERE member_id = ${mergedId}`;

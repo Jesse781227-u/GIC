@@ -1,6 +1,7 @@
 import { db } from "../../db/index.js";
 import {
   adminNotifications,
+  members,
   notifications,
   notificationDeliveries,
   pushDevices,
@@ -21,29 +22,75 @@ const defaultPreferenceFlags = {
 } as const;
 
 export interface NotificationDraft {
+  churchId: string;
   title: string;
   body: string;
   type: any;
   audience: any;
   destinationUrl?: string;
+  destinationType?: "none" | "internal_route" | "media_page";
+  destinationRoute?: string;
+  destinationMediaId?: string;
   scheduledAt?: string;
   createdBy: string;
   audienceMinistryId?: string;
+  audienceCellId?: string;
+  audienceSegmentId?: string;
   audienceEventId?: string;
   audienceMemberIds?: string[];
 }
 
 export class NotificationService {
+  async sendToMember(input: {
+    memberId: string;
+    title: string;
+    body: string;
+    type: "EVENT_REMINDER" | "REGISTRATION_CONFIRMATION" | "REGISTRATION_CANCELLED";
+    destinationUrl?: string;
+  }) {
+    const member = await db.query.members.findFirst({ where: eq(members.id, input.memberId) });
+    if (!member) return { skipped: true, reason: "member-not-found" };
+    const prefs = await db.query.notificationPreferences.findFirst({
+      where: and(eq(notificationPreferences.churchId, member.churchId), eq(notificationPreferences.memberId, input.memberId)),
+    });
+    if (prefs && (!prefs.pushEnabled || (input.type === "EVENT_REMINDER" ? !prefs.reminders : !prefs.registrationUpdates))) {
+      return { skipped: true, reason: "preference" };
+    }
+    const devices = await db.query.pushDevices.findMany({
+      where: and(eq(pushDevices.churchId, member.churchId), eq(pushDevices.memberId, input.memberId), eq(pushDevices.active, true)),
+    });
+    const [inboxItem] = await db.insert(notifications).values({
+      churchId: member.churchId,
+      memberId: input.memberId,
+      title: input.title,
+      body: input.body,
+      type: input.type,
+      destinationUrl: input.destinationUrl,
+    }).returning();
+    if (!devices.length) return { notificationId: inboxItem.id, sent: 0 };
+    const deliveries = await db.insert(notificationDeliveries).values(devices.map((device) => ({
+      notificationId: inboxItem.id,
+      memberId: input.memberId,
+      deviceId: device.id,
+      status: "pending" as const,
+    }))).returning({ id: notificationDeliveries.id });
+    await pushService.processDeliveries(deliveries.map(({ id }) => id), input.title, input.body, input.destinationUrl);
+    return { notificationId: inboxItem.id, sent: deliveries.length };
+  }
+
   async sendServiceReminder(reminder: typeof serviceReminders.$inferSelect) {
-    const prefs = await db.query.notificationPreferences.findFirst({ where: eq(notificationPreferences.memberId, reminder.memberId) });
+    const member = await db.query.members.findFirst({ where: eq(members.id, reminder.memberId) });
+    if (!member) return;
+    const prefs = await db.query.notificationPreferences.findFirst({ where: and(eq(notificationPreferences.churchId, member.churchId), eq(notificationPreferences.memberId, reminder.memberId)) });
     if (prefs && (!prefs.pushEnabled || !prefs.reminders)) return;
     const devices = await db.query.pushDevices.findMany({
-      where: and(eq(pushDevices.memberId, reminder.memberId), eq(pushDevices.active, true)),
+      where: and(eq(pushDevices.churchId, member.churchId), eq(pushDevices.memberId, reminder.memberId), eq(pushDevices.active, true)),
     });
     const title = reminder.serviceType === "midweek-service" ? "GIC Midweek Service" : "GIC Sunday Service";
     const offset = Number(reminder.offsetMinutes);
     const body = `${title} starts in ${offset === 60 ? "1 hour" : "30 minutes"}.`;
     const [inboxItem] = await db.insert(notifications).values({
+      churchId: member.churchId,
       memberId: reminder.memberId,
       title,
       body,
@@ -77,11 +124,17 @@ export class NotificationService {
     const [created] = await db
       .insert(adminNotifications)
       .values({
+        churchId: draft.churchId,
         title: draft.title,
         body: draft.body,
         type: draft.type,
         audience: draft.audience,
+        audienceCellId: draft.audienceCellId,
+        audienceSegmentId: draft.audienceSegmentId,
         destinationUrl: draft.destinationUrl,
+        destinationType: draft.destinationType || "none",
+        destinationRoute: draft.destinationRoute,
+        destinationMediaId: draft.destinationMediaId,
         scheduledAt: scheduledDate,
         createdBy: draft.createdBy,
         audienceMinistryId: draft.audienceMinistryId,
@@ -118,15 +171,18 @@ export class NotificationService {
 
     try {
       const recipients = await audienceService.resolve({
+        churchId: adminNotif.churchId,
         kind: adminNotif.audience,
         ministryId: adminNotif.audienceMinistryId || undefined,
+        cellId: adminNotif.audienceCellId || undefined,
+        segmentId: adminNotif.audienceSegmentId || undefined,
         eventId: adminNotif.audienceEventId || undefined,
         memberIds: adminNotif.audienceMemberIds || undefined,
       });
 
       const recipientIds = recipients.map((recipient) => recipient.memberId);
       const preferenceRows = await db.query.notificationPreferences.findMany({
-        where: inArray(notificationPreferences.memberId, recipientIds),
+        where: and(eq(notificationPreferences.churchId, adminNotif.churchId), inArray(notificationPreferences.memberId, recipientIds)),
       });
       const preferenceMap = new Map(
         preferenceRows.map((pref) => [pref.memberId, pref])
@@ -151,12 +207,16 @@ export class NotificationService {
           const [inboxItem] = await tx
             .insert(notifications)
             .values({
+              churchId: adminNotif.churchId,
               memberId: recipient.memberId,
               messageId: adminNotifId,
               title: adminNotif.title,
               body: adminNotif.body,
               type: adminNotif.type,
               destinationUrl: adminNotif.destinationUrl,
+              destinationType: adminNotif.destinationType,
+              destinationRoute: adminNotif.destinationRoute,
+              destinationMediaId: adminNotif.destinationMediaId,
             })
             .returning();
 

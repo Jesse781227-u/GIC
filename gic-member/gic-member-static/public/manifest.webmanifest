@@ -8,7 +8,7 @@
   "theme_color": "#1c0b55",
   "orientation": "portrait",
   "icons": [
-    { "src": "/gic-logo.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/gic-logo.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/gic-logo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/gic-logo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
   ]
 }

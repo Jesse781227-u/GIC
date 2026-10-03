@@ -8,6 +8,7 @@ import {
   pushDevices,
 } from "../../db/schema.js";
 import { pushService } from "./push.service.js";
+import { birthdayOccursOn } from "../../lib/age-groups.js";
 
 export const BIRTHDAY_ROUTE = "/announcements/birthday";
 export const BIRTHDAY_TIME_ZONE = "Africa/Lagos";
@@ -33,13 +34,7 @@ export function getBirthdayDateKey(parts = getLagosDateParts()): string {
 }
 
 export function isBirthdayToday(birthday: string | null | undefined, today = getLagosDateParts()): boolean {
-  const match = String(birthday || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return false;
-  const birthMonth = Number(match[2]);
-  const birthDay = Number(match[3]);
-  // Feb 29 birthdays are celebrated on Feb 28 in non-leap years.
-  const feb29Fallback = birthMonth === 2 && birthDay === 29 && today.month === 2 && today.day === 28 && today.year % 4 !== 0;
-  return (birthMonth === today.month && birthDay === today.day) || feb29Fallback;
+  return birthdayOccursOn(birthday, today);
 }
 
 export function firstName(displayName: string): string {
@@ -54,7 +49,8 @@ export function birthdayCelebration(member: typeof members.$inferSelect, today =
     fullName: member.displayName,
     avatar: member.avatar || "",
     title: `Happy Birthday, ${name}!`,
-    message: `The GIC family is celebrating you today, ${name}. May your new year be filled with joy, grace, and beautiful moments.`,
+    message: `Today we celebrate the gift of you, ${name}. May this new year of life bring you deep joy, fresh strength, and beautiful moments with God and the people who love you.`,
+    blessing: "May the Lord bless you and keep you, guide your steps, and fill your days with peace.",
     date: getBirthdayDateKey(today),
     destinationUrl: BIRTHDAY_ROUTE,
   };
@@ -67,15 +63,16 @@ export class BirthdayService {
 
     const [preferences] = await db.select({ pushEnabled: notificationPreferences.pushEnabled })
       .from(notificationPreferences)
-      .where(eq(notificationPreferences.memberId, member.id));
+      .where(and(eq(notificationPreferences.churchId, member.churchId), eq(notificationPreferences.memberId, member.id)));
     const devices = await db.query.pushDevices.findMany({
-      where: and(eq(pushDevices.memberId, member.id), eq(pushDevices.active, true)),
+      where: and(eq(pushDevices.churchId, member.churchId), eq(pushDevices.memberId, member.id), eq(pushDevices.active, true)),
     });
 
     const [inboxItem] = await db.insert(notifications).values({
+      churchId: member.churchId,
       memberId: member.id,
       title: celebration.title,
-      body: celebration.message,
+      body: `${celebration.message} ${celebration.blessing}`,
       type: "SYSTEM_NOTIFICATION",
       destinationUrl: BIRTHDAY_ROUTE,
     }).returning();
@@ -94,7 +91,7 @@ export class BirthdayService {
     await pushService.processDeliveries(
       deliveries.map(({ id }) => id),
       celebration.title,
-      celebration.message,
+      `${celebration.message} ${celebration.blessing}`,
       BIRTHDAY_ROUTE,
       { birthdayDate, tag: `gic-birthday-${member.id}-${birthdayDate}` },
     );

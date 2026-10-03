@@ -5,6 +5,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import { pushDevices } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
+import { churchIdForUser } from "../lib/tenant.js";
 
 const app = new Hono();
 
@@ -20,6 +21,7 @@ const registerSchema = z.object({
 
 app.post("/", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const body = await c.req.json();
   const parsed = registerSchema.safeParse(body);
   
@@ -30,6 +32,7 @@ app.post("/", async (c) => {
   try {
     const device = await deviceService.register({
       memberId: user.sub,
+      churchId,
       ...parsed.data,
     });
 
@@ -46,8 +49,9 @@ app.post("/", async (c) => {
 
 app.get("/", async (c) => {
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
   const devices = await db.query.pushDevices.findMany({
-    where: and(eq(pushDevices.memberId, user.sub), eq(pushDevices.active, true)),
+    where: and(eq(pushDevices.churchId, churchId), eq(pushDevices.memberId, user.sub), eq(pushDevices.active, true)),
   });
 
   return c.json({ devices });
@@ -56,9 +60,10 @@ app.get("/", async (c) => {
 app.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const user = c.get("user");
+  const churchId = churchIdForUser(user);
 
   try {
-    await deviceService.deactivateForMember(user.sub, id);
+    await deviceService.deactivateForMember(churchId, user.sub, id);
   } catch {
     return c.json({ error: "Not found" }, 404);
   }

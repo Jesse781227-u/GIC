@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAnalytics, isSupported as analyticsIsSupported } from 'firebase/analytics';
-import { getMessaging, getToken } from 'firebase/messaging';
+import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { getAuth, RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
 
 const FIREBASE_CONFIG = {
@@ -42,6 +42,14 @@ export async function getFcmToken() {
   } catch (error) {
     console.warn('FCM token unavailable:', error);
     return '';
+  }
+}
+
+export function listenForForegroundMessages(handler) {
+  try {
+    return onMessage(getMessaging(firebaseApp), handler);
+  } catch {
+    return () => {};
   }
 }
 

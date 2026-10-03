@@ -5,6 +5,19 @@
     { "idx": 0, "version": "7", "when": 1725750000000, "tag": "0000_add_members", "breakpoints": true },
     { "idx": 1, "version": "7", "when": 1725750100000, "tag": "0001_add_member_phone", "breakpoints": true },
     { "idx": 2, "version": "7", "when": 1725750200000, "tag": "0002_add_member_profile_settings", "breakpoints": true },
-    { "idx": 3, "version": "7", "when": 1725750300000, "tag": "0003_production_schema", "breakpoints": true }
+    { "idx": 3, "version": "7", "when": 1725750300000, "tag": "0003_production_schema", "breakpoints": true },
+    { "idx": 4, "version": "7", "when": 1789459200000, "tag": "0005_task_46_events", "breakpoints": true },
+    { "idx": 5, "version": "7", "when": 1789459300000, "tag": "0006_task_47_reference_data", "breakpoints": true },
+    { "idx": 6, "version": "7", "when": 1790899200000, "tag": "0007_notification_destinations", "breakpoints": true },
+    { "idx": 7, "version": "7", "when": 1790902800000, "tag": "0008_member_groups", "breakpoints": true },
+    { "idx": 8, "version": "7", "when": 1790962000000, "tag": "0009_profile_demographics_and_cell_review", "breakpoints": true },
+    { "idx": 9, "version": "7", "when": 1790985600000, "tag": "0010_remove_children_age_group", "breakpoints": true },
+    { "idx": 10, "version": "7", "when": 1791000000000, "tag": "0011_update_age_group_ranges", "breakpoints": true },
+    { "idx": 11, "version": "7", "when": 1791000100000, "tag": "0012_singularize_age_group_names", "breakpoints": true },
+    { "idx": 12, "version": "7", "when": 1791000200000, "tag": "0013_member_app_ministries", "breakpoints": true },
+    { "idx": 13, "version": "7", "when": 1791000300000, "tag": "0014_it_ministry_youth_fellowship", "breakpoints": true },
+    { "idx": 14, "version": "7", "when": 1791000400000, "tag": "0015_organization_directory", "breakpoints": true },
+    { "idx": 15, "version": "7", "when": 1791000500000, "tag": "0016_protocol_security_pastors_units", "breakpoints": true },
+    { "idx": 16, "version": "7", "when": 1791000600000, "tag": "0017_event_management_lifecycle", "breakpoints": true }
   ]
 }

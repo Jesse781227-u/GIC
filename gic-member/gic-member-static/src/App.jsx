@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef, useContext, useCallback, createContext } from 'react'
 import { createPortal } from 'react-dom'
 import './bugfix.css'
-import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, signInWithPhoneNumber } from './firebase'
+import './birthday.css'
+import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, listenForForegroundMessages, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
-  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Trash2, Volume2, VolumeX,
-  Play, Pause, CheckCircle2
+  Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Heart, Trash2, Volume2, VolumeX,
+  Play, Pause, CheckCircle2, X
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
+import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
+import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -27,16 +30,12 @@ const events = [
 const ministries = [
   { id: 'ushering', title: 'Ushering Ministry', desc: 'Serving with excellence and a heart.', requirements: 'A welcoming heart, punctuality, a neat appearance, and willingness to serve during church gatherings.', image: 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=700&q=80' },
   { id: 'media', title: 'Media Ministry', desc: "Telling the story of God's work.", requirements: 'Interest or experience in photography, video, graphics, livestreaming, audio, or communications.', image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=700&q=80' },
+  { id: 'it', title: 'IT Ministry', desc: 'Supporting the church through technology and digital systems.', requirements: 'Interest or experience in IT support, software, networks, systems, or digital tools.', image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=700&q=80' },
   { id: 'choir', title: 'Choir', desc: 'Leading the church in worship through music.', requirements: 'A love for worship, regular attendance, willingness to rehearse, and a teachable spirit.', image: 'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=700&q=80' },
   { id: 'children', title: "Children's Ministry", desc: 'Helping children discover faith and grow with joy.', requirements: 'Patience, care for children, reliability, and willingness to complete the church safeguarding process.', image: 'https://images.unsplash.com/photo-1504159506876-f8338247a14a?auto=format&fit=crop&w=700&q=80' },
   { id: 'prayer', title: 'Prayer Ministry', desc: 'Standing together in prayer for the church and community.', requirements: 'A committed prayer life, confidentiality, consistency, and willingness to join prayer gatherings.', image: 'https://images.unsplash.com/photo-1507692049790-de58290a4334?auto=format&fit=crop&w=700&q=80' },
   { id: 'acts-of-mercy', title: 'Acts Of Mercy', desc: 'Serving people in need through practical charity and compassion.', requirements: 'A compassionate heart, reliability, willingness to serve communities in need, and respect for every person.', image: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=700&q=80' },
   { id: 'evangelism', title: 'Evangelism', desc: 'Sharing the gospel and helping people encounter the love of Christ.', requirements: 'A growing relationship with Christ, courage to connect with people, and willingness to participate in outreach.', image: 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?auto=format&fit=crop&w=700&q=80' },
-]
-
-const ministryOptions = [
-  'Ushering Ministry', 'Media Ministry', 'Choir', "Children's Ministry", 'Prayer Ministry',
-  'Acts Of Mercy', 'Evangelism'
 ]
 
 const serviceCenters = [
@@ -492,7 +491,12 @@ function PersistentAudioPlayer({ embedded = false }) {
   const { playing, loading, minimized, error, title, recordingDate, pause, resume, setVolume, volume, elapsedSeconds, durationSeconds, seekable, seek } = useAudioPlayer()
   const formatTime = (seconds) => {
     const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
-    return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`
+    const hours = Math.floor(safeSeconds / 3600)
+    const minutes = Math.floor((safeSeconds % 3600) / 60)
+    const remainder = safeSeconds % 60
+    return hours > 0
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+      : `${minutes}:${String(remainder).padStart(2, '0')}`
   }
   if (!title) return null
   return <aside className={`persistent-audio-player ${embedded ? 'is-embedded' : ''} ${minimized ? 'is-minimized' : ''}`} aria-label="Mixlr audio player">
@@ -512,7 +516,7 @@ function PersistentAudioPlayerLegacy() {
         <span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span>
         <div>
           <strong>{title}</strong>
-          <small>{error || (playing ? 'Playing now' : 'Tap play to listen')}</small>
+          <small>{error || (playing ? recordingDate : 'Ready to play')}</small>
         </div>
       </div>
       <div className="persistent-audio-actions">
@@ -533,9 +537,13 @@ function PersistentAudioPlayerLegacy() {
 const GIC_LOGO = 'https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
 async function fetchMemberApi(path, options = {}) {
   const token = localStorage.getItem('gic_auth_token')
-  const response = await fetch(`${API_BASE}${path}`, {
+  const request = () => fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -543,10 +551,30 @@ async function fetchMemberApi(path, options = {}) {
       ...(options.headers || {}),
     },
   })
+  const retryable = !options.method || options.method.toUpperCase() === 'GET'
+  let response
+  for (let attempt = 0; attempt < (retryable ? 2 : 1); attempt += 1) {
+    try {
+      response = await request()
+      if (response.status < 500 || attempt === 1) break
+    } catch (error) {
+      if (!retryable || attempt === 1) throw error
+    }
+    await wait(300)
+  }
 
   if (!response.ok) {
     const details = await response.text().catch(() => '')
-    throw new Error(details || `Request failed: ${response.status}`)
+    let message = details || `Request failed: ${response.status}`
+    try {
+      const parsedDetails = JSON.parse(details)
+      message = parsedDetails.error || parsedDetails.message || message
+    } catch {
+      // Keep the response text when the API does not return JSON.
+    }
+    const error = new Error(message)
+    error.status = response.status
+    throw error
   }
 
   return response.json()
@@ -554,15 +582,6 @@ async function fetchMemberApi(path, options = {}) {
 
 function getSecureMode() {
   return window.isSecureContext || window.location.hostname === 'localhost'
-}
-
-function getBrowserName() {
-  const ua = navigator.userAgent
-  if (/Edg\//.test(ua)) return 'Edge'
-  if (/Chrome\//.test(ua) && !/Edg\//.test(ua)) return 'Chrome'
-  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return 'Safari'
-  if (/Firefox\//.test(ua)) return 'Firefox'
-  return 'Unknown'
 }
 
 function isStandalonePwa() {
@@ -658,28 +677,40 @@ function storeAccountId(accountId) {
   document.cookie = `gic_account_id=${encodeURIComponent(accountId)}; Max-Age=31536000; Path=/; SameSite=Lax`
 }
 
+function storeMemberProfile(profile) {
+  storeAccountId(profile.id)
+  localStorage.setItem('gic_member_name', profile.name || '')
+  localStorage.setItem('gic_member_phone', profile.phone || '')
+  localStorage.setItem('gic_member_email', profile.email || '')
+  localStorage.setItem('gic_member_ministries', profile.ministries || '')
+  localStorage.setItem('gic_member_center', profile.center || '')
+  localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
+  localStorage.setItem('gic_member_birthday', profile.birthday || '')
+  localStorage.setItem('gic_member_age_group_id', profile.ageGroupId || '')
+  localStorage.setItem('gic_member_age_group', profile.ageGroup?.name || profile.ageGroupName || '')
+  localStorage.setItem('gic_member_relationship_status', profile.relationshipStatus || '')
+  localStorage.setItem('gic_member_gender', profile.gender || '')
+  localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
+  localStorage.setItem('gic_member_joined_month', profile.joinedMonth || '')
+  localStorage.setItem('gic_member_joined_year', profile.joinedYear || '')
+  if (profile.avatar) localStorage.setItem('gic_member_avatar', profile.avatar)
+  else localStorage.removeItem('gic_member_avatar')
+  localStorage.setItem('gic_profile_completed', profile.profileComplete ? 'true' : 'false')
+}
+
 function storeMemberSession(data) {
-  storeAccountId(data.member.id)
   localStorage.setItem('gic_auth_token', data.token)
-  localStorage.setItem('gic_member_name', data.member.name)
-  localStorage.setItem('gic_member_phone', data.member.phone || '')
-  localStorage.setItem('gic_member_email', data.member.email || '')
-  localStorage.setItem('gic_member_ministries', data.member.ministries || '')
-  localStorage.setItem('gic_member_center', data.member.center || '')
-  localStorage.setItem('gic_member_service_time', data.member.serviceTime || '')
-  localStorage.setItem('gic_member_birthday', data.member.birthday || '')
-  localStorage.setItem('gic_membership_status', data.member.membershipStatus || '')
-  localStorage.setItem('gic_member_joined_month', data.member.joinedMonth || '')
-  localStorage.setItem('gic_member_joined_year', data.member.joinedYear || '')
-  if (data.member.avatar) localStorage.setItem('gic_member_avatar', data.member.avatar)
+  storeMemberProfile(data.member)
   localStorage.setItem('gic_auth_method', 'device_auth')
 }
 
-function clearStaleMemberSession() {
-  for (const key of ['gic_auth_token', 'gic_account_id', 'gic_auth_method', 'gic_profile_completed', 'gic_onboarding_profile', 'gic_onboarding_completed']) {
+function clearStaleMemberSession({ preserveAccountId = false } = {}) {
+  const keys = ['gic_auth_token', 'gic_auth_method', 'gic_profile_completed', 'gic_onboarding_profile', 'gic_onboarding_completed']
+  if (!preserveAccountId) keys.push('gic_account_id')
+  for (const key of keys) {
     localStorage.removeItem(key)
   }
-  document.cookie = 'gic_account_id=; Max-Age=0; Path=/; SameSite=Lax'
+  if (!preserveAccountId) document.cookie = 'gic_account_id=; Max-Age=0; Path=/; SameSite=Lax'
 }
 
 export async function performDeviceAuth(memberName) {
@@ -692,11 +723,21 @@ export async function performDeviceAuth(memberName) {
     ...(memberName?.trim() && memberName.trim() !== 'Member' ? { name: memberName.trim() } : {})
   }
   try {
-    const res = await fetch(`${API_BASE}/api/auth/device`, {
+    const request = () => fetch(`${API_BASE}/api/auth/device`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     })
+    let res
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        res = await request()
+        if (res.status < 500 || attempt === 1) break
+      } catch (error) {
+        if (attempt === 1) throw error
+      }
+      await wait(300)
+    }
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error || 'Device authentication failed')
     storeAccountId(data.member.id)
@@ -733,9 +774,10 @@ function Field({ label, value, type = 'text', placeholder, onChange, icon: Icon,
 }
 
 function SelectField({ label, value, onChange, disabled = false, children }) {
+  const hasPlaceholder = React.Children.toArray(children).some((child) => React.isValidElement(child) && child.props.value === '')
   return <label className="field">
     <span>{label}</span>
-    <select value={value} onChange={onChange} disabled={disabled}><option value="">Select {label.toLowerCase()}</option>{children}</select>
+    <select value={value} onChange={onChange} disabled={disabled}>{!hasPlaceholder && <option value="">Select {label.toLowerCase()}</option>}{children}</select>
   </label>
 }
 
@@ -770,7 +812,7 @@ function BottomNav({ active = 'home' }) {
   const items = [
     ['home', 'Home', Home, '/home'],
     ['events', 'Events', CalendarDays, '/events'],
-    ['ministries', 'Ministries', Users, '/ministries'],
+    ['ministries', 'Units', Users, '/ministries'],
     ['profile', 'Profile', User, '/profile'],
   ]
   return <nav className="bottom-nav">{items.map(([id, label, Icon, to]) =>
@@ -795,6 +837,7 @@ function isPersistentConsoleAllowed(pathname) {
     normalizedPath === path || (path !== '/' && normalizedPath.startsWith(`${path}/`))
   )
   if (isAccountCompletionPath) return false
+  if (normalizedPath === '/announcements/birthday') return false
   if (/^\/events\/[^/]+\/register(?:\/|$)/.test(normalizedPath)) return false
 
   return AUTHENTICATED_CONSOLE_PATHS.some((path) => normalizedPath === path || normalizedPath.startsWith(`${path}/`))
@@ -837,27 +880,17 @@ function ProtectedRoute({ children }) {
       try {
         const { profile } = await fetchMemberApi('/api/auth/profile')
         if (cancelled) return
-        storeAccountId(profile.id)
-        localStorage.setItem('gic_member_name', profile.name || '')
-        localStorage.setItem('gic_member_phone', profile.phone || '')
-        localStorage.setItem('gic_member_email', profile.email || '')
-        localStorage.setItem('gic_member_ministries', profile.ministries || '')
-        localStorage.setItem('gic_member_center', profile.center || '')
-        localStorage.setItem('gic_member_service_time', profile.serviceTime || '')
-        localStorage.setItem('gic_member_birthday', profile.birthday || '')
-        localStorage.setItem('gic_membership_status', profile.membershipStatus || '')
-        localStorage.setItem('gic_member_joined_month', profile.joinedMonth || '')
-        localStorage.setItem('gic_member_joined_year', profile.joinedYear || '')
-        if (profile.avatar) localStorage.setItem('gic_member_avatar', profile.avatar)
+        storeMemberProfile(profile)
         if (!profile.active || !profile.profileComplete) {
           if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
           return
         }
-        if (!isStandalonePwa() && location.pathname !== '/onboarding') {
+        const isNotificationDestination = isNotificationDestinationRoute(location.pathname)
+        if (!isStandalonePwa() && location.pathname !== '/onboarding' && !isNotificationDestination) {
           navigate('/onboarding?stage=install', { replace: true })
           return
         }
-        if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding') {
+        if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding' && !isNotificationDestination) {
           navigate('/onboarding?stage=notifications', { replace: true })
           return
         }
@@ -867,7 +900,8 @@ function ProtectedRoute({ children }) {
           if (token) await registerPushTokenWithBackend(token)
         }
         setChecking(false)
-      } catch {
+      } catch (error) {
+        if (error?.status === 401 || error?.status === 403) clearStaleMemberSession()
         navigate('/', { replace: true })
       }
     }
@@ -893,7 +927,7 @@ function Welcome() {
         try {
           profile = (await fetchMemberApi('/api/auth/profile')).profile
         } catch {
-          clearStaleMemberSession()
+          clearStaleMemberSession({ preserveAccountId: true })
           profile = (await performDeviceAuth()).member
         }
       } else profile = (await performDeviceAuth()).member
@@ -997,6 +1031,7 @@ function OnboardingFlow() {
   const [stage, setStage] = useState('profile')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
+  const [installBrowser, setInstallBrowser] = useState(() => getBrowserName())
   const [installedApp, setInstalledApp] = useState(() => isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
 
   useEffect(() => {
@@ -1050,8 +1085,9 @@ function OnboardingFlow() {
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
     window.addEventListener('appinstalled', handleInstalled)
     window.addEventListener('pageshow', refreshDisplayMode)
-    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+    if (isIOSDevice(navigator.userAgent, navigator.maxTouchPoints)) {
       setInstallMode('ios')
+      setInstallBrowser(getBrowserName(navigator.userAgent))
     }
 
     return () => {
@@ -1158,14 +1194,13 @@ function OnboardingFlow() {
   }
 
   if (stage === 'ios-install') {
+    const installSteps = getIOSInstallSteps(installBrowser)
     return <div className="onboarding-page"><div className="onboarding-card" style={{ minHeight: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
       <h1 style={{ textAlign: 'center', fontSize: '26px', marginBottom: '10px' }}>Add GIC to your Home Screen</h1>
-      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}></p>
+      <p className="sub" style={{ textAlign: 'center', marginBottom: '24px' }}>Use the {installBrowser === 'Unknown' ? 'browser' : installBrowser} menu to add GIC. The steps below work across iPhone and iPad browsers.</p>
       <div className="stack" style={{ gap: '10px', textAlign: 'left', padding: '10px 8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>1</span><span>Tap the Share button.</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>2</span><span>Select “Add to Home Screen”.</span></div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>3</span><span>Tap “Add”.</span></div>
+        {installSteps.map((step, index) => <div key={step} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>{index + 1}</span><span>{step}</span></div>)}
       </div>
       <div style={{ display: 'flex', gap: '10px', marginTop: '26px' }}>
         <button className="btn gold wide" onClick={() => setDismissedNotice('Open GIC from your home screen to continue.')}>I installed GIC</button>
@@ -1331,7 +1366,7 @@ function HomePage() {
 
 function EventRow({ event, onOpenService }) {
   const displayEvent = event.isService ? getServiceDisplay(event) : event
-  const content = <><img src={displayEvent.image} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date} · {displayEvent.time}</small><small className="event-location"><MapPin size={13} />{displayEvent.location}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
+  const content = <><img src={displayEvent.image || displayEvent.imageUrl || GIC_LOGO} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleDateString() : '')} · {displayEvent.time || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')}</small><small className="event-location"><MapPin size={13} />{displayEvent.location || displayEvent.venueName || (displayEvent.isOnline ? 'Online' : 'Location to be announced')}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
   if (displayEvent.isService) {
     return <button type="button" className="event-row service-row" onClick={() => onOpenService?.(event)}>{content}</button>
   }
@@ -1344,7 +1379,7 @@ function Announcements() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [birthday, setBirthday] = useState(null)
-  const categories = ['All', 'General', 'Ministries', 'Notices']
+  const categories = ['All', 'General', 'Units', 'Notices']
   const { setUnreadCount, refreshUnreadCount } = useNotificationCount()
   const sundayServiceCopy = getSundayServiceCopy()
   const markAllAsRead = async () => {
@@ -1357,7 +1392,7 @@ function Announcements() {
     fetchMemberApi('/api/notifications')
       .then(({ items: notifications = [] }) => setItems(notifications.map((notification) => ({
         id: notification.id,
-        category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
+        category: notification.type === 'MINISTRY_UPDATE' ? 'Units' : 'General',
         title: notification.title,
         summary: notification.body,
         date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
@@ -1395,33 +1430,73 @@ function BirthdayPage() {
   }, [])
   return <MemberShell active="home" title="Your Birthday" backTo="/announcements">
     {loading && <p className="center muted">Preparing your birthday message...</p>}
-    {!loading && birthday && <section className="birthday-page-card"><div className="birthday-confetti" aria-hidden="true">✦　✧　✦</div>{birthday.avatar ? <img className="birthday-avatar" src={birthday.avatar} alt="" /> : <div className="birthday-avatar birthday-avatar-fallback">{birthday.name.charAt(0)}</div>}<span className="eyebrow">A message just for you</span><h1>{birthday.title}</h1><p>{birthday.message}</p><div className="birthday-seal">With love from the GIC family</div></section>}
+    {!loading && birthday && <section className="birthday-page-card">
+      <div className="birthday-celebration" aria-hidden="true">
+        <span className="birthday-glow" />
+        <span className="birthday-orbit birthday-orbit-one" />
+        <span className="birthday-orbit birthday-orbit-two" />
+        <div className="birthday-confetti">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
+      </div>
+      {birthday.avatar ? <img className="birthday-avatar" src={birthday.avatar} alt="" /> : <div className="birthday-avatar birthday-avatar-fallback">{birthday.name.charAt(0)}</div>}
+      <span className="eyebrow">A message just for you</span>
+      <h1>{birthday.title}</h1>
+      <p className="birthday-message">{birthday.message}</p>
+      <p className="birthday-blessing"><span>Our prayer for you</span>{birthday.blessing}</p>
+      <div className="birthday-seal">With love from the GIC family</div>
+    </section>}
     {!loading && !birthday && <div className="empty"><h2>This birthday message is private</h2><p>There is no birthday celebration available today.</p><Link className="btn primary wide" to="/announcements">Back to Announcements</Link></div>}
   </MemberShell>
 }
 
 function AnnouncementDetails() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { refreshUnreadCount } = useNotificationCount()
+  const refreshUnreadCountRef = useRef(refreshUnreadCount)
+  refreshUnreadCountRef.current = refreshUnreadCount
   const [announcement, setAnnouncement] = useState(null)
   useEffect(() => {
+    let active = true
     fetchMemberApi('/api/notifications')
-      .then(({ items = [] }) => {
+      .then(async ({ items = [] }) => {
         const notification = items.find((item) => item.id === id)
-        fetchMemberApi(`/api/notifications/${id}/read`, { method: 'PATCH' }).then(() => refreshUnreadCount()).catch(() => {})
-        if (notification) setAnnouncement({
+        if (!notification) {
+          if (active) setAnnouncement({ missing: true })
+          return
+        }
+        const destinationExists = notification.destinationType === 'internal_route'
+          || notification.destinationType === 'media_page'
+          || Boolean(notification.destinationUrl)
+        if (destinationExists) {
+          const { destinationType, route } = await fetchMemberApi(`/api/notifications/tap/${encodeURIComponent(id)}`)
+          if (!active) return
+          await refreshUnreadCountRef.current()
+          const safeRoute = validateMemberRoute(route)
+          if (destinationType === 'media_page' && safeRoute === `/notification/${id}`) {
+            navigate(safeRoute, { replace: true })
+          } else if (destinationType === 'internal_route') {
+            navigate(safeRoute || '/home', { replace: true })
+          } else {
+            navigate('/home', { replace: true })
+          }
+          return
+        }
+        await fetchMemberApi(`/api/notifications/${id}/read`, { method: 'PATCH' }).catch(() => {})
+        if (!active) return
+        await refreshUnreadCountRef.current()
+        setAnnouncement({
           id: notification.id,
-          category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
+          category: notification.type === 'MINISTRY_UPDATE' ? 'Units' : 'General',
           title: notification.title,
           date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
           body: [notification.body],
         })
       })
-      .catch(() => {})
-  }, [id])
-  const sundayServiceCopy = getSundayServiceCopy()
-
+      .catch(() => { if (active) setAnnouncement({ missing: true }) })
+    return () => { active = false }
+  }, [id, navigate])
   if (!announcement) return <MemberShell active="home" title="Announcement" backTo="/announcements"><p className="center muted">Loading announcement...</p></MemberShell>
+  if (announcement.missing) return <MemberShell active="home" title="Announcement" backTo="/announcements"><p className="center muted">This announcement is unavailable.</p></MemberShell>
 
   return <MemberShell active="home" title="Announcement" backTo="/announcements">
     <div className="detail-body">
@@ -1436,10 +1511,26 @@ function AnnouncementDetails() {
 
 function EventsPage() {
   const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
+  const [remoteEvents, setRemoteEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    fetchMemberApi('/api/events')
+      .then(({ events: records = [] }) => setRemoteEvents(records.map((event) => ({
+        ...event,
+        date: new Date(event.startsAt).toLocaleDateString(),
+        time: new Date(event.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        image: event.imageUrl || GIC_LOGO,
+      }))))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+  const listedEvents = [...getUpcomingEvents(), ...remoteEvents]
   return <>
     <MemberShell active="events" title="Events" backTo="/home">
       <div className="segmented"><button className="active">Upcoming</button><Link to="/my-registrations">My Events</Link></div>
-      {getUpcomingEvents().map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
+      {loading && <p className="center muted">Loading events...</p>}
+      {!loading && !listedEvents.length && <p className="center muted">No upcoming events.</p>}
+      {listedEvents.map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
     </MemberShell>
     {selectedServiceEvent && <ServiceModal event={selectedServiceEvent} onClose={() => setSelectedServiceEvent(null)} />}
   </>
@@ -1510,23 +1601,37 @@ function ServiceModalLegacyCurrent({ event, onClose }) {
     } catch { setMessage('Reminders require an active signed-in connection.') }
   }
   const addToCalendar = () => {
-    const params = new URLSearchParams({ action: 'TEMPLATE', text: event.title, dates: `${startDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z/${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, details: `Global Impact Church service (${TIME_ZONE}).`, location: serviceEvent.location })
-    const calendarUrl = `https://calendar.google.com/calendar/render?${params.toString()}`
-    if (window.open(calendarUrl, '_blank', 'noopener,noreferrer')) {
-      setMessage('Opening your calendar…')
-      return
-    }
-    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Global Impact Church//GIC//EN', 'BEGIN:VEVENT', `UID:${event.id}-${occurrenceKey}`, `DTSTART:${startDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, `DTEND:${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, `SUMMARY:${event.title}`, `LOCATION:${serviceEvent.location}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n')
-    const blobUrl = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
+    const title = event.title || 'Service'
+    const start = startDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const end = endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Global Impact Church//GIC//EN',
+      'BEGIN:VEVENT',
+      `UID:${event.id}-${startDate.toISOString()}`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${title}`,
+      `LOCATION:${serviceEvent.location}`,
+      `DESCRIPTION:${title} at Global Impact Church. Reminders: ${activeReminders.length ? activeReminders.join(', ') + ' minutes before' : 'No reminders selected'}.`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ]
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = blobUrl
+    link.href = url
     link.download = `${event.id}-service.ics`
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(blobUrl)
+    link.remove()
+    URL.revokeObjectURL(url)
     setMessage('Calendar app unavailable; calendar file downloaded.')
   }
 
-  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(eventClick) => eventClick.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(startDate)}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
+  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(startDate)}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
 }
 
 function ServiceModalLegacy({ event, onClose }) {
@@ -1555,8 +1660,9 @@ function ServiceModalLegacy({ event, onClose }) {
     try {
       await Promise.all(reminderOptions.map((minutes) => {
         const scheduledFor = new Date(startDate.getTime() - minutes * 60000)
-        if (activeReminders.includes(minutes)) return fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
-        return fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
+        return activeReminders.includes(minutes)
+          ? fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
+          : fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
       }))
       setReminderMessage(activeReminders.length ? 'Reminder saved.' : 'Reminders removed.')
     } catch { setReminderMessage('Reminders require an active signed-in connection.') }
@@ -1593,34 +1699,78 @@ function ServiceModalLegacy({ event, onClose }) {
     setCalendarMessage('Calendar invite downloaded. Your device may show it in the default calendar app.')
   }
 
-  return <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><div className="service-modal-header"><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2></div><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'short', day: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label></div><div className="service-modal-actions"><button type="button" className="btn primary wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{calendarMessage && <p className="center muted">{calendarMessage}</p>}</div></div>
+  return <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><div className="service-modal-header"><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2></div><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'short', day: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{calendarMessage && <p className="center muted">{calendarMessage}</p>}</div></div>
 }
 
 function EventDetails() {
-  const { id } = useParams(); const e = events.find(x => x.id === id) || events[0]
+  const { id } = useParams()
+  const staticEvent = events.find(x => x.id === id)
+  const [remoteEvent, setRemoteEvent] = useState(null)
+  const [registration, setRegistration] = useState(null)
+  const [loading, setLoading] = useState(!staticEvent)
+  useEffect(() => {
+    if (staticEvent) return
+    fetchMemberApi(`/api/events/${id}`).then(({ event: record, registration: currentRegistration }) => {
+      setRegistration(currentRegistration)
+      setRemoteEvent({
+      ...record,
+      date: new Date(record.startsAt).toLocaleDateString(),
+      time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      image: record.imageUrl || GIC_LOGO,
+      })
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [id, staticEvent])
+  if (loading) return <MemberShell active="events" title="Event" backTo="/events"><p className="center muted">Loading event...</p></MemberShell>
+  const e = remoteEvent || staticEvent || events[0]
   if (e.isService) {
     const service = getServiceDisplay(e)
     return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p></div></MemberShell>
   }
-  const isRegistered = Boolean(localStorage.getItem(`gic_registration_${e.id}`))
-  return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
+  const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
+  return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{!e.registrationRequired ? <p className="muted">Registration is not required for this event.</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
 }
 
 function EventRegistration() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const event = events.find((item) => item.id === id) || events[0]
-  const memberName = localStorage.getItem('gic_member_name') || ''
-  const email = localStorage.getItem('gic_member_email') || ''
-  const phone = localStorage.getItem('gic_member_phone') || ''
-  const handleSubmit = (submitEvent) => {
+  const staticEvent = events.find((item) => item.id === id)
+  const [event, setEvent] = useState(staticEvent)
+  const [pickupLocationId, setPickupLocationId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [profile, setProfile] = useState(null)
+  useEffect(() => {
+    Promise.all([
+      staticEvent ? Promise.resolve({ event: staticEvent, registration: null }) : fetchMemberApi(`/api/events/${id}`),
+      fetchMemberApi('/api/auth/profile'),
+    ]).then(([eventResponse, profileResponse]) => {
+      if (!staticEvent) {
+        const record = eventResponse.event
+        setEvent({ ...record, date: new Date(record.startsAt).toLocaleDateString(), time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), image: record.imageUrl || GIC_LOGO })
+      }
+      setProfile(profileResponse.profile)
+    }).catch((requestError) => setError(requestError.message || 'Event registration is unavailable.'))
+  }, [id, staticEvent])
+  if (!event) return <MemberShell active="events" title="Register for Event" backTo="/events"><p className="center muted">{error || 'Loading event...'}</p></MemberShell>
+  const memberName = profile?.name || localStorage.getItem('gic_member_name') || ''
+  const email = profile?.email || localStorage.getItem('gic_member_email') || ''
+  const phone = profile?.phone || localStorage.getItem('gic_member_phone') || ''
+  const selectedPickup = (event.pickupLocations || []).find((pickup) => pickup.id === pickupLocationId)
+  const handleSubmit = async (submitEvent) => {
     submitEvent.preventDefault()
-    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({
-      eventId: event.id,
-      registeredAt: new Date().toISOString(),
-      name: memberName,
-      event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image }
-    }))
+    setError('')
+    if (!staticEvent) {
+      setSaving(true)
+      try {
+        await fetchMemberApi(`/api/events/${event.id}/registrations`, { method: 'POST', body: JSON.stringify({ pickupLocationId: pickupLocationId || null }) })
+      } catch (requestError) {
+        setError(requestError.message || 'Registration could not be completed.')
+        setSaving(false)
+        return
+      }
+      setSaving(false)
+    }
+    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image } }))
     navigate(`/events/${event.id}/success`)
   }
 
@@ -1633,15 +1783,20 @@ function EventRegistration() {
         <Field label="Email Address" value={email} icon={Mail} />
         <Field label="Phone Number" value={phone} icon={Phone} />
       </div>
+       {event.busTransportEnabled && <><label className="field"><span>BUS PICKUP LOCATION</span><select value={pickupLocationId} onChange={(submitEvent) => setPickupLocationId(submitEvent.target.value)} required><option value="">Choose a pickup location</option>{(event.pickupLocations || []).map((pickup) => <option key={pickup.id} value={pickup.id}>{pickup.locationName} · {pickup.addressLandmark} · {new Date(pickup.pickupTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {pickup.capacity} seats</option>)}</select></label>{selectedPickup&&<div className="pickup-contact-card"><b>{selectedPickup.locationName}</b><span>{selectedPickup.addressLandmark}</span><span>Pickup time: {new Date(selectedPickup.pickupTime).toLocaleString()}</span>{selectedPickup.managerName&&<span>Pickup manager: {selectedPickup.managerName} · <a href={`tel:${selectedPickup.managerPhone}`}>{selectedPickup.managerPhone}</a></span>}</div>}</>}
       <label className="check registration-terms"><input type="checkbox" defaultChecked required /> I agree to the event <u>terms and conditions</u></label>
-      <button type="submit" className="btn primary wide registration-submit">Confirm Registration <ChevronRight size={17} /></button>
+       {error && <p className="auth-error" role="alert">{error}</p>}
+       <button type="submit" className="btn primary wide registration-submit" disabled={saving}>{saving ? 'Registering...' : 'Confirm Registration'} <ChevronRight size={17} /></button>
     </form>
   </MemberShell>
 }
 
 function RegistrationSuccess() {
   const { id } = useParams()
-  const event = events.find((item) => item.id === id) || events[0]
+  const [storedEvent] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`gic_registration_${id}`) || 'null')?.event || null } catch { return null }
+  })
+  const event = events.find((item) => item.id === id) || storedEvent || events[0]
   const [calendarAdded, setCalendarAdded] = useState(false)
   const handleAddToCalendar = () => {
     const calendarEvent = [
@@ -1696,10 +1851,15 @@ function PrayerRequest() {
 function MinistriesPage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const [selectedNames, setSelectedNames] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
-  const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
+  const [memberMinistries, setMemberMinistries] = useState([])
+  const selectedMinistries = memberMinistries.map((item) => {
+    const fallback = ministries.find((ministry) => ministry.title.toLowerCase() === item.name.toLowerCase())
+    return { ...fallback, id: item.id, title: item.name, desc: fallback?.desc || 'Serve and grow with this church ministry.', image: fallback?.image }
+  })
   const [applications, setApplications] = useState([])
 
   useEffect(() => {
+    fetchMemberApi('/api/groups/profile/memberships').then(({ ministries: items = [] }) => setMemberMinistries(items)).catch(() => {})
     fetchMemberApi('/api/ministry-applications')
       .then((response) => {
         const records = response.applications || []
@@ -1716,46 +1876,111 @@ function MinistriesPage() {
 
   const pendingMinistries = new Set(applications.filter((application) => application.status === 'PENDING').map((application) => application.ministry))
 
-  return <MemberShell active="ministries" title="My Ministries" backTo="/home">
+  return <MemberShell active="ministries" title="My Units" backTo="/home">
     <p className="ministries-subtitle"></p>
     {pendingMinistries.size > 0 && <section className="ministries-list"><b>Pending requests</b>{[...pendingMinistries].map((name) => { const ministry = ministries.find((item) => item.title === name); return ministry ? <div className="ministry-row" key={`pending-${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>Pending approval</small></div><span className="badge blue">Pending</span></div> : null })}</section>}
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>You have been blessed to be a blessing. Come serve the Lord and make impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a ministry? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
+    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all units</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined a unit yet.</p><small>You have been blessed to be a blessing. Come serve the Lord and make impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a unit? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
   </MemberShell>
 }
 
 function MinistryDirectory() {
+  const [directory, setDirectory] = useState(ministries)
   const [approvedMinistries, setApprovedMinistries] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
+  const [directoryError, setDirectoryError] = useState('')
 
   useEffect(() => {
-    fetchMemberApi('/api/ministry-applications')
-      .then((response) => {
-        const approved = response.applications?.filter((application) => application.status === 'APPROVED').map((application) => application.ministry) || []
+    Promise.all([fetchMemberApi('/api/groups/ministries'), fetchMemberApi('/api/ministry-applications')])
+      .then(([groupData, applicationData]) => {
+        const approved = applicationData.applications?.filter((application) => application.status === 'APPROVED').map((application) => application.ministry) || []
         setApprovedMinistries((current) => [...new Set([...current, ...approved])])
-      })
-      .catch(() => {})
+        setDirectory((groupData.ministries || []).map((item) => {
+          const fallback = ministries.find((entry) => entry.title.toLowerCase() === item.name.toLowerCase())
+          return { ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.', joined: item.joined, applicationStatus: item.applicationStatus, applicationRequired: item.applicationRequired }
+        }))
+      }).catch(() => {})
   }, [])
 
-  return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
-    <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
-    <div className="directory-list">{ministries.map((ministry) => <article className="directory-card" key={ministry.id}>
-      <img src={ministry.image} alt="" />
+  const toggleDirectMembership = async (ministry) => {
+    try {
+      const path = `/api/groups/ministries/${ministry.id}/join`
+      await fetchMemberApi(path, { method: ministry.joined ? 'DELETE' : 'POST' })
+      const { ministries: items = [] } = await fetchMemberApi('/api/groups/ministries')
+      setDirectory(items.map((item) => {
+        const fallback = ministries.find((entry) => entry.title.toLowerCase() === item.name.toLowerCase())
+        return { ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.', joined: item.joined, applicationStatus: item.applicationStatus, applicationRequired: item.applicationRequired }
+      }))
+    } catch (error) { setDirectoryError(error.message || 'Membership could not be updated.') }
+  }
+  const withdrawApplication = async (ministry) => {
+    try {
+      await fetchMemberApi(`/api/ministry-applications/${ministry.applicationId}`, { method: 'DELETE' })
+      const { ministries: items = [] } = await fetchMemberApi('/api/groups/ministries')
+      setDirectory(items.map((item) => {
+        const fallback = ministries.find((entry) => entry.title.toLowerCase() === item.name.toLowerCase())
+        return { ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.', joined: item.joined, applicationStatus: item.applicationStatus, applicationId: item.applicationId, applicationRequired: item.applicationRequired }
+      }))
+    } catch (error) { setDirectoryError(error.message || 'Application could not be withdrawn.') }
+  }
+
+  return <MemberShell active="ministries" title="Browse Units" backTo="/ministries">
+    <p className="ministries-subtitle">Find a unit where you can serve and make an impact.</p>
+    <Link className="btn secondary wide" to="/cells">Browse Fellowships</Link>
+    {directoryError && <p role="alert">{directoryError}</p>}
+    <div className="directory-list">{directory.map((ministry) => <article className="directory-card" key={ministry.id}>
+      {ministry.image && <img src={ministry.image} alt="" />}
       <div className="directory-card-body">
         <h2>{ministry.title}</h2>
         <p>{ministry.desc}</p>
         <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
-        {approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
+        {ministry.joined || approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : ministry.applicationStatus === 'pending' ? <button className="btn secondary wide" onClick={() => withdrawApplication(ministry)}>Withdraw pending application</button> : !ministry.applicationRequired ? <button className="btn primary wide" onClick={() => toggleDirectMembership(ministry)}>Join unit</button> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to unit</Link>}
       </div>
     </article>)}</div>
+  </MemberShell>
+}
+
+function CellsPage() {
+  const [cells, setCells] = useState([])
+  const [error, setError] = useState('')
+  const load = () => fetchMemberApi('/api/groups/cells').then(({ cells: items = [] }) => setCells(items)).catch((requestError) => setError(requestError.message || 'Fellowships could not be loaded.'))
+  useEffect(() => { load() }, [])
+  const join = async (cell) => {
+    setError('')
+    try {
+      if (cell.joined) await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'DELETE' })
+      else await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'POST' })
+      await load()
+    } catch (requestError) { setError(requestError.message || 'Membership could not be updated.') }
+  }
+  const withdraw = async (cell) => {
+    try {
+      await fetchMemberApi(`/api/ministry-applications/${cell.applicationId}`, { method: 'DELETE' })
+      await load()
+    } catch (requestError) { setError(requestError.message || 'Application could not be withdrawn.') }
+  }
+  return <MemberShell active="ministries" title="Fellowships" backTo="/ministries/browse">
+    <p className="ministries-subtitle">Join a fellowship that fits your profile.</p>
+    {error && <p role="alert">{error}</p>}
+    <div className="directory-list">{cells.map((cell) => <article className="directory-card" key={cell.id}><div className="directory-card-body"><h2>{cell.name}</h2><p>{cell.description || 'Connect with members in this fellowship.'}</p>{!cell.eligible && <p className="profile-form-help">Your profile does not currently meet this group&apos;s eligibility requirements.</p>}{cell.eligibilityReviewRequired && <p className="profile-form-help">Your membership is awaiting an eligibility review.</p>}{cell.applicationStatus === 'pending' && <button className="btn secondary wide" onClick={() => withdraw(cell)}>Withdraw pending application</button>}{cell.joined && <button className="btn member wide" onClick={() => join(cell)}>Leave fellowship</button>}{!cell.joined && cell.applicationStatus !== 'pending' && <button className="btn primary wide" disabled={!cell.eligible} onClick={() => join(cell)}>{cell.applicationRequired ? 'Apply to join' : 'Join fellowship'}</button>}</div></article>)}</div>
+    {!cells.length && !error && <div className="empty"><h2>No fellowships are available</h2></div>}
   </MemberShell>
 }
 
 function MinistryApplication() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const ministry = ministries.find((item) => item.id === id)
+  const [ministry, setMinistry] = useState(() => ministries.find((item) => item.id === id) || null)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+
+  useEffect(() => {
+    fetchMemberApi('/api/groups/ministries').then(({ ministries: items = [] }) => {
+      const item = items.find((candidate) => candidate.id === id)
+      if (!item) return
+      const fallback = ministries.find((candidate) => candidate.title.toLowerCase() === item.name.toLowerCase())
+      setMinistry({ ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.' })
+    }).catch(() => {})
+  }, [id])
 
   if (!ministry) return <Navigate to="/ministries/browse" replace />
 
@@ -1766,45 +1991,65 @@ function MinistryApplication() {
       await fetchMemberApi('/api/ministry-applications', {
         method: 'POST',
         body: JSON.stringify({
-          ministry: ministry.title,
+          ...(ministry.id.length === 36 ? { ministryId: ministry.id } : { ministry: ministry.title }),
           message,
           memberName: localStorage.getItem('gic_member_name') || '',
         }),
       })
       setSubmitted(true)
     } catch (error) {
-      setMessage(error.message || 'This ministry request could not be submitted.')
+      setMessage(error.message || 'This unit request could not be submitted.')
     } finally {
       setBusy(false)
     }
   }
 
-  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application being processed</h2><p>Your application to serve in {ministry.title} has been sent and is being processed by the GIC team.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
+  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application being processed</h2><p>Your application to serve in {ministry.title} has been sent and is being processed by the GIC team.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Units</button></div></MemberShell>
 
   return <MemberShell active="ministries" title="Apply to serve" backTo="/ministries/browse">
-    <div className="detail-body"><span className="eyebrow">Ministry application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
+    <div className="detail-body"><span className="eyebrow">Unit application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
   </MemberShell>
 }
 
 function MinistryDetails() {
   const { id } = useParams()
-  const ministry = ministries.find((item) => item.id === id) || ministries[0]
+  const [ministry, setMinistry] = useState(() => ministries.find((item) => item.id === id) || ministries[0])
   const [tab, setTab] = useState('about')
 
-  return <MemberShell active="ministries" title={ministry.title} backTo="/ministries"><div className="ministry-cover" style={{ backgroundImage: `url(${ministry.image})` }}><h1>{ministry.title.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.title}</h2><p>{ministry.desc}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this ministry</b><p>{ministry.title} is a community of people growing in faith, serving with purpose, and making a meaningful impact together. Find your place, build relationships, and use your gifts to serve.</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <><div className="upcoming-box"><b>Upcoming Meeting</b><span><CalendarDays size={14} /> Friday, 24 May 2024 · 6:00 PM</span><span><MapPin size={14} /> Youth Hall</span></div><div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this ministry will appear here.</span></div></>}</div></MemberShell>
+  useEffect(() => {
+    fetchMemberApi('/api/groups/ministries').then(({ ministries: items = [] }) => {
+      const item = items.find((candidate) => candidate.id === id)
+      if (!item) return
+      const fallback = ministries.find((candidate) => candidate.title.toLowerCase() === item.name.toLowerCase())
+      setMinistry({ ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.' })
+    }).catch(() => {})
+  }, [id])
+
+  return <MemberShell active="ministries" title={ministry.title} backTo="/ministries"><div className="ministry-cover" style={{ backgroundImage: `url(${ministry.image})` }}><h1>{ministry.title.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.title}</h2><p>{ministry.desc}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this unit</b><p>{ministry.title} is a community of people growing in faith, serving with purpose, and making a meaningful impact together. Find your place, build relationships, and use your gifts to serve.</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <><div className="upcoming-box"><b>Upcoming Meeting</b><span><CalendarDays size={14} /> Friday, 24 May 2024 · 6:00 PM</span><span><MapPin size={14} /> Youth Hall</span></div><div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this unit will appear here.</span></div></>}</div></MemberShell>
+}
+
+function formatBirthday(value) {
+  const birthday = String(value || '').replace(/^\d{4}-/, '')
+  const match = birthday.match(/^(\d{2})-(\d{2})$/)
+  if (!match) return ''
+  return new Date(2000, Number(match[1]) - 1, Number(match[2])).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
 }
 
 function Profile() {
   const navigate = useNavigate()
   const memberName = localStorage.getItem('gic_member_name') || 'David'
   const avatar = localStorage.getItem('gic_member_avatar')
+  const [groups, setGroups] = useState({ ministries: [], cells: [], fellowships: [] })
+  useEffect(() => { fetchMemberApi('/api/groups/profile/memberships').then((payload) => setGroups({ ministries: payload.ministries || [], cells: payload.cells || payload.fellowships || [], fellowships: payload.fellowships || payload.cells || [] })).catch(() => {}) }, [])
   const profileDetails = [
     ['Phone Number', localStorage.getItem('gic_member_phone') || 'Add info', Phone],
     ['Email Address', localStorage.getItem('gic_member_email') || 'Add info', Mail],
-    ['Ministries', localStorage.getItem('gic_member_ministries') || 'Add info', Users],
+    ['Gender', localStorage.getItem('gic_member_gender') || 'Not provided', User],
     ['Center', localStorage.getItem('gic_member_center') || 'Add info', MapPin],
     ['Preferred Service Time', localStorage.getItem('gic_member_service_time') || 'Add info', Clock3],
-    ['Birthday', localStorage.getItem('gic_member_birthday') || 'Add info', CalendarDays],
+    ['Birthday', formatBirthday(localStorage.getItem('gic_member_birthday')) || 'Add info', CalendarDays],
+    ['Age group', localStorage.getItem('gic_member_age_group') || 'Add info', Users],
+    ['Relationship status', localStorage.getItem('gic_member_relationship_status') || 'Add info', Heart],
     ['New member?', localStorage.getItem('gic_membership_status') || 'Add info', ShieldCheck],
     ...(localStorage.getItem('gic_member_joined_year') ? [['Member since', [localStorage.getItem('gic_member_joined_month') && new Date(2000, Number(localStorage.getItem('gic_member_joined_month')) - 1).toLocaleString('en-US', { month: 'long' }), localStorage.getItem('gic_member_joined_year')].filter(Boolean).join(' '), CalendarDays]] : []),
   ]
@@ -1838,6 +2083,8 @@ function Profile() {
       </div>
     </section>
 
+    <section className="profile-details"><div className="profile-details-head"><div><b>Units & Fellowships</b><small>Your current church groups</small></div><Link to="/ministries">View</Link></div><div className="profile-detail-grid"><div><Users size={15}/><span><small>Units</small><b>{groups.ministries?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Fellowships</small><b>{(groups.fellowships || groups.cells)?.map((item) => item.name).join(', ') || 'None'}</b></span></div></div></section>
+
     <div className="profile-menu">
       <button
         onClick={handleReauth}
@@ -1867,37 +2114,93 @@ function EditProfile() {
   const [name, setName] = useState(localStorage.getItem('gic_member_name') || '')
   const [phone, setPhone] = useState(localStorage.getItem('gic_member_phone') || '')
   const [email, setEmail] = useState(localStorage.getItem('gic_member_email') || '')
-  const [ministriesValue, setMinistriesValue] = useState(() => {
-    const savedMinistries = localStorage.getItem('gic_member_ministries') || ''
-    return savedMinistries ? savedMinistries.split(',').map((ministry) => ministry.trim()).filter(Boolean) : []
-  })
   const [center, setCenter] = useState(localStorage.getItem('gic_member_center') || '')
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
-  const [birthday, setBirthday] = useState(localStorage.getItem('gic_member_birthday') || '')
+  const storedBirthday = (localStorage.getItem('gic_member_birthday') || '').replace(/^\d{4}-/, '')
+  const storedGender = localStorage.getItem('gic_member_gender') || ''
+  const [birthdayMonth, setBirthdayMonth] = useState(storedBirthday.slice(0, 2))
+  const [birthdayDay, setBirthdayDay] = useState(storedBirthday.slice(3, 5))
+  const [ageGroups, setAgeGroups] = useState([])
+  const [ageGroupsLoading, setAgeGroupsLoading] = useState(true)
+  const [ageGroupsError, setAgeGroupsError] = useState('')
+  const [ageGroupId, setAgeGroupId] = useState(localStorage.getItem('gic_member_age_group_id') || '')
+  const [relationshipStatus, setRelationshipStatus] = useState(localStorage.getItem('gic_member_relationship_status') || '')
+  const [gender, setGender] = useState(['male', 'female'].includes(storedGender) ? storedGender : '')
   const [membershipStatus, setMembershipStatus] = useState(localStorage.getItem('gic_membership_status') || '')
   const [joinedMonth, setJoinedMonth] = useState(localStorage.getItem('gic_member_joined_month') || '')
   const [joinedYear, setJoinedYear] = useState(localStorage.getItem('gic_member_joined_year') || '')
   const [avatar, setAvatar] = useState(localStorage.getItem('gic_member_avatar') || '')
   const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const loadAgeGroups = async () => {
+    setAgeGroupsLoading(true)
+    setAgeGroupsError('')
+    try {
+      const { ageGroups: options = [] } = await fetchMemberApi('/api/auth/profile/options')
+      setAgeGroups(options)
+    } catch (error) {
+      setAgeGroupsError(error.message || 'Age groups could not be loaded.')
+      setAgeGroups([])
+    } finally {
+      setAgeGroupsLoading(false)
+    }
+  }
+  useEffect(() => {
+    let cancelled = false
+    const hydrateProfile = async () => {
+      try {
+        const { profile } = await fetchMemberApi('/api/auth/profile')
+        if (cancelled || !profile) return
+        storeMemberProfile(profile)
+        setName(profile.name || '')
+        setPhone(profile.phone || '')
+        setEmail(profile.email || '')
+        setCenter(profile.center || '')
+        setServiceTime(profile.serviceTime || '')
+        const birthday = (profile.birthday || '').replace(/^\d{4}-/, '')
+        setBirthdayMonth(birthday.slice(0, 2))
+        setBirthdayDay(birthday.slice(3, 5))
+        setAgeGroupId(profile.ageGroupId || '')
+        setRelationshipStatus(profile.relationshipStatus || '')
+        setGender(['male', 'female'].includes(profile.gender) ? profile.gender : '')
+        setMembershipStatus(profile.membershipStatus || '')
+        setJoinedMonth(profile.joinedMonth ? String(profile.joinedMonth) : '')
+        setJoinedYear(profile.joinedYear ? String(profile.joinedYear) : '')
+        setAvatar(profile.avatar || '')
+      } catch {
+        // Keep the locally cached profile values when the refresh is unavailable.
+      }
+    }
+    hydrateProfile()
+    loadAgeGroups()
+    return () => { cancelled = true }
+  }, [])
+  const birthdayDays = birthdayMonth === '02' ? 29 : ['04', '06', '09', '11'].includes(birthdayMonth) ? 30 : 31
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
   const availableServiceTimes = selectedCenter?.times || []
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!name.trim() || !phone.trim()) return
+    if (saving) return
+    if (!name.trim() || !phone.trim()) {
+      setSaveError('Name and phone number are required before you can continue.')
+      return
+    }
     setSaveError('')
+    setSaving(true)
     try {
-      await performDeviceAuth(name.trim())
       const profileResponse = await fetchMemberApi('/api/auth/profile', {
         method: 'PATCH',
         body: JSON.stringify({
           name: name.trim(),
           phone: phone.trim(),
           email: email.trim(),
-          ministries: localStorage.getItem('gic_member_ministries') || '',
           center,
           serviceTime,
-          birthday,
+          birthday: birthdayMonth && birthdayDay ? `${birthdayMonth}-${birthdayDay}` : '',
+          ageGroupId: ageGroupId || null,
+          relationshipStatus: relationshipStatus || null,
+          gender,
           membershipStatus,
           joinedMonth: joinedMonth ? Number(joinedMonth) : null,
           joinedYear: joinedYear ? Number(joinedYear) : null,
@@ -1905,30 +2208,34 @@ function EditProfile() {
         }),
       })
       const savedProfile = profileResponse.profile
-      localStorage.setItem('gic_member_name', savedProfile.name || '')
-      localStorage.setItem('gic_member_phone', savedProfile.phone || '')
-      localStorage.setItem('gic_member_email', savedProfile.email || '')
-      localStorage.setItem('gic_member_ministries', savedProfile.ministries || '')
-      localStorage.setItem('gic_member_center', savedProfile.center || '')
-      localStorage.setItem('gic_member_service_time', savedProfile.serviceTime || '')
-      localStorage.setItem('gic_member_birthday', savedProfile.birthday || '')
-      localStorage.setItem('gic_membership_status', savedProfile.membershipStatus || '')
-      localStorage.setItem('gic_member_joined_month', savedProfile.joinedMonth || '')
-      localStorage.setItem('gic_member_joined_year', savedProfile.joinedYear || '')
-      if (savedProfile.avatar) localStorage.setItem('gic_member_avatar', savedProfile.avatar)
-      localStorage.setItem('gic_profile_completed', 'true')
+      if (!savedProfile?.profileComplete) {
+        throw new Error('Your profile was not marked complete. Please check your name and phone number and try again.')
+      }
+      storeMemberProfile(savedProfile)
       const notificationReady = !('Notification' in window) || Notification.permission !== 'default'
       if (isStandalonePwa() && notificationReady) {
         localStorage.setItem('gic_onboarding_completed', 'true')
         localStorage.removeItem('gic_onboarding_profile')
         navigate('/home', { replace: true })
       } else if (required || localStorage.getItem('gic_onboarding_profile') === 'true') {
-        navigate('/onboarding?stage=install', { replace: true })
+        const nextStage = !isStandalonePwa()
+          ? 'install'
+          : notificationReady
+            ? 'notifications'
+            : null
+        if (nextStage) navigate(`/onboarding?stage=${nextStage}`, { replace: true })
+        else {
+          localStorage.setItem('gic_onboarding_completed', 'true')
+          localStorage.removeItem('gic_onboarding_profile')
+          navigate('/home', { replace: true })
+        }
       } else {
-        navigate('/profile')
+        navigate('/profile', { replace: true })
       }
     } catch (error) {
       setSaveError(error.message || 'Profile could not be saved. Please try again.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -1941,67 +2248,113 @@ function EditProfile() {
   }
 
   return <MemberShell active="profile" title="Edit Profile" backTo="/profile" lockProfile={required}>
-    <div className="profile-head">
+    <div className="profile-head profile-edit-head">
       <label className="avatar large avatar-picker">
         {avatar ? <img src={avatar} alt="Profile preview" /> : name.slice(0, 2).toUpperCase()}
         <span><Camera size={13} /></span>
         <input type="file" accept="image/*" onChange={handleAvatarChange} />
       </label>
     </div>
-    {required && <p className="auth-inline-error" role="alert">Your account needs a name and phone number before you can continue.</p>}
-    {saveError && <p className="auth-inline-error" role="alert">{saveError}</p>}
-    <form onSubmit={handleSave} className="stack">
-      <label className="field">
-        <span>FULL NAME</span>
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
-      </label>
-      <Field label="Phone Number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
-      <Field label="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
-      <div className="field"><span>MINISTRIES</span><p className="muted">Ministry membership is added after admin approval. Apply from Browse Ministries to request to join.</p></div>
-      <SelectField label="Center You Attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
-        {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
-      </SelectField>
-      <SelectField label="Preferred Service Time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
-        {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
-      </SelectField>
-      <Field label="Birthday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} icon={CalendarDays} />
-      <SelectField label="New member?" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)}>
-        <option value="Yes">Yes</option>
-        <option value="No">No</option>
-      </SelectField>
-      <SelectField label="Month joined (Optional)" value={joinedMonth} onChange={(e) => setJoinedMonth(e.target.value)}>
-        <option value="">I'm not sure</option>
-        {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}
-      </SelectField>
-      <label className="field"><span>YEAR JOINED</span><input type="number" min="1900" max={new Date().getFullYear()} value={joinedYear} onChange={(e) => setJoinedYear(e.target.value)} required={required || !localStorage.getItem('gic_profile_completed')} /></label>
-      <Button type="submit" className="wide">Save Changes & Sync Device</Button>
+    <form onSubmit={handleSave} className="stack profile-form">
+      {required && <p className="profile-form-notice" role="alert">Your account needs a name and phone number before you can continue.</p>}
+      {saveError && <p className="profile-form-notice is-error" role="alert">{saveError}</p>}
+      <section className="profile-form-section">
+        <div className="profile-form-section-head">
+          <span>Personal details</span>
+          <small>Your basic contact information</small>
+        </div>
+        <div className="profile-form-fields">
+          <label className="field">
+            <span>Full name</span>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <Field label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
+          <Field label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
+          <div className="field"><span>Birthday (month and day)</span><div className="form-grid"><SelectField label="Month" value={birthdayMonth} onChange={(event) => { setBirthdayMonth(event.target.value); const maxDay = event.target.value === '02' ? 29 : ['04','06','09','11'].includes(event.target.value) ? 30 : 31; if (Number(birthdayDay) > maxDay) setBirthdayDay('') }}><option value="">Month</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}</SelectField><SelectField label="Day" value={birthdayDay} onChange={(event) => setBirthdayDay(event.target.value)} disabled={!birthdayMonth}><option value="">Day</option>{Array.from({ length: birthdayDays }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{index + 1}</option>)}</SelectField></div></div>
+          <SelectField label="Age group" value={ageGroupId} onChange={(event) => setAgeGroupId(event.target.value)}><option value="">{ageGroupsLoading ? 'Loading age groups...' : ageGroups.length ? 'Select your age group' : 'No age groups available'}</option>{ageGroups.map((group)=><option key={group.id} value={group.id}>{group.name}: {group.minAge}–{group.maxAge ?? '+'}</option>)}</SelectField>
+          {!ageGroupsLoading && ageGroupsError && <div className="field profile-form-help" role="alert">{ageGroupsError} <button type="button" className="text-button" onClick={loadAgeGroups}>Retry</button></div>}
+          <SelectField label="Relationship status" value={relationshipStatus} onChange={(event) => setRelationshipStatus(event.target.value)}><option value="">Select your relationship status</option><option value="Single">Single</option><option value="Married">Married</option></SelectField>
+          <SelectField label="Gender" value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Select gender</option><option value="male">Male</option><option value="female">Female</option></SelectField>
+        </div>
+      </section>
+      <section className="profile-form-section">
+        <div className="profile-form-section-head">
+          <span>Your church details</span>
+          <small>Help us personalize your GIC experience</small>
+        </div>
+        <div className="profile-form-fields">
+          <div className="field"><span></span><p className="profile-form-help"></p><Link to="/ministries"></Link></div>
+          <SelectField label="Center you attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
+            {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
+          </SelectField>
+          <SelectField label="Preferred service time" value={serviceTime} onChange={(e) => setServiceTime(e.target.value)} disabled={!center}>
+            {availableServiceTimes.map((time) => <option key={time} value={time}>{time}</option>)}
+          </SelectField>
+          <SelectField label="New member?" value={membershipStatus} onChange={(e) => setMembershipStatus(e.target.value)}>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </SelectField>
+          <SelectField label="Month joined (optional)" value={joinedMonth} onChange={(e) => setJoinedMonth(e.target.value)}>
+            <option value="">I'm not sure</option>
+            {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}
+          </SelectField>
+          <label className="field">
+            <span>Year joined</span>
+            <input type="number" min="1900" max={new Date().getFullYear()} value={joinedYear} onChange={(e) => setJoinedYear(e.target.value)} required={required || !localStorage.getItem('gic_profile_completed')} />
+          </label>
+        </div>
+      </section>
+      <div className="profile-form-actions">
+        <Button type="submit" className="wide" disabled={saving}>{saving ? 'Saving profile...' : 'Save Changes & Sync Device'}</Button>
+      </div>
     </form>
   </MemberShell>
 }
 
 function MyRegistrations() {
   const [now, setNow] = useState(Date.now())
-  const registrations = events.filter((event) => {
+  const [remoteRegistrations, setRemoteRegistrations] = useState([])
+  useEffect(() => {
+    fetchMemberApi('/api/events/registrations')
+      .then(({ registrations = [] }) => setRemoteRegistrations(registrations))
+      .catch(() => {})
+  }, [])
+  const localRegistrations = events.filter((event) => {
     try {
       return Boolean(localStorage.getItem(`gic_registration_${event.id}`))
     } catch {
       return false
     }
   })
+  const registrations = [...remoteRegistrations.map((registration) => ({
+    id: registration.eventId,
+    title: registration.eventTitle,
+    date: new Date(registration.startsAt).toLocaleDateString(),
+    time: new Date(registration.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    location: registration.location || 'Location to be announced',
+    startAt: registration.startsAt,
+    pickupLocationName: registration.pickupLocationName,
+    pickupLocationAddress: registration.pickupLocationAddress,
+    pickupLocationTime: registration.pickupLocationTime,
+    pickupManagerName: registration.pickupManagerName,
+    pickupManagerPhone: registration.pickupManagerPhone,
+    status: registration.status,
+    image: GIC_LOGO,
+  })), ...localRegistrations.filter((event) => !remoteRegistrations.some((registration) => registration.eventId === event.id))]
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
   return <MemberShell active="events" title="My Events" backTo="/events">
     {registrations.length ? registrations.map((event) => {
-      const remaining = Math.max(0, new Date(`${event.date.replace(/^\w+, /, '')} ${event.time}`).getTime() - now)
+       const remaining = Math.max(0, new Date(event.startAt || `${event.date.replace(/^\w+, /, '')} ${event.time}`).getTime() - now)
       const days = Math.floor(remaining / 86400000)
       const hours = Math.floor((remaining % 86400000) / 3600000)
       const minutes = Math.floor((remaining % 3600000) / 60000)
       const seconds = Math.floor((remaining % 60000) / 1000)
       return <article className="registered-event-card" key={event.id}>
         <div className="registered-event-cover" style={{ backgroundImage: `url(${event.image})` }}><span className="status">Registered</span></div>
-        <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small><div className="countdown"><small>Event starts in</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
+         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':'Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
       </article>
     }) : <div className="events-empty-state">
       <div className="events-empty-illustration" aria-hidden="true">
@@ -2019,13 +2372,76 @@ function MyRegistrations() {
   </MemberShell>
 }
 
+function NotificationTapResolver() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    let active = true
+    const notificationId = new URLSearchParams(location.search).get('notificationId')
+    if (!notificationId || !/^[A-Fa-f0-9-]{16,64}$/.test(notificationId)) {
+      navigate('/home', { replace: true })
+      return () => { active = false }
+    }
+    fetchMemberApi(`/api/notifications/tap/${encodeURIComponent(notificationId)}`)
+      .then(({ destinationType, route }) => {
+        if (!active) return
+        const safeRoute = validateMemberRoute(route)
+        if (destinationType === 'media_page' && safeRoute === `/notification/${notificationId}`) navigate(safeRoute, { replace: true })
+        else navigate(destinationType === 'internal_route' ? safeRoute || '/home' : '/home', { replace: true })
+      })
+      .catch(() => { if (active) navigate('/home', { replace: true }) })
+    return () => { active = false }
+  }, [location.search, navigate])
+  return <div className="app-loading-state"><span className="loading-spinner" aria-hidden="true" /><span>Opening notification…</span></div>
+}
+
+function NotificationMediaPage() {
+  const { id } = useParams()
+  const [media, setMedia] = useState(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
+  useEffect(() => {
+    let active = true
+    fetchMemberApi(`/api/notifications/tap/${encodeURIComponent(id)}/media`)
+      .then(({ media: item }) => { if (active) setMedia(item) })
+      .catch(() => { if (active) setError('This notification media is unavailable.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [id])
+  return <MemberShell active="home" title="Notification" backTo="/home"><section className="notification-media-page">
+    <button type="button" className="notification-media-close" aria-label="Close notification media" onClick={() => navigate('/home', { replace: true })}><X size={20}/></button>
+    {loading && <div className="app-loading-state"><span className="loading-spinner" aria-hidden="true" /><span>Loading media…</span></div>}
+    {error && <div className="empty"><h2>Media unavailable</h2><p>{error}</p><button className="btn primary" onClick={() => navigate('/home', { replace: true })}>Go to Home</button></div>}
+    {media?.mediaType === 'image' && <img src={media.url} alt={media.originalFilename || 'Notification media'} onError={() => setError('This image could not be loaded.')}/>}
+    {media?.mediaType === 'video' && <video src={media.url} controls playsInline preload="metadata" onError={() => setError('This video could not be played.')}/>}
+  </section></MemberShell>
+}
+
+function EventRegistrationAlias() {
+  const { id } = useParams()
+  return <Navigate to={`/events/${id}/register`} replace />
+}
+
 export default function App() {
+  useEffect(() => listenForForegroundMessages((payload) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return
+    navigator.serviceWorker.ready.then((registration) => registration.showNotification(payload?.notification?.title || 'Global Impact Church', {
+      body: payload?.notification?.body || 'You have a new update.',
+      icon: GIC_LOGO,
+      badge: GIC_LOGO,
+      data: { notificationId: payload?.data?.notificationId || '' },
+      tag: payload?.data?.notificationId || 'gic-fcm-foreground',
+    })).catch(() => {})
+  }), [])
   return <NotificationProvider>
     <AudioPlayerProvider>
       <Routes>
         <Route path="/" element={<Welcome />} />
         <Route path="/recover" element={<Recovery />} />
         <Route path="/onboarding" element={<OnboardingFlow />} />
+        <Route path="/notification-open" element={<ProtectedRoute><NotificationTapResolver /></ProtectedRoute>} />
+        <Route path="/notification/:id" element={<ProtectedRoute><NotificationMediaPage /></ProtectedRoute>} />
         <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
         <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
         <Route path="/announcements/birthday" element={<ProtectedRoute><BirthdayPage /></ProtectedRoute>} />
@@ -2033,12 +2449,16 @@ export default function App() {
         <Route path="/events" element={<ProtectedRoute><EventsPage /></ProtectedRoute>} />
         <Route path="/events/:id" element={<ProtectedRoute><EventDetails /></ProtectedRoute>} />
         <Route path="/events/:id/register" element={<ProtectedRoute><EventRegistration /></ProtectedRoute>} />
+        <Route path="/events/:id/registration" element={<ProtectedRoute><EventRegistrationAlias /></ProtectedRoute>} />
         <Route path="/events/:id/success" element={<ProtectedRoute><RegistrationSuccess /></ProtectedRoute>} />
         <Route path="/my-registrations" element={<ProtectedRoute><MyRegistrations /></ProtectedRoute>} />
+        <Route path="/registrations" element={<Navigate to="/my-registrations" replace />} />
+        <Route path="/messages" element={<Navigate to="/announcements" replace />} />
         <Route path="/forms" element={<ProtectedRoute><FormsPage /></ProtectedRoute>} />
         <Route path="/forms/prayer-request" element={<ProtectedRoute><PrayerRequest /></ProtectedRoute>} />
         <Route path="/ministries" element={<ProtectedRoute><MinistriesPage /></ProtectedRoute>} />
         <Route path="/ministries/browse" element={<ProtectedRoute><MinistryDirectory /></ProtectedRoute>} />
+        <Route path="/cells" element={<ProtectedRoute><CellsPage /></ProtectedRoute>} />
         <Route path="/ministries/:id/apply" element={<ProtectedRoute><MinistryApplication /></ProtectedRoute>} />
         <Route path="/ministries/:id" element={<ProtectedRoute><MinistryDetails /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

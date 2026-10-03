@@ -1,0 +1,92 @@
+import React, { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Plus, Search, Users, CalendarDays, ShieldCheck, Building2 } from 'lucide-react'
+import { adminAuth } from './firebase'
+import './admin-organizations.css'
+
+const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
+const typeLabels = { unit: 'Unit', fellowship: 'Fellowship' }
+
+async function organizationApi(path, options = {}) {
+  const user = adminAuth.currentUser
+  if (!user) throw new Error('Admin session is unavailable')
+  const token = await user.getIdToken()
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${token}` } })
+  if (!response.ok) {
+    const body = await response.text().catch(() => 'Request failed')
+    try { throw new Error(JSON.parse(body).error || body) } catch (error) { if (error instanceof SyntaxError) throw new Error(body); throw error }
+  }
+  return response.json()
+}
+
+function OrganizationDirectory() {
+  const navigate = useNavigate()
+  const [items, setItems] = useState([])
+  const [query, setQuery] = useState('')
+  const [type, setType] = useState('all')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [form, setForm] = useState({ name: '', type: 'unit', description: '', applicationRequired: true, eligibleGender: '' })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const load = () => organizationApi('/api/admin/organizations').then(({ organizations = [] }) => setItems(organizations)).catch((err) => setError(err.message))
+  useEffect(() => { load() }, [])
+  const visible = items.filter((item) => (type === 'all' || item.type === type) && `${item.name} ${item.description || ''}`.toLowerCase().includes(query.toLowerCase()))
+  const create = async (event) => {
+    event.preventDefault(); setBusy(true); setError('')
+    try {
+      const cellType = form.type === 'fellowship'
+      const payload = { ...form, eligibilityRules: cellType ? { logic: 'and', conditions: form.eligibleGender ? [{ field: 'gender', operator: 'equals', value: form.eligibleGender }] : [] } : undefined }
+      const { organization } = await organizationApi('/api/admin/organizations', { method: 'POST', body: JSON.stringify(payload) })
+      setCreateOpen(false); setForm({ name: '', type: 'unit', description: '', applicationRequired: true, eligibleGender: '' }); navigate(`/ministries/${organization.id}`)
+    } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+  return <main className="page">
+    <div className="page-head"><div><h1>Units</h1><p>Church units and fellowships</p></div><button className="btn primary" onClick={() => setCreateOpen(true)}><Plus size={15}/> Add organization</button></div>
+    <section className="organization-toolbar"><label className="search"><Search size={15}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search organizations..."/></label><select aria-label="Filter by organization type" value={type} onChange={(event) => setType(event.target.value)}><option value="all">All types</option>{Object.entries(typeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><span>{visible.length} organizations</span></section>
+    {error && <div className="empty-message" role="alert">{error}</div>}
+    <section className="organization-directory">{visible.map((item) => <Link className="organization-card" key={item.id} to={`/ministries/${item.id}`}><div className="organization-card-head"><span className="organization-symbol"><Building2 size={17}/></span><span className={`badge ${item.active ? 'success' : 'gray'}`}>{item.active ? 'Active' : 'Inactive'}</span></div><h2>{item.name}</h2><span className="organization-type">{typeLabels[item.type] || item.type}</span><p>{item.description || 'No description provided.'}</p><div className="organization-card-meta"><span><Users size={14}/>{item.memberCount} members</span><span><ShieldCheck size={14}/>{item.leaders?.length || 0} leaders</span><span><CalendarDays size={14}/>{item.upcomingEventCount} upcoming</span></div></Link>)}{!visible.length && !error && <div className="empty-message">No organizations match this filter.</div>}</section>
+    {createOpen && <div className="quick-modal" role="dialog" aria-modal="true"><form className="quick-modal-card organization-form" onSubmit={create}><div className="quick-modal-head"><div><b>Add organization</b><small>Create a Unit or Fellowship.</small></div><button className="icon-btn" type="button" onClick={() => setCreateOpen(false)} aria-label="Close">×</button></div><label className="form-field">Name<input required maxLength="120" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label className="form-field">Type<select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value, applicationRequired: event.target.value !== 'fellowship' })}>{Object.entries(typeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label className="form-field">Description<textarea rows="3" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })}/></label>{form.type==='fellowship'&&<label className="form-field">Gender eligibility<select value={form.eligibleGender} onChange={(event)=>setForm({...form,eligibleGender:event.target.value})}><option value="">Any gender</option><option value="male">Male members</option><option value="female">Female members</option></select></label>}<label className="organization-check"><input type="checkbox" checked={form.applicationRequired} onChange={(event) => setForm({ ...form, applicationRequired: event.target.checked })}/> Require applications to join</label>{error && <div className="auth-error">{error}</div>}<button className="btn primary" disabled={busy}>{busy ? 'Saving...' : 'Create organization'}</button></form></div>}
+  </main>
+}
+
+function OrganizationDetail() {
+  const { organizationKey = '' } = useParams()
+  const [kind, id] = organizationKey.split('_', 2)
+  const [data, setData] = useState(null)
+  const [members, setMembers] = useState([])
+  const [query, setQuery] = useState('')
+  const [tab, setTab] = useState('Overview')
+  const [memberId, setMemberId] = useState('')
+  const [leaderId, setLeaderId] = useState('')
+  const [leaderRole, setLeaderRole] = useState('Leader')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const load = () => Promise.all([organizationApi(`/api/admin/organizations/${kind}/${id}`), organizationApi('/api/admin/ministry-applications/members')]).then(([detail, memberData]) => { setData(detail); setMembers(memberData.members || []) }).catch((err) => setError(err.message))
+  useEffect(() => { if (kind && id) load() }, [kind, id])
+  const act = async (path, options = {}) => { setError(''); setNotice(''); try { await organizationApi(path, options); setNotice('Changes saved.'); await load() } catch (err) { setError(err.message) } }
+  if (!data) return <main className="page"><div className="empty-message">{error || 'Loading organization...'}</div></main>
+  const { organization, leaders = [], events = [], applications = [] } = data
+  const filteredMembers = data.members.filter((member) => `${member.displayName} ${member.phone || ''} ${member.email || ''}`.toLowerCase().includes(query.toLowerCase()))
+  const base = `/api/admin/organizations/${kind}/${id}`
+  return <main className="page organization-detail-page"><div className="detail-toolbar modern-detail-toolbar"><Link to="/ministries"><ArrowLeft size={16}/> All organizations</Link><span className={`badge ${organization.active ? 'success' : 'gray'}`}>{organization.active ? 'Active' : 'Inactive'}</span></div><div className="organization-detail-title"><div><span className="organization-type">{typeLabels[organization.type] || organization.type}</span><h1>{organization.name}</h1><p>{organization.description || 'No description provided.'}</p></div><div className="organization-detail-stats"><span><b>{data.members.length}</b>Members</span><span><b>{leaders.length}</b>Leaders</span><span><b>{events.filter((event) => new Date(event.startsAt) >= new Date()).length}</b>Upcoming events</span></div></div>
+    <nav className="organization-tabs">{['Overview', 'Members', 'Leaders', 'Events', 'Applications', 'Settings'].map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item}{item === 'Applications' && applications.filter((application) => application.status === 'PENDING').length > 0 ? ` (${applications.filter((application) => application.status === 'PENDING').length})` : ''}</button>)}</nav>
+    {(error || notice) && <div className={error ? 'auth-error' : 'empty-message'} role={error ? 'alert' : 'status'}>{error || notice}</div>}
+    {tab === 'Overview' && <div className="organization-overview"><section className="card"><h2>Organization</h2><dl><div><dt>Type</dt><dd>{typeLabels[organization.type] || organization.type}</dd></div><div><dt>Membership</dt><dd>{organization.applicationRequired ? 'Application required' : 'Direct membership'}</dd></div><div><dt>Created</dt><dd>{organization.createdAt ? new Date(organization.createdAt).toLocaleDateString() : 'Not recorded'}</dd></div><div><dt>Last updated</dt><dd>{organization.updatedAt ? new Date(organization.updatedAt).toLocaleDateString() : 'Not recorded'}</dd></div></dl></section><section className="card"><h2>Leadership</h2>{leaders.length ? leaders.map((leader) => <div className="organization-leader-row" key={leader.id}><span className="avatar">{leader.name.slice(0, 2).toUpperCase()}</span><div><b>{leader.name}</b><small>{leader.role}</small></div></div>) : <p className="muted">No leaders assigned.</p>}</section><section className="card"><h2>Upcoming events</h2>{events.filter((event) => new Date(event.startsAt) >= new Date()).slice(0, 4).map((event) => <Link className="organization-event-row" to={`/events/${event.id}`} key={event.id}><b>{event.title}</b><span>{new Date(event.startsAt).toLocaleString()}</span></Link>)}{!events.some((event) => new Date(event.startsAt) >= new Date()) && <p className="muted">No upcoming events.</p>}</section></div>}
+    {tab === 'Members' && <section className="card organization-panel"><div className="organization-panel-head"><h2>Members ({filteredMembers.length})</h2><label className="search"><Search size={14}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search members..."/></label></div><div className="organization-add-member"><select aria-label="Choose member" value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">Add existing member...</option>{members.filter((person) => !data.members.some((member) => member.id === person.id)).map((person) => <option key={person.id} value={person.id}>{person.displayName} · {person.phone || 'No phone'}</option>)}</select><button className="tool" disabled={!memberId} onClick={() => act(`${base}/members`, { method: 'POST', body: JSON.stringify({ memberId }) }).then(() => setMemberId(''))}>Add member</button></div>{filteredMembers.map((member) => <div className="organization-member-row" key={member.id}><Link to={`/members/${member.id}`}><span className="avatar">{member.displayName.slice(0, 2).toUpperCase()}</span><span><b>{member.displayName}</b><small>{member.phone || member.email || 'No contact details'} · Since {member.membershipCreatedAt ? new Date(member.membershipCreatedAt).toLocaleDateString() : 'date unavailable'}</small></span></Link><span className={`badge ${member.active ? 'success' : 'gray'}`}>{member.active ? 'Active' : 'Inactive'}</span><button className="tool" onClick={() => act(`${base}/members/${member.id}`, { method: 'DELETE' })}>Remove</button></div>)}</section>}
+    {tab === 'Leaders' && <section className="card organization-panel"><h2>Leaders</h2><div className="organization-add-member"><select value={leaderId} onChange={(event) => setLeaderId(event.target.value)} aria-label="Select leader"><option value="">Select member</option>{members.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select><input aria-label="Leadership role" value={leaderRole} onChange={(event) => setLeaderRole(event.target.value)} placeholder="Role, e.g. Coordinator"/><button className="tool" disabled={!leaderId} onClick={() => act(`${base}/leaders`, { method: 'POST', body: JSON.stringify({ memberId: leaderId, role: leaderRole }) }).then(() => setLeaderId(''))}>Assign leader</button></div>{leaders.map((leader) => <div className="organization-member-row" key={leader.id}><Link to={`/members/${leader.id}`}><span className="avatar">{leader.name.slice(0, 2).toUpperCase()}</span><span><b>{leader.name}</b><small>{leader.role} · {leader.phone || 'No phone'}</small></span></Link><button className="tool" onClick={() => act(`${base}/leaders/${leader.id}`, { method: 'DELETE' })}>Remove</button></div>)}</section>}
+    {tab === 'Events' && <section className="card organization-panel"><h2>Events</h2>{events.map((event) => <Link className="organization-event-row" to={`/events/${event.id}`} key={event.id}><b>{event.title}</b><span>{new Date(event.startsAt).toLocaleString()} · {event.location || event.venueName || 'Location not set'} · {event.status}</span></Link>)}{!events.length && <p className="muted">No events are associated with this organization yet.</p>}</section>}
+    {tab === 'Applications' && <section className="card organization-panel"><h2>Applications</h2>{!organization.applicationRequired && <p className="muted">This organization allows direct membership. Applications are not required.</p>}{applications.map((application) => <div className="organization-member-row" key={application.id}><span><b>{application.memberName}</b><small>{application.message || 'No message'} · {new Date(application.createdAt).toLocaleDateString()}</small></span><span className={`badge ${application.status === 'APPROVED' ? 'success' : application.status === 'PENDING' ? 'blue' : 'gray'}`}>{application.status}</span>{application.status === 'PENDING' && <><button className="tool" onClick={() => act(`${base}/applications/${application.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'APPROVED' }) })}>Approve</button><button className="tool" onClick={() => act(`${base}/applications/${application.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'DECLINED' }) })}>Reject</button></>}</div>)}{organization.applicationRequired && !applications.length && <p className="muted">No applications yet.</p>}</section>}
+    {tab === 'Settings' && <OrganizationSettings key={organization.id} organization={organization} onSave={(payload) => act(base, { method: 'PATCH', body: JSON.stringify(payload) })}/>}
+  </main>
+}
+
+function OrganizationSettings({ organization, onSave }) {
+  const [form, setForm] = useState({ name: organization.name, type: organization.type, description: organization.description || '', active: organization.active, applicationRequired: organization.applicationRequired, eligibleGender: organization.eligibilityRules?.conditions?.find((item) => item.field === 'gender')?.value || '' })
+  const submit = (event) => { event.preventDefault(); const isCell = organization.kind === 'cell'; onSave({ name: form.name, type: form.type, description: form.description, active: form.active, applicationRequired: form.applicationRequired, ...(isCell ? { eligibilityRules: { logic: 'and', conditions: form.eligibleGender ? [{ field: 'gender', operator: 'equals', value: form.eligibleGender }] : [] } } : {}) }) }
+  return <form className="card organization-settings" onSubmit={submit}><h2>Organization settings</h2><label className="form-field">Name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required/></label><label className="form-field">Type<select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>{Object.entries(typeLabels).filter(([value]) => (value === 'fellowship') === (organization.kind === 'cell')).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label className="form-field">Description<textarea rows="3" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })}/></label>{organization.kind === 'cell'&&<label className="form-field">Gender eligibility<select value={form.eligibleGender} onChange={(event)=>setForm({...form,eligibleGender:event.target.value})}><option value="">Any gender</option><option value="male">Male members</option><option value="female">Female members</option></select></label>}<label className="organization-check"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })}/> Active</label><label className="organization-check"><input type="checkbox" checked={form.applicationRequired} onChange={(event) => setForm({ ...form, applicationRequired: event.target.checked })}/> Require applications</label><button className="btn primary">Save settings</button></form>
+}
+
+export default function AdminOrganizations() {
+  const { organizationKey } = useParams()
+  return organizationKey ? <OrganizationDetail/> : <OrganizationDirectory/>
+}
