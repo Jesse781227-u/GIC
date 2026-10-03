@@ -1,8 +1,8 @@
 export const DEFAULT_AGE_GROUPS = [
-  { name: "Teenagers", minAge: 13, maxAge: 17 },
-  { name: "Young Adults", minAge: 18, maxAge: 30 },
-  { name: "Adults", minAge: 31, maxAge: 59 },
-  { name: "Seniors", minAge: 60, maxAge: null },
+  { name: "Teenager", minAge: 13, maxAge: 17 },
+  { name: "Young Adult", minAge: 18, maxAge: 25 },
+  { name: "Adult", minAge: 26, maxAge: 59 },
+  { name: "Senior", minAge: 60, maxAge: null },
 ] as const;
 
 export function normalizeBirthday(value: string | null | undefined) {

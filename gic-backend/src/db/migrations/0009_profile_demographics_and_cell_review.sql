@@ -37,9 +37,9 @@ SELECT churches.id, defaults.name, defaults.min_age, defaults.max_age
 FROM churches
 CROSS JOIN (VALUES
   ('Children', 0, 12),
-  ('Teenagers', 13, 17),
-  ('Young Adults', 18, 30),
-  ('Adults', 31, 59),
-  ('Seniors', 60, NULL)
+  ('Teenager', 13, 17),
+  ('Young Adult', 18, 30),
+  ('Adult', 31, 59),
+  ('Senior', 60, NULL)
 ) AS defaults(name, min_age, max_age)
 ON CONFLICT (church_id, name) DO NOTHING;

@@ -31,21 +31,21 @@ test("relation rules are delegated to tenant-scoped membership checks", () => {
 });
 
 test("age-group and relationship rules use explicit profile selections", () => {
-  const member = { ageGroupId: "young-adults", relationshipStatus: "Single" };
-  assert.equal(matchesProfileCondition(member as never, { field: "age_group_id", operator: "equals", value: "young-adults" }), true);
-  assert.equal(matchesProfileCondition(member as never, { field: "age_group_id", operator: "equals", value: "adults" }), false);
+  const member = { ageGroupId: "young-Adult", relationshipStatus: "Single" };
+  assert.equal(matchesProfileCondition(member as never, { field: "age_group_id", operator: "equals", value: "young-Adult" }), true);
+  assert.equal(matchesProfileCondition(member as never, { field: "age_group_id", operator: "equals", value: "Adult" }), false);
   assert.equal(matchesProfileCondition(member as never, { field: "relationship_status", operator: "equals", value: "Single" }), true);
   assert.equal(matchesProfileCondition(member as never, { field: "relationship_status", operator: "equals", value: "Married" }), false);
 });
 
 test("automatic rules combine age group and relationship status", () => {
-  const member = { ageGroupId: "adults", relationshipStatus: "Married" };
+  const member = { ageGroupId: "Adult", relationshipStatus: "Married" };
   assert.equal(matchesGroupRules(member as never, { logic: "and", conditions: [
-    { field: "age_group_id", operator: "equals", value: "adults" },
+    { field: "age_group_id", operator: "equals", value: "Adult" },
     { field: "relationship_status", operator: "equals", value: "Married" },
   ] }), true);
   assert.equal(matchesGroupRules(member as never, { logic: "and", conditions: [
-    { field: "age_group_id", operator: "equals", value: "adults" },
+    { field: "age_group_id", operator: "equals", value: "Adult" },
     { field: "relationship_status", operator: "equals", value: "Single" },
   ] }), false);
 });
