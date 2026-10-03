@@ -5,7 +5,7 @@ import {
   Activity, ChevronDown, ChevronRight, Plus, Search, Filter, Download,
   MoreHorizontal, UserPlus, Send, Bell, CalendarPlus, ClipboardList,
   BarChart3, Shield, Database, Globe, Lock, CheckCircle2,
-  Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut, ImagePlus, ChevronLeft
+  Clock3, Eye, Edit3, Trash2, X, ArrowLeft, Save, Menu, LogOut, ImagePlus, ChevronLeft, MapPin
 } from 'lucide-react'
 import {Link, Routes, Route, useLocation, useNavigate, useParams} from 'react-router-dom'
 import {ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell} from 'recharts'
@@ -545,6 +545,9 @@ function MinistryApplications(){
 function LiveMembers(){
  const [query,setQuery]=useState('')
  const [status,setStatus]=useState('All Statuses')
+ const [page,setPage]=useState(1)
+ const [pageSize]=useState(50)
+ const [total,setTotal]=useState(0)
  const [ministryId,setMinistryId]=useState('')
  const [fellowshipId,setFellowshipId]=useState('')
  const [cellId,setCellId]=useState('')
