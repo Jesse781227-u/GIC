@@ -1600,19 +1600,33 @@ function ServiceModalLegacyCurrent({ event, onClose }) {
     } catch { setMessage('Reminders require an active signed-in connection.') }
   }
   const addToCalendar = () => {
-    const params = new URLSearchParams({ action: 'TEMPLATE', text: event.title, dates: `${startDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z/${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, details: `Global Impact Church service (${TIME_ZONE}).`, location: serviceEvent.location })
-    const calendarUrl = `https://calendar.google.com/calendar/render?${params.toString()}`
-    if (window.open(calendarUrl, '_blank', 'noopener,noreferrer')) {
-      setMessage('Opening your calendar…')
-      return
-    }
-    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Global Impact Church//GIC//EN', 'BEGIN:VEVENT', `UID:${event.id}-${occurrenceKey}`, `DTSTART:${startDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, `DTEND:${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`, `SUMMARY:${event.title}`, `LOCATION:${serviceEvent.location}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n')
-    const blobUrl = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
+    const title = event.title || 'Service'
+    const start = startDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const end = endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Global Impact Church//GIC//EN',
+      'BEGIN:VEVENT',
+      `UID:${event.id}-${startDate.toISOString()}`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${title}`,
+      `LOCATION:${serviceEvent.location}`,
+      `DESCRIPTION:${title} at Global Impact Church. Reminders: ${activeReminders.length ? activeReminders.join(', ') + ' minutes before' : 'No reminders selected'}.`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ]
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.href = blobUrl
+    link.href = url
     link.download = `${event.id}-service.ics`
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(blobUrl)
+    link.remove()
+    URL.revokeObjectURL(url)
     setMessage('Calendar app unavailable; calendar file downloaded.')
   }
 
@@ -2176,7 +2190,7 @@ function EditProfile() {
           <Field label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
           <Field label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
           <div className="field"><span>Birthday (month and day)</span><div className="form-grid"><SelectField label="Month" value={birthdayMonth} onChange={(event) => { setBirthdayMonth(event.target.value); const maxDay = event.target.value === '02' ? 29 : ['04','06','09','11'].includes(event.target.value) ? 30 : 31; if (Number(birthdayDay) > maxDay) setBirthdayDay('') }}><option value="">Month</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}</SelectField><SelectField label="Day" value={birthdayDay} onChange={(event) => setBirthdayDay(event.target.value)} disabled={!birthdayMonth}><option value="">Day</option>{Array.from({ length: birthdayDays }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{index + 1}</option>)}</SelectField></div></div>
-          <SelectField label="Age group" value={ageGroupId} onChange={(event) => setAgeGroupId(event.target.value)}><option value="">{ageGroupsLoading ? 'Loading age groups...' : ageGroups.length ? 'Select your age group' : 'No age groups available'}</option>{ageGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</SelectField>
+          <SelectField label="Age group" value={ageGroupId} onChange={(event) => setAgeGroupId(event.target.value)}><option value="">{ageGroupsLoading ? 'Loading age groups...' : ageGroups.length ? 'Select your age group' : 'No age groups available'}</option>{ageGroups.map((group, index) => <option key={group.id} value={group.id}>{index + 1}. {group.name}: {group.minAge}–{group.maxAge ?? '+'}</option>)}</SelectField>
           {!ageGroupsLoading && ageGroupsError && <div className="field profile-form-help" role="alert">{ageGroupsError} <button type="button" className="text-button" onClick={loadAgeGroups}>Retry</button></div>}
           <SelectField label="Relationship status" value={relationshipStatus} onChange={(event) => setRelationshipStatus(event.target.value)}><option value="">Select your relationship status</option><option value="Single">Single</option><option value="Married">Married</option></SelectField>
           <SelectField label="Gender" value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Select gender</option><option value="male">Male</option><option value="female">Female</option></SelectField>
@@ -2188,7 +2202,7 @@ function EditProfile() {
           <small>Help us personalize your GIC experience</small>
         </div>
         <div className="profile-form-fields">
-          <div className="field"><span></span><p className="profile-form-help"></p><Link to="/ministries">Manage groups</Link></div>
+          <div className="field"><span></span><p className="profile-form-help"></p><Link to="/ministries"></Link></div>
           <SelectField label="Center you attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
             {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
           </SelectField>
