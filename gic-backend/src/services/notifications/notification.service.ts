@@ -45,7 +45,7 @@ export class NotificationService {
     memberId: string;
     title: string;
     body: string;
-    type: "EVENT_REMINDER" | "REGISTRATION_CONFIRMATION";
+    type: "EVENT_REMINDER" | "REGISTRATION_CONFIRMATION" | "REGISTRATION_CANCELLED";
     destinationUrl?: string;
   }) {
     const member = await db.query.members.findFirst({ where: eq(members.id, input.memberId) });

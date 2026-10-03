@@ -75,7 +75,7 @@ export class SchedulingService {
     for (const reminder of dueEventReminders) {
       try {
         const event = await db.query.events.findFirst({ where: eq(events.id, reminder.eventId) });
-        if (event) {
+        if (event && event.status === "PUBLISHED") {
           const registrations = await db.query.eventRegistrations.findMany({
             where: and(eq(eventRegistrations.eventId, event.id), eq(eventRegistrations.status, "CONFIRMED")),
           });
