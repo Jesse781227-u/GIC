@@ -2015,21 +2015,35 @@ function EditProfile() {
   const [center, setCenter] = useState(localStorage.getItem('gic_member_center') || '')
   const [serviceTime, setServiceTime] = useState(localStorage.getItem('gic_member_service_time') || '')
   const storedBirthday = (localStorage.getItem('gic_member_birthday') || '').replace(/^\d{4}-/, '')
+  const storedGender = localStorage.getItem('gic_member_gender') || ''
   const [birthdayMonth, setBirthdayMonth] = useState(storedBirthday.slice(0, 2))
   const [birthdayDay, setBirthdayDay] = useState(storedBirthday.slice(3, 5))
   const [ageGroups, setAgeGroups] = useState([])
+  const [ageGroupsLoading, setAgeGroupsLoading] = useState(true)
+  const [ageGroupsError, setAgeGroupsError] = useState('')
   const [ageGroupId, setAgeGroupId] = useState(localStorage.getItem('gic_member_age_group_id') || '')
   const [relationshipStatus, setRelationshipStatus] = useState(localStorage.getItem('gic_member_relationship_status') || '')
-  const [gender, setGender] = useState(localStorage.getItem('gic_member_gender') || '')
+  const [gender, setGender] = useState(['male', 'female'].includes(storedGender) ? storedGender : '')
   const [membershipStatus, setMembershipStatus] = useState(localStorage.getItem('gic_membership_status') || '')
   const [joinedMonth, setJoinedMonth] = useState(localStorage.getItem('gic_member_joined_month') || '')
   const [joinedYear, setJoinedYear] = useState(localStorage.getItem('gic_member_joined_year') || '')
   const [avatar, setAvatar] = useState(localStorage.getItem('gic_member_avatar') || '')
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
-  useEffect(() => {
-    fetchMemberApi('/api/auth/profile/options').then(({ ageGroups: options = [] }) => setAgeGroups(options)).catch(() => setAgeGroups([]))
-  }, [])
+  const loadAgeGroups = async () => {
+    setAgeGroupsLoading(true)
+    setAgeGroupsError('')
+    try {
+      const { ageGroups: options = [] } = await fetchMemberApi('/api/auth/profile/options')
+      setAgeGroups(options)
+    } catch (error) {
+      setAgeGroupsError(error.message || 'Age groups could not be loaded.')
+      setAgeGroups([])
+    } finally {
+      setAgeGroupsLoading(false)
+    }
+  }
+  useEffect(() => { loadAgeGroups() }, [])
   const birthdayDays = birthdayMonth === '02' ? 29 : ['04', '06', '09', '11'].includes(birthdayMonth) ? 30 : 31
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
   const availableServiceTimes = selectedCenter?.times || []
@@ -2126,9 +2140,10 @@ function EditProfile() {
           <Field label="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234 801 234 5678" icon={Phone} />
           <Field label="Email address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@gic.org" icon={Mail} />
           <div className="field"><span>Birthday (month and day)</span><div className="form-grid"><SelectField label="Month" value={birthdayMonth} onChange={(event) => { setBirthdayMonth(event.target.value); const maxDay = event.target.value === '02' ? 29 : ['04','06','09','11'].includes(event.target.value) ? 30 : 31; if (Number(birthdayDay) > maxDay) setBirthdayDay('') }}><option value="">Month</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{new Date(2000, index, 1).toLocaleString('en-US', { month: 'long' })}</option>)}</SelectField><SelectField label="Day" value={birthdayDay} onChange={(event) => setBirthdayDay(event.target.value)} disabled={!birthdayMonth}><option value="">Day</option>{Array.from({ length: birthdayDays }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, '0')}>{index + 1}</option>)}</SelectField></div></div>
-          <SelectField label="Age group" value={ageGroupId} onChange={(event) => setAgeGroupId(event.target.value)}><option value="">Select your age group</option>{ageGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</SelectField>
+          <SelectField label="Age group" value={ageGroupId} onChange={(event) => setAgeGroupId(event.target.value)}><option value="">{ageGroupsLoading ? 'Loading age groups...' : ageGroups.length ? 'Select your age group' : 'No age groups available'}</option>{ageGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</SelectField>
+          {!ageGroupsLoading && ageGroupsError && <div className="field profile-form-help" role="alert">{ageGroupsError} <button type="button" className="text-button" onClick={loadAgeGroups}>Retry</button></div>}
           <SelectField label="Relationship status" value={relationshipStatus} onChange={(event) => setRelationshipStatus(event.target.value)}><option value="">Select your relationship status</option><option value="Single">Single</option><option value="Married">Married</option></SelectField>
-          <SelectField label="Gender" value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Prefer not to say</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option></SelectField>
+          <SelectField label="Gender" value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Select gender</option><option value="male">Male</option><option value="female">Female</option></SelectField>
         </div>
       </section>
       <section className="profile-form-section">

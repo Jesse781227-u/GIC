@@ -30,7 +30,7 @@ const profileSchema = z.object({
   center: z.string().trim().optional(),
   serviceTime: z.string().trim().optional(),
   birthday: z.string().trim().optional().refine((value) => value === undefined || value === "" || normalizeBirthday(value) !== "", "Birthday must include a valid month and day."),
-  gender: z.enum(["male", "female", "other", "prefer_not_to_say"]).optional(),
+  gender: z.enum(["male", "female"]).or(z.literal("")).optional(),
   ageGroupId: z.string().uuid().nullable().optional(),
   relationshipStatus: z.enum(["Single", "Married"]).nullable().optional(),
   membershipStatus: z.string().trim().optional(),
