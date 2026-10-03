@@ -358,6 +358,16 @@ function Settings(){
   </div>
  </Page>
 }
+function LiveActivityLog(){
+ const [items,setItems]=useState([])
+ const [query,setQuery]=useState('')
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ useEffect(()=>{fetchAdminApi('/api/admin/activity').then(({items:records=[]})=>setItems(records)).catch((requestError)=>setError(requestError.message||'Activity could not be loaded.')).finally(()=>setLoading(false))},[])
+ const visible=items.filter((item)=>`${item.actorName||item.actorId} ${item.action} ${item.target} ${item.metadata||''}`.toLowerCase().includes(query.toLowerCase()))
+ return <Page title="Activity Log" subtitle="Recorded administrator and member actions"><Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search activity..."/></div><span>{visible.length} records</span></div>{loading&&<div className="empty-message">Loading activity...</div>}{error&&<div className="empty-message" role="alert">Activity is unavailable: {error}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No activity records found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{visible.map((item)=><tr key={item.id}><td>{item.createdAt?new Date(item.createdAt).toLocaleString():'—'}</td><td>{item.actorName||item.actorId}</td><td>{item.action}</td><td>{item.target}</td><td>{item.metadata||'—'}</td></tr>)}</tbody></table></div>}</Card></Page>
+}
+
 function ModernEvents(){
   const navigate=useNavigate()
  const [events,setEvents]=useState([])
@@ -367,7 +377,7 @@ function ModernEvents(){
  const [error,setError]=useState('')
  const [createOpen,setCreateOpen]=useState(false)
  const load=()=>fetchAdminApi('/api/admin/events').then(({events:items=[]})=>setEvents(items)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
- useEffect(()=>{load();setCreateOpen(true)},[])
+ useEffect(()=>{load()},[])
   const created=(event)=>{setCreateOpen(false);setLoading(true);load();if(event?.id)navigate(`/events/${event.id}`)}
  const visible=events.filter((event)=>event.title.toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||event.status===status))
  return <Page title="Events" subtitle="Manage church events, registrations, forms, attendance, and reminders" action={<button className="btn primary" onClick={()=>setCreateOpen(true)}><Plus size={15}/> Create Event</button>}>{error&&<Card className="empty-message">Events are unavailable right now.</Card>}<Card className="table-card modern-events-card"><div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>PUBLISHED</option><option>DRAFT</option><option>CANCELLED</option></select><button className="tool"><CalendarDays size={14}/> Calendar</button></div>{loading?<div className="empty-message">Loading events...</div>:visible.length?<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.imageUrl?<img src={event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={18}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{new Date(event.startsAt).toLocaleString()} <span>•</span>{event.location||'Location to be announced'}</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':event.status==='CANCELLED'?'gray':'draft')}>{event.status}</span><ChevronRight size={16}/></Link>)}</div>:<div className="empty"><CalendarDays size={30}/><h2>No matching events</h2><p>Create or publish an event to see it here.</p></div>}{createOpen&&<CreateEventModal onClose={()=>setCreateOpen(false)} onCreated={created}/>}</Card></Page>
