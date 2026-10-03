@@ -464,6 +464,7 @@ function ModernMemberDetails(){
  const [profileNotice,setProfileNotice]=useState('')
  const [savingProfile,setSavingProfile]=useState(false)
  const [deleting,setDeletingId]=useState('')
+ const [deleteError,setDeleteError]=useState('')
  useEffect(()=>{let cancelled=false;fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}`).then(({member:record,groups={},ageGroups:options=[]})=>{if(cancelled)return;setMember(record);setGroupMemberships({ministries:groups.ministries||[],cells:groups.fellowships||groups.cells||[],segments:groups.segments||[]});setAgeGroups(options);setAgeGroupId(record.ageGroupId||'');setRelationshipStatus(record.relationshipStatus||'');setBirthday(record.birthday||'')}).catch(()=>{if(!cancelled)setMember(null)});return()=>{cancelled=true}},[id])
  const saveDemographics=async()=>{setSavingProfile(true);setProfileNotice('');try{const {member:updated}=await fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}/profile`,{method:'PATCH',body:JSON.stringify({ageGroupId:ageGroupId||null,relationshipStatus:relationshipStatus||null,birthday})});setMember(updated);setProfileNotice('Personal information updated.')}catch(error){setProfileNotice(error.message||'Profile update failed.')}finally{setSavingProfile(false)}}
  const deleteMember=async(member)=>{
