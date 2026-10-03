@@ -11,6 +11,9 @@ export const memberAppMinistryCatalog = [
   { name: "Prayer Ministry", description: "Standing together in prayer for the church and community." },
   { name: "Acts Of Mercy", description: "Serving people in need through practical charity and compassion." },
   { name: "Evangelism", description: "Sharing the gospel and helping people encounter the love of Christ." },
+  { name: "Protocol", description: "Supporting church services and events through protocol and coordination." },
+  { name: "Security", description: "Supporting a safe and welcoming environment across church activities." },
+  { name: "Pastors", description: "Pastoral leadership and spiritual care for the church." },
 ] as const;
 
 export async function ensureMemberAppMinistries(churchId: string) {

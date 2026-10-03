@@ -11,7 +11,7 @@ import { flagIneligibleCellMembersForReview, isEligibleForCell } from "../servic
 
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
-const kinds = ["ministry", "unit", "fellowship", "cell", "other"] as const;
+const kinds = ["unit", "fellowship"] as const;
 const inputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   type: z.enum(kinds),
@@ -22,16 +22,16 @@ const inputSchema = z.object({
   eligibilityRules: z.object({ logic: z.enum(["and", "or"]).optional(), conditions: z.array(z.object({ field: z.string(), operator: z.string(), value: z.unknown().optional(), min: z.number().optional(), max: z.number().optional() })).optional() }).optional(),
 });
 
-function isCellType(type: string) { return type === "cell" || type === "fellowship"; }
+function isCellType(type: string) { return type === "fellowship"; }
 function orgKey(kind: string, id: string) { return `${kind}_${id}`; }
 async function getOrganization(churchId: string, kind: string, id: string) {
-  if (kind === "ministry" || kind === "unit" || kind === "other") {
+  if (kind === "ministry" || kind === "unit") {
     const item = await db.query.ministries.findFirst({ where: and(eq(ministries.id, id), eq(ministries.churchId, churchId)) });
-    return item ? { ...item, id: item.id, kind: "ministry", type: item.organizationType } : null;
+    return item ? { ...item, id: item.id, kind: "ministry", type: "unit" } : null;
   }
   if (kind === "cell" || kind === "fellowship") {
     const item = await db.query.cells.findFirst({ where: and(eq(cells.id, id), eq(cells.churchId, churchId)) });
-    return item ? { ...item, id: item.id, kind: "cell", type: item.organizationType } : null;
+    return item ? { ...item, id: item.id, kind: "cell", type: "fellowship" } : null;
   }
   return null;
 }
@@ -57,8 +57,8 @@ app.get("/", async (c) => {
     db.query.events.findMany({ where: and(eq(events.churchId, churchId), gte(events.startsAt, new Date())) }),
   ]);
   const organizations = await Promise.all([
-    ...ministryRows.map(async (item) => ({ ...item, id: orgKey("ministry", item.id), kind: "ministry", type: item.organizationType || "ministry", memberCount: await membershipCount(churchId, "ministry", item.id), leaders: leaderRows.filter((row) => row.organizationKind === "ministry" && row.organizationId === item.id).map((row) => ({ id: row.memberId, name: row.name || "Member", role: row.role })), upcomingEventCount: upcomingRows.filter((event) => event.organizationKind === "ministry" && event.organizationId === item.id).length })),
-    ...cellRows.map(async (item) => ({ ...item, id: orgKey("cell", item.id), kind: "cell", type: item.organizationType || "cell", memberCount: await membershipCount(churchId, "cell", item.id), leaders: leaderRows.filter((row) => row.organizationKind === "cell" && row.organizationId === item.id).map((row) => ({ id: row.memberId, name: row.name || "Member", role: row.role })), upcomingEventCount: upcomingRows.filter((event) => event.organizationKind === "cell" && event.organizationId === item.id).length })),
+    ...ministryRows.map(async (item) => ({ ...item, id: orgKey("ministry", item.id), kind: "ministry", type: "unit", memberCount: await membershipCount(churchId, "ministry", item.id), leaders: leaderRows.filter((row) => row.organizationKind === "ministry" && row.organizationId === item.id).map((row) => ({ id: row.memberId, name: row.name || "Member", role: row.role })), upcomingEventCount: upcomingRows.filter((event) => event.organizationKind === "ministry" && event.organizationId === item.id).length })),
+    ...cellRows.map(async (item) => ({ ...item, id: orgKey("cell", item.id), kind: "cell", type: "fellowship", memberCount: await membershipCount(churchId, "cell", item.id), leaders: leaderRows.filter((row) => row.organizationKind === "cell" && row.organizationId === item.id).map((row) => ({ id: row.memberId, name: row.name || "Member", role: row.role })), upcomingEventCount: upcomingRows.filter((event) => event.organizationKind === "cell" && event.organizationId === item.id).length })),
   ]);
   return c.json({ organizations });
 });

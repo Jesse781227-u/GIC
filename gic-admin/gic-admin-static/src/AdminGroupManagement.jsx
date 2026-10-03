@@ -148,7 +148,7 @@ export default function AdminGroupManagement() {
   }))
 
   return <main className="page">
-    <div className="page-head"><div><h1>Segments</h1><p>Manage audience classifications and age groups independently of church organizations.</p></div><Link className="btn secondary" to="/ministries"><ArrowLeft size={14}/> Ministries</Link></div>
+    <div className="page-head"><div><h1>Segments</h1><p>Manage audience classifications and age groups independently of church organizations.</p></div><Link className="btn secondary" to="/ministries"><ArrowLeft size={14}/> Units</Link></div>
     <div className="tabs big">{[['segments','Segments'],['ageGroups','Age Groups']].map(([value,label]) => <button key={value} className={tab===value?'active':''} onClick={() => {setTab(value);setSelected(null);resetForm()}}>{label}</button>)}</div>
     {error && <div className="empty-message" role="alert">{error}</div>}{notice && <div className="empty-message" role="status">{notice}</div>}
     <div className="grid-2">

@@ -6,6 +6,7 @@ import { cells, cellMemberships, members, ministries, ministryApplications, mini
 import { churchIdForUser } from "../lib/tenant.js";
 import { describeGroupRules } from "../services/member-group-rules.js";
 import { isEligibleForCell, resolveSegmentMemberIds } from "../services/member-groups.service.js";
+import { ensureMemberAppMinistries } from "../services/ministry-catalog.service.js";
 
 const app = new Hono();
 app.use("*", authMiddleware);
@@ -14,6 +15,7 @@ app.get("/ministries", async (c) => {
   const user = c.get("user");
   const churchId = churchIdForUser(user);
   const memberId = user.sub;
+  await ensureMemberAppMinistries(churchId);
   const [groups, memberships, applications] = await Promise.all([
     db.query.ministries.findMany({ where: and(eq(ministries.churchId, churchId), eq(ministries.active, true)) }),
     db.query.ministryMemberships.findMany({ where: and(eq(ministryMemberships.churchId, churchId), eq(ministryMemberships.memberId, memberId)) }),

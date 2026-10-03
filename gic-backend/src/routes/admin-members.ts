@@ -207,10 +207,8 @@ app.get("/", async (c) => {
     page,
     pageSize,
     filters: {
-      ministries: filterOptions[0].filter((item) => (item.organizationType || "ministry") === "ministry").map((item) => ({ id: item.id, name: item.name })),
-      units: filterOptions[0].filter((item) => item.organizationType === "unit").map((item) => ({ id: item.id, name: item.name })),
-      fellowships: filterOptions[1].filter((item) => item.organizationType === "fellowship").map((item) => ({ id: item.id, name: item.name })),
-      cells: filterOptions[1].filter((item) => (item.organizationType || "cell") === "cell").map((item) => ({ id: item.id, name: item.name })),
+      units: filterOptions[0].map((item) => ({ id: item.id, name: item.name })),
+      fellowships: filterOptions[1].map((item) => ({ id: item.id, name: item.name })),
       groups: [...filterOptions[0], ...filterOptions[1]].map((item) => ({ id: item.id, name: item.name })),
       segments: [
         { id: "new-members", name: "New Members", type: "system" },

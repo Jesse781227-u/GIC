@@ -812,7 +812,7 @@ function BottomNav({ active = 'home' }) {
   const items = [
     ['home', 'Home', Home, '/home'],
     ['events', 'Events', CalendarDays, '/events'],
-    ['ministries', 'Ministries', Users, '/ministries'],
+    ['ministries', 'Units', Users, '/ministries'],
     ['profile', 'Profile', User, '/profile'],
   ]
   return <nav className="bottom-nav">{items.map(([id, label, Icon, to]) =>
@@ -1379,7 +1379,7 @@ function Announcements() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [birthday, setBirthday] = useState(null)
-  const categories = ['All', 'General', 'Ministries', 'Notices']
+  const categories = ['All', 'General', 'Units', 'Notices']
   const { setUnreadCount, refreshUnreadCount } = useNotificationCount()
   const sundayServiceCopy = getSundayServiceCopy()
   const markAllAsRead = async () => {
@@ -1392,7 +1392,7 @@ function Announcements() {
     fetchMemberApi('/api/notifications')
       .then(({ items: notifications = [] }) => setItems(notifications.map((notification) => ({
         id: notification.id,
-        category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
+        category: notification.type === 'MINISTRY_UPDATE' ? 'Units' : 'General',
         title: notification.title,
         summary: notification.body,
         date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
@@ -1486,7 +1486,7 @@ function AnnouncementDetails() {
         await refreshUnreadCountRef.current()
         setAnnouncement({
           id: notification.id,
-          category: notification.type === 'MINISTRY_UPDATE' ? 'Ministries' : 'General',
+          category: notification.type === 'MINISTRY_UPDATE' ? 'Units' : 'General',
           title: notification.title,
           date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
           body: [notification.body],
@@ -1876,10 +1876,10 @@ function MinistriesPage() {
 
   const pendingMinistries = new Set(applications.filter((application) => application.status === 'PENDING').map((application) => application.ministry))
 
-  return <MemberShell active="ministries" title="My Ministries" backTo="/home">
+  return <MemberShell active="ministries" title="My Units" backTo="/home">
     <p className="ministries-subtitle"></p>
     {pendingMinistries.size > 0 && <section className="ministries-list"><b>Pending requests</b>{[...pendingMinistries].map((name) => { const ministry = ministries.find((item) => item.title === name); return ministry ? <div className="ministry-row" key={`pending-${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>Pending approval</small></div><span className="badge blue">Pending</span></div> : null })}</section>}
-    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all ministries</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined any ministry yet.</p><small>You have been blessed to be a blessing. Come serve the Lord and make impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a ministry? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
+    {selectedMinistries.length ? <div className="ministries-list">{selectedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><img src={ministry.image} alt="" /><div><b>{ministry.title}</b><small>{pendingMinistries.has(ministry.title) ? 'Application being processed' : ministry.desc}</small></div><ChevronRight size={18} /></Link>)}<Link className="btn secondary wide" to="/ministries/browse">Browse all units</Link></div> : <div className="ministry-empty"><img className="empty-state-image" src="https://i.ibb.co/TBZR7vhL/360-F-488073924-Q1o-PSz-ULLWPDLFof-Tk-Jk8z-OVCa-La9gv8.jpg" alt="People serving together" /><h1>Hey {memberName}</h1><p>You haven't joined a unit yet.</p><small>You have been blessed to be a blessing. Come serve the Lord and make impact with us!</small><Link className="btn primary wide" to="/ministries/browse">I want to serve!</Link><div className="ministry-help"><b>Not sure where to start?</b><span>Need help choosing a unit? <a className="whatsapp-link" href="https://wa.me/2349034147986" target="_blank" rel="noreferrer">WhatsApp +234 903 414 7986</a></span></div></div>}
   </MemberShell>
 }
 
@@ -1922,9 +1922,9 @@ function MinistryDirectory() {
     } catch (error) { setDirectoryError(error.message || 'Application could not be withdrawn.') }
   }
 
-  return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
-    <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
-    <Link className="btn secondary wide" to="/cells">Browse Fellowships & Cells</Link>
+  return <MemberShell active="ministries" title="Browse Units" backTo="/ministries">
+    <p className="ministries-subtitle">Find a unit where you can serve and make an impact.</p>
+    <Link className="btn secondary wide" to="/cells">Browse Fellowships</Link>
     {directoryError && <p role="alert">{directoryError}</p>}
     <div className="directory-list">{directory.map((ministry) => <article className="directory-card" key={ministry.id}>
       {ministry.image && <img src={ministry.image} alt="" />}
@@ -1932,7 +1932,7 @@ function MinistryDirectory() {
         <h2>{ministry.title}</h2>
         <p>{ministry.desc}</p>
         <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
-        {ministry.joined || approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : ministry.applicationStatus === 'pending' ? <button className="btn secondary wide" onClick={() => withdrawApplication(ministry)}>Withdraw pending application</button> : !ministry.applicationRequired ? <button className="btn primary wide" onClick={() => toggleDirectMembership(ministry)}>Join ministry</button> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
+        {ministry.joined || approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : ministry.applicationStatus === 'pending' ? <button className="btn secondary wide" onClick={() => withdrawApplication(ministry)}>Withdraw pending application</button> : !ministry.applicationRequired ? <button className="btn primary wide" onClick={() => toggleDirectMembership(ministry)}>Join unit</button> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to unit</Link>}
       </div>
     </article>)}</div>
   </MemberShell>
@@ -1941,7 +1941,7 @@ function MinistryDirectory() {
 function CellsPage() {
   const [cells, setCells] = useState([])
   const [error, setError] = useState('')
-  const load = () => fetchMemberApi('/api/groups/cells').then(({ cells: items = [] }) => setCells(items)).catch((requestError) => setError(requestError.message || 'Cells could not be loaded.'))
+  const load = () => fetchMemberApi('/api/groups/cells').then(({ cells: items = [] }) => setCells(items)).catch((requestError) => setError(requestError.message || 'Fellowships could not be loaded.'))
   useEffect(() => { load() }, [])
   const join = async (cell) => {
     setError('')
@@ -1957,11 +1957,11 @@ function CellsPage() {
       await load()
     } catch (requestError) { setError(requestError.message || 'Application could not be withdrawn.') }
   }
-  return <MemberShell active="ministries" title="Fellowships & Cells" backTo="/ministries/browse">
-    <p className="ministries-subtitle">Join a fellowship or cell that fits your profile.</p>
+  return <MemberShell active="ministries" title="Fellowships" backTo="/ministries/browse">
+    <p className="ministries-subtitle">Join a fellowship that fits your profile.</p>
     {error && <p role="alert">{error}</p>}
-    <div className="directory-list">{cells.map((cell) => <article className="directory-card" key={cell.id}><div className="directory-card-body"><h2>{cell.name}</h2><p>{cell.description || 'Connect with members in this fellowship or cell.'}</p>{!cell.eligible && <p className="profile-form-help">Your profile does not currently meet this group&apos;s eligibility requirements.</p>}{cell.eligibilityReviewRequired && <p className="profile-form-help">Your membership is awaiting an eligibility review.</p>}{cell.applicationStatus === 'pending' && <button className="btn secondary wide" onClick={() => withdraw(cell)}>Withdraw pending application</button>}{cell.joined && <button className="btn member wide" onClick={() => join(cell)}>Leave group</button>}{!cell.joined && cell.applicationStatus !== 'pending' && <button className="btn primary wide" disabled={!cell.eligible} onClick={() => join(cell)}>{cell.applicationRequired ? 'Apply to join' : 'Join group'}</button>}</div></article>)}</div>
-    {!cells.length && !error && <div className="empty"><h2>No fellowships or cells are available</h2></div>}
+    <div className="directory-list">{cells.map((cell) => <article className="directory-card" key={cell.id}><div className="directory-card-body"><h2>{cell.name}</h2><p>{cell.description || 'Connect with members in this fellowship.'}</p>{!cell.eligible && <p className="profile-form-help">Your profile does not currently meet this group&apos;s eligibility requirements.</p>}{cell.eligibilityReviewRequired && <p className="profile-form-help">Your membership is awaiting an eligibility review.</p>}{cell.applicationStatus === 'pending' && <button className="btn secondary wide" onClick={() => withdraw(cell)}>Withdraw pending application</button>}{cell.joined && <button className="btn member wide" onClick={() => join(cell)}>Leave fellowship</button>}{!cell.joined && cell.applicationStatus !== 'pending' && <button className="btn primary wide" disabled={!cell.eligible} onClick={() => join(cell)}>{cell.applicationRequired ? 'Apply to join' : 'Join fellowship'}</button>}</div></article>)}</div>
+    {!cells.length && !error && <div className="empty"><h2>No fellowships are available</h2></div>}
   </MemberShell>
 }
 
@@ -1998,16 +1998,16 @@ function MinistryApplication() {
       })
       setSubmitted(true)
     } catch (error) {
-      setMessage(error.message || 'This ministry request could not be submitted.')
+      setMessage(error.message || 'This unit request could not be submitted.')
     } finally {
       setBusy(false)
     }
   }
 
-  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application being processed</h2><p>Your application to serve in {ministry.title} has been sent and is being processed by the GIC team.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Ministries</button></div></MemberShell>
+  if (submitted) return <MemberShell active="ministries" title="Application sent" backTo="/ministries/browse"><div className="empty"><Check size={28} /><h2>Application being processed</h2><p>Your application to serve in {ministry.title} has been sent and is being processed by the GIC team.</p><button className="btn primary wide" onClick={() => navigate('/ministries')}>Back to My Units</button></div></MemberShell>
 
   return <MemberShell active="ministries" title="Apply to serve" backTo="/ministries/browse">
-    <div className="detail-body"><span className="eyebrow">Ministry application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
+    <div className="detail-body"><span className="eyebrow">Unit application</span><h1>{ministry.title}</h1><p>{ministry.desc}</p><div className="ministry-about"><b>What you need</b><p>{ministry.requirements}</p></div><form className="stack" onSubmit={submitApplication}><label className="field"><span>Why would you like to serve here?</span><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Share a little about your interest..." rows="5" minLength="10" required /></label><button className="btn primary wide" type="submit" disabled={busy}>{busy ? 'Sending application...' : 'Send application'}</button></form></div>
   </MemberShell>
 }
 
@@ -2025,7 +2025,7 @@ function MinistryDetails() {
     }).catch(() => {})
   }, [id])
 
-  return <MemberShell active="ministries" title={ministry.title} backTo="/ministries"><div className="ministry-cover" style={{ backgroundImage: `url(${ministry.image})` }}><h1>{ministry.title.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.title}</h2><p>{ministry.desc}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this ministry</b><p>{ministry.title} is a community of people growing in faith, serving with purpose, and making a meaningful impact together. Find your place, build relationships, and use your gifts to serve.</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <><div className="upcoming-box"><b>Upcoming Meeting</b><span><CalendarDays size={14} /> Friday, 24 May 2024 · 6:00 PM</span><span><MapPin size={14} /> Youth Hall</span></div><div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this ministry will appear here.</span></div></>}</div></MemberShell>
+  return <MemberShell active="ministries" title={ministry.title} backTo="/ministries"><div className="ministry-cover" style={{ backgroundImage: `url(${ministry.image})` }}><h1>{ministry.title.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.title}</h2><p>{ministry.desc}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this unit</b><p>{ministry.title} is a community of people growing in faith, serving with purpose, and making a meaningful impact together. Find your place, build relationships, and use your gifts to serve.</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <><div className="upcoming-box"><b>Upcoming Meeting</b><span><CalendarDays size={14} /> Friday, 24 May 2024 · 6:00 PM</span><span><MapPin size={14} /> Youth Hall</span></div><div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this unit will appear here.</span></div></>}</div></MemberShell>
 }
 
 function formatBirthday(value) {
@@ -2083,7 +2083,7 @@ function Profile() {
       </div>
     </section>
 
-    <section className="profile-details"><div className="profile-details-head"><div><b>Ministries & Fellowships</b><small>Your current church groups</small></div><Link to="/ministries">View</Link></div><div className="profile-detail-grid"><div><Users size={15}/><span><small>Ministries</small><b>{groups.ministries?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Fellowships</small><b>{(groups.fellowships || groups.cells)?.map((item) => item.name).join(', ') || 'None'}</b></span></div></div></section>
+    <section className="profile-details"><div className="profile-details-head"><div><b>Units & Fellowships</b><small>Your current church groups</small></div><Link to="/ministries">View</Link></div><div className="profile-detail-grid"><div><Users size={15}/><span><small>Units</small><b>{groups.ministries?.map((item) => item.name).join(', ') || 'None'}</b></span></div><div><Users size={15}/><span><small>Fellowships</small><b>{(groups.fellowships || groups.cells)?.map((item) => item.name).join(', ') || 'None'}</b></span></div></div></section>
 
     <div className="profile-menu">
       <button

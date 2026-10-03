@@ -8,7 +8,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onren
 const routeOptions = [
   ['Home', '/home'], ['Announcements', '/announcements'], ['Events', '/events'],
   ['Event details', '/events/'], ['Registrations', '/registrations'], ['Messages', '/messages'],
-  ['Forms', '/forms'], ['Ministries', '/ministries'], ['Profile', '/profile'],
+  ['Forms', '/forms'], ['Units', '/ministries'], ['Profile', '/profile'],
 ]
 
 async function requestAdminApi(path, options = {}) {
