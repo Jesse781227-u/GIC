@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CalendarDays, X, Plus, Trash2 } from 'lucide-react'
+import { CalendarDays, X, Plus, Trash2, Upload, Image as ImageIcon } from 'lucide-react'
 import { adminAuth } from './firebase'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
@@ -167,7 +167,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       mapInfo: locationLink || null,
       isPaid: false,
       status: 'DRAFT',
-      eventType,
       timeZone: 'Africa/Lagos',
       allowRegistrationCancellation: true,
       registrationForm: [],
@@ -291,33 +290,28 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
           {!previewMode ? (
             <>
               <div className="event-form-section">
-                <h3>1. Basic event information</h3>
+                <h3>Event details</h3>
+                <p className="event-section-description">Add the basic information people will see about this event.</p>
                 <label className="modern-field full"><span>Event title</span><input value={title} onChange={(event) => setTitle(event.target.value)} maxLength="240" required /></label>
                 <label className="modern-field full"><span>Short description</span><textarea value={shortDescription} onChange={(event) => setShortDescription(event.target.value)} rows="3" required /></label>
                 <label className="modern-field full"><span>Full description</span><textarea value={fullDescription} onChange={(event) => setFullDescription(event.target.value)} rows="5" /></label>
                 <label className="modern-field full"><span>Event type</span><select value={eventType} onChange={(event) => setEventType(event.target.value)}>{EVENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
                 <label className="modern-field full"><span>Organizing ministry / unit / fellowship</span><select value={organizationKey} onChange={(event) => setOrganizationKey(event.target.value)}><option value="">No organization</option>{organizations.map((item) => <option value={`${item.kind || 'ministry'}_${item.id}`} key={item.id}>{item.name} · {item.type || item.kind || 'Organization'}</option>)}</select></label>
-                <div className="modern-field-grid">
-                  <label className="modern-field full"><span>Event flyer</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) { try { readImageFile(file, setFlyerUrl) } catch (requestError) { setError(requestError.message || 'Flyer upload failed.') } } }} /></label>
-                  {flyerUrl && <div className="image-preview"><img src={flyerUrl} alt="Event flyer preview" /></div>}
-                </div>
-                <label className="modern-field full"><span>Additional images</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => {
+                <label className="modern-field full"><span>Event flyer</span><div className={`flyer-upload ${flyerUrl ? 'has-image' : 'empty'}`}>
+                  <input id="event-flyer-input" className="file-input-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) { try { readImageFile(file, setFlyerUrl) } catch (requestError) { setError(requestError.message || 'Flyer upload failed.') } } }} />
+                  {flyerUrl ? <><img src={flyerUrl} alt="Event flyer preview" /><div className="flyer-upload-actions"><label className="upload-action" htmlFor="event-flyer-input">Change</label><button type="button" className="upload-action" onClick={() => setFlyerUrl('')}>Remove</button></div></> : <label className="flyer-upload-copy" htmlFor="event-flyer-input"><Upload size={20}/><b>Upload event flyer</b><small>PNG, JPG or WEBP</small></label>}
+                </div></label>
+                <div className="modern-field full"><span>Additional images</span><input id="additional-images-input" className="file-input-hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => {
                   const files = Array.from(event.target.files || [])
-                  const previews = []
-                  files.forEach((file) => {
-                    try {
-                      readImageFile(file, (url) => previews.push(url))
-                    } catch (requestError) {
-                      setError(requestError.message || 'Image upload failed.')
-                    }
-                  })
-                  if (previews.length) setAdditionalImages((current) => [...current, ...previews])
-                }} /></label>
-                {additionalImages.length > 0 && <div className="image-gallery-preview">{additionalImages.map((url, index) => <img key={`${url}-${index}`} src={url} alt={`Additional event ${index + 1}`} />)}</div>}
+                  files.forEach((file) => { try { readImageFile(file, (url) => setAdditionalImages((current) => [...current, url])) } catch (requestError) { setError(requestError.message || 'Image upload failed.') } })
+                  event.target.value = ''
+                }} /><label className="upload-action" htmlFor="additional-images-input"><ImageIcon size={13}/> Add images</label></div>
+                {additionalImages.length > 0 && <div className="image-gallery-preview">{additionalImages.map((url, index) => <div className="image-gallery-preview-item" key={`${url}-${index}`}><img src={url} alt={`Additional event ${index + 1}`} /><button type="button" onClick={() => setAdditionalImages((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove additional image ${index + 1}`}>×</button></div>)}</div>}
               </div>
 
               <div className="event-form-section">
-                <h3>2. Speakers</h3>
+                <h3>Speakers</h3>
+                <p className="event-section-description">Add the people leading or contributing to this event.</p>
                 {speakers.map((speaker, index) => (
                   <div className="speaker-card" key={speaker.id}>
                     <div className="speaker-header"><strong>Speaker {index + 1}</strong>{speakers.length > 1 && <button type="button" className="icon-btn" onClick={() => removeSpeaker(speaker.id)} aria-label="Remove speaker"><Trash2 size={14} /></button>}</div>
@@ -334,7 +328,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>3. Date & time</h3>
+                <h3>Date & time</h3>
+                <p className="event-section-description">Set when the event starts and ends.</p>
                 <div className="modern-field-grid">
                   <label className="modern-field"><span>Start date</span><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
                   <label className="modern-field"><span>Start time</span><input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required /></label>
@@ -350,7 +345,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>4. Location</h3>
+                <h3>Location</h3>
+                <p className="event-section-description">Tell attendees where to join this event.</p>
                 <div className="segmented-row">
                   {['PHYSICAL', 'ONLINE', 'HYBRID'].map((format) => (
                     <label className="segment-option" key={format}><input type="radio" name="event-format" checked={eventFormat === format} onChange={() => setEventFormat(format)} /> {format === 'PHYSICAL' ? 'Physical' : format === 'ONLINE' ? 'Online' : 'Hybrid'}</label>
@@ -367,7 +363,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>5. Streaming / online</h3>
+                <h3>Streaming / online</h3>
                 <label className="check"><input type="checkbox" checked={streamOnline} onChange={(event) => setStreamOnline(event.target.checked)} /> This event will be streamed online</label>
                 {streamOnline && (
                   <>
@@ -379,7 +375,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>6. Registration</h3>
+                <h3>Registration</h3>
                 <label className="check"><input type="checkbox" checked={registrationRequired} onChange={(event) => setRegistrationRequired(event.target.checked)} /> Registration is required</label>
                 {registrationRequired && (
                   <>
@@ -404,7 +400,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>7. Transportation / church bus</h3>
+                <h3>Transportation</h3>
                 <label className="check"><input type="checkbox" checked={churchBusAvailable} onChange={(event) => setChurchBusAvailable(event.target.checked)} /> Church bus transportation available</label>
                 {churchBusAvailable && (
                   <>
@@ -428,7 +424,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>8. Event reminders</h3>
+                <h3>Notifications & reminders</h3>
                 <label className="check"><input type="checkbox" checked={sendReminders} onChange={(event) => setSendReminders(event.target.checked)} /> Send event reminders</label>
                 {sendReminders && (
                   <>
@@ -449,7 +445,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>9. Notifications</h3>
+                <h3 className="visually-hidden">Publish notification details</h3>
                 <label className="check"><input type="checkbox" checked={notifyOnPublish} onChange={(event) => setNotifyOnPublish(event.target.checked)} /> Notify members when published</label>
                 {notifyOnPublish && (
                   <>
@@ -461,7 +457,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3>10. Event settings</h3>
+                <h3 className="visually-hidden">Event settings</h3>
                 <label className="modern-field full"><span>Visibility</span><select value={visibility} onChange={(event) => setVisibility(event.target.value)}><option value="Public">Public</option><option value="Members only">Members only</option><option value="Restricted audience">Restricted audience</option></select></label>
                 <label className="modern-field full"><span>Event status</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option></select></label>
               </div>
