@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CalendarDays, X, Plus, Trash2 } from 'lucide-react'
 import { adminAuth } from './firebase'
 
@@ -282,7 +283,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     </div>
   )
 
-  return (
+  return createPortal((
     <div className="event-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-event-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <form className="event-modal" onSubmit={(event) => { event.preventDefault(); if (status === 'PUBLISHED') setPreviewMode(true); else saveEvent('draft'); }}>
         <div className="event-modal-header"><div><h2 id="create-event-title">Create Event</h2><p>Add a practical event to the GIC platform</p></div><button type="button" className="event-modal-close" aria-label="Close create event" onClick={onClose}><X size={18}/></button></div>
@@ -491,5 +492,5 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
         </div>
       </form>
     </div>
-  )
+  ), document.body)
 }
