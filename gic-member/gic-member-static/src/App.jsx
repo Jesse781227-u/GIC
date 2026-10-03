@@ -1823,12 +1823,11 @@ function PrayerRequest() {
 
 function MinistriesPage() {
   const [tab, setTab] = useState('Cells')
-  const [ministryRows, setMinistryRows] = useState([])
   const [fellowshipRows, setFellowshipRows] = useState([])
   const [busyFellowship, setBusyFellowship] = useState('')
   const [error, setError] = useState('')
-  const load = () => Promise.all([fetchMemberApi('/api/groups/ministries'), fetchMemberApi('/api/groups/cells')])
-    .then(([ministryData, cellData]) => { setMinistryRows(ministryData.ministries || []); setFellowshipRows(cellData.cells || []) })
+  const load = () => fetchMemberApi('/api/groups/cells')
+    .then((cellData) => setFellowshipRows(cellData.cells || []))
     .catch((requestError) => setError(requestError.message || 'Groups are unavailable.'))
   useEffect(() => { load() }, [])
   const changeFellowshipMembership = async (fellowship) => {
@@ -1840,8 +1839,6 @@ function MinistriesPage() {
     } catch (requestError) { setError(requestError.message || 'Fellowship membership could not be updated.') }
     finally { setBusyFellowship('') }
   }
-  const joinedMinistries = ministryRows.filter((item) => item.joined)
-  const pendingMinistries = ministryRows.filter((item) => item.applicationStatus === 'pending')
   const joinedFellowships = fellowshipRows.filter((item) => item.joined)
   const fallbackCells = []
   const availableCells = fellowshipRows.length ? fellowshipRows : fallbackCells
@@ -1849,7 +1846,13 @@ function MinistriesPage() {
     <div className="ministries-screen">
     <div className="tabs big"><button className={tab === 'Ministries' ? 'active' : ''} onClick={() => setTab('Ministries')}>Ministries</button><button className={tab === 'Cells' ? 'active' : ''} onClick={() => setTab('Cells')}>Cells</button></div>
     {error && <p className="center muted">{error}</p>}
-    {tab === 'Ministries' && <section className="ministries-list"><div className="section-head"><span>My Ministries</span><Link to="/ministries/browse">Browse</Link></div>{joinedMinistries.map((ministry) => <Link className="ministry-row" key={ministry.id} to={`/ministries/${ministry.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>{ministry.description || 'Approved member'}</small></div><span className="badge success">Member</span></Link>)}{pendingMinistries.map((ministry) => <div className="ministry-row" key={ministry.id}><div className="action-icon"><Users size={17}/></div><div><b>{ministry.name}</b><small>Application pending</small></div><span className="badge blue">Pending</span></div>)}{!joinedMinistries.length && !pendingMinistries.length && <p className="center muted">You have not joined a ministry yet.</p>}<Link className="btn primary wide" to="/ministries/browse">Browse Ministries</Link></section>}
+    {tab === 'Ministries' && <section className="ministry-empty">
+      <div className="empty-illustration" aria-hidden="true"><Users size={42} /><span>✦</span></div>
+      <h1>Ready to serve?</h1>
+      <p>Find your place and make an impact.</p>
+      <small>Discover the ministries where you can use your gifts, grow in community, and serve others.</small>
+      <Link className="btn primary wide" to="/ministries/browse">Ready to serve</Link>
+    </section>}
     {tab === 'Cells' && <section className="ministries-list cells-list"><div className="section-head"><span>My Cells</span></div>{joinedFellowships.map((fellowship) => <div className="ministry-row" key={`joined-${fellowship.id}`}><div className="action-icon"><Users size={17}/></div><div><b>{fellowship.name}</b><small>{fellowship.description || 'Fellowship member'}</small></div><button className="tool" disabled={busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Saving…' : 'Leave'}</button></div>)}{availableCells.filter((fellowship) => !fellowship.joined).map((fellowship) => <div className="ministry-row cell-card" key={fellowship.id}><div className="action-icon"><Users size={20}/></div><div><b>{fellowship.name}</b><small>{fellowship.eligible ? fellowship.description || 'Open to eligible members' : 'Not eligible based on your profile'}</small></div><button className="tool" disabled={!fellowship.eligible || busyFellowship === fellowship.id} onClick={() => changeFellowshipMembership(fellowship)}>{busyFellowship === fellowship.id ? 'Joining…' : 'Join'}</button></div>)}</section>}
     </div>
   </MemberShell>
@@ -2151,7 +2154,7 @@ function EditProfile() {
           <small>Help us personalize your GIC experience</small>
         </div>
         <div className="profile-form-fields">
-          <div className="field"><span>Ministry and fellowship memberships</span><p className="profile-form-help">Manage memberships from the Ministries and Fellowships pages. Ministry membership requires approval; eligible fellowships can be joined directly.</p><Link to="/ministries">Manage groups</Link></div>
+          <div className="field"><span></span><p className="profile-form-help"></p><Link to="/ministries">Manage groups</Link></div>
           <SelectField label="Center you attend" value={center} onChange={(e) => { setCenter(e.target.value); setServiceTime('') }}>
             {serviceCenters.map((serviceCenter) => <option key={serviceCenter.name} value={serviceCenter.name}>{serviceCenter.name}</option>)}
           </SelectField>
