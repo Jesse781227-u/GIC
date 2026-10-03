@@ -13,6 +13,7 @@
     { "idx": 8, "version": "7", "when": 1790962000000, "tag": "0009_profile_demographics_and_cell_review", "breakpoints": true },
     { "idx": 9, "version": "7", "when": 1790985600000, "tag": "0010_remove_children_age_group", "breakpoints": true },
     { "idx": 10, "version": "7", "when": 1791000000000, "tag": "0011_update_age_group_ranges", "breakpoints": true },
-    { "idx": 11, "version": "7", "when": 1791000100000, "tag": "0012_singularize_age_group_names", "breakpoints": true }
+    { "idx": 11, "version": "7", "when": 1791000100000, "tag": "0012_singularize_age_group_names", "breakpoints": true },
+    { "idx": 12, "version": "7", "when": 1791000200000, "tag": "0013_member_app_ministries", "breakpoints": true }
   ]
 }

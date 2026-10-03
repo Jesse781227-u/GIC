@@ -21,6 +21,7 @@ import {
 import { recordActivity } from "../services/activity.service.js";
 import { churchIdForUser } from "../lib/tenant.js";
 import { resolveSegmentMemberIds } from "../services/member-groups.service.js";
+import { ensureMemberAppMinistries } from "../services/ministry-catalog.service.js";
 
 const memberApp = new Hono();
 memberApp.use("*", authMiddleware);
@@ -35,6 +36,7 @@ memberApp.post("/", async (c) => {
 
   const user = c.get("user");
   const churchId = churchIdForUser(user);
+  await ensureMemberAppMinistries(churchId);
   const member = await db.query.members.findFirst({ where: and(eq(members.id, user.sub), eq(members.churchId, churchId), eq(members.active, true)) });
   if (!member) return c.json({ error: "Member account not found" }, 404);
   const ministry = parsed.data.ministryId

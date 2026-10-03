@@ -3,13 +3,15 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
-import { ageGroupDefinitions, cellMemberships, cells, members, ministries, ministryMemberships, segmentMemberships, segments } from "../db/schema.js";
+import { ageGroupDefinitions, cellMemberships, cells, eventRegistrations, events, members, ministries, ministryMemberships, segmentMemberships, segments } from "../db/schema.js";
 import { churchIdForUser } from "../lib/tenant.js";
 import { describeGroupRules } from "../services/member-group-rules.js";
 import { normalizeBirthday } from "../lib/age-groups.js";
 import { recordActivity } from "../services/activity.service.js";
 import { flagIneligibleCellMembershipsForMember, resolveSegmentMemberIds } from "../services/member-groups.service.js";
 import { listActiveAgeGroups } from "../services/age-groups.service.js";
+import { matchesProfileCondition } from "../services/member-group-rules.js";
+import { ensureMemberAppMinistries } from "../services/ministry-catalog.service.js";
 
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
@@ -103,13 +105,40 @@ app.get("/", async (c) => {
 
   const baseMembers = await db.query.members.findMany({ where: and(...conditions) });
   const baseIds = new Set(baseMembers.map((member) => member.id));
+  await ensureMemberAppMinistries(churchId);
+  const filterOptions = await Promise.all([
+    db.query.ministries.findMany({ where: eq(ministries.churchId, churchId) }),
+    db.query.cells.findMany({ where: and(eq(cells.churchId, churchId), eq(cells.active, true)) }),
+    db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), eq(segments.active, true)) }),
+    listActiveAgeGroups(churchId),
+    db.query.events.findMany({ where: and(eq(events.churchId, churchId), eq(events.status, "PUBLISHED")) }),
+  ]);
   const categorySets: Set<string>[] = [];
 
   if (ministryIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, ministryIds, "ministry"));
   if (fellowshipIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, fellowshipIds, "cell"));
   if (cellIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, cellIds, "cell"));
   if (groupIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, groupIds, "group"));
-  if (segmentIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, segmentIds, "segment"));
+  const eventIds = segmentIds.filter((id) => id.startsWith("event:")).map((id) => id.slice("event:".length));
+  const systemSegments = segmentIds.filter((id) => ["new-members", "old-members", "male", "female"].includes(id));
+  const customSegmentIds = segmentIds.filter((id) => !systemSegments.includes(id) && !id.startsWith("event:"));
+  for (const segmentId of systemSegments) {
+    const matchedIds = baseMembers.filter((member) => {
+      if (segmentId === "new-members") return matchesProfileCondition(member, { field: "joined_within_months", operator: "within", value: 5 });
+      if (segmentId === "old-members") return !matchesProfileCondition(member, { field: "joined_within_months", operator: "within", value: 5 });
+      return (member.gender || "").toLowerCase() === segmentId;
+    }).map((member) => member.id);
+    categorySets.push(new Set(matchedIds));
+  }
+  const publishedEventIds = new Set(filterOptions[4].map((event) => event.id));
+  const selectedEventIds = eventIds.filter((id) => publishedEventIds.has(id));
+  if (eventIds.length) {
+    const registrations = selectedEventIds.length ? await db.query.eventRegistrations.findMany({
+      where: and(eq(eventRegistrations.churchId, churchId), inArray(eventRegistrations.eventId, selectedEventIds), eq(eventRegistrations.status, "CONFIRMED")),
+    }) : [];
+    categorySets.push(new Set(registrations.map((registration) => registration.memberId)));
+  }
+  if (customSegmentIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, customSegmentIds, "segment"));
 
   const candidateIds = categorySets.length ? categorySets.reduce((intersection, current) => {
     const next = new Set<string>();
@@ -120,17 +149,6 @@ app.get("/", async (c) => {
   const matchingMembers = baseMembers.filter((member) => candidateIds.has(member.id));
   const total = matchingMembers.length;
   const membersList = matchingMembers.slice((page - 1) * pageSize, page * pageSize);
-
-  const filterOptions = await Promise.all([
-    db.query.ministries.findMany({ where: and(eq(ministries.churchId, churchId), eq(ministries.active, true)) }),
-    db.query.cells.findMany({ where: and(eq(cells.churchId, churchId), eq(cells.active, true)) }),
-    db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), eq(segments.active, true)) }),
-    listActiveAgeGroups(churchId),
-  ]);
-  const groups = [
-    ...filterOptions[0].map((item) => ({ id: item.id, name: item.name, type: "ministry" })),
-    ...filterOptions[1].map((item) => ({ id: item.id, name: item.name, type: "cell" })),
-  ];
 
   const memberGroups = new Map<string, { ministries: Array<{ id: string; name: string }>; fellowships: Array<{ id: string; name: string }>; segments: Array<{ id: string; name: string; type: string }> }>();
   for (const member of membersList) {
@@ -176,9 +194,14 @@ app.get("/", async (c) => {
     filters: {
       ministries: filterOptions[0].map((item) => ({ id: item.id, name: item.name })),
       fellowships: filterOptions[1].map((item) => ({ id: item.id, name: item.name })),
-      segments: filterOptions[2].map((item) => ({ id: item.id, name: item.name, type: item.segmentType })),
+      segments: [
+        { id: "new-members", name: "New Members", type: "system" },
+        { id: "old-members", name: "Old Members", type: "system" },
+        { id: "male", name: "Male", type: "system" },
+        { id: "female", name: "Female", type: "system" },
+        ...filterOptions[4].map((event) => ({ id: `event:${event.id}`, name: `${event.title} Registrants`, type: "event_registrants" })),
+      ],
       ageGroups: filterOptions[3].map(({ id, name, minAge, maxAge }) => ({ id, name, minAge, maxAge })),
-      groups,
     },
   });
 });
