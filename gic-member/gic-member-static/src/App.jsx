@@ -2050,7 +2050,36 @@ function EditProfile() {
       setAgeGroupsLoading(false)
     }
   }
-  useEffect(() => { loadAgeGroups() }, [])
+  useEffect(() => {
+    let cancelled = false
+    const hydrateProfile = async () => {
+      try {
+        const { profile } = await fetchMemberApi('/api/auth/profile')
+        if (cancelled || !profile) return
+        storeMemberProfile(profile)
+        setName(profile.name || '')
+        setPhone(profile.phone || '')
+        setEmail(profile.email || '')
+        setCenter(profile.center || '')
+        setServiceTime(profile.serviceTime || '')
+        const birthday = (profile.birthday || '').replace(/^\d{4}-/, '')
+        setBirthdayMonth(birthday.slice(0, 2))
+        setBirthdayDay(birthday.slice(3, 5))
+        setAgeGroupId(profile.ageGroupId || '')
+        setRelationshipStatus(profile.relationshipStatus || '')
+        setGender(['male', 'female'].includes(profile.gender) ? profile.gender : '')
+        setMembershipStatus(profile.membershipStatus || '')
+        setJoinedMonth(profile.joinedMonth ? String(profile.joinedMonth) : '')
+        setJoinedYear(profile.joinedYear ? String(profile.joinedYear) : '')
+        setAvatar(profile.avatar || '')
+      } catch {
+        // Keep the locally cached profile values when the refresh is unavailable.
+      }
+    }
+    hydrateProfile()
+    loadAgeGroups()
+    return () => { cancelled = true }
+  }, [])
   const birthdayDays = birthdayMonth === '02' ? 29 : ['04', '06', '09', '11'].includes(birthdayMonth) ? 30 : 31
   const selectedCenter = serviceCenters.find((serviceCenter) => serviceCenter.name === center)
   const availableServiceTimes = selectedCenter?.times || []
