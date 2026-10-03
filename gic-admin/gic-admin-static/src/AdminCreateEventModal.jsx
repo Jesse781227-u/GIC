@@ -13,7 +13,7 @@ const REMINDER_OPTIONS = [
   { label: '1 hour before', minutes: 60 },
   { label: '30 minutes before', minutes: 30 },
 ]
-const AUDIENCE_OPTIONS = ['All Members', 'Segment', 'Ministry', 'Unit', 'Fellowship', 'Cell', 'Group']
+const AUDIENCE_OPTIONS = ['All Members', 'Segment', 'Unit', 'Fellowship', 'Cell', 'Group']
 const FORM_FIELD_TYPES = [
   ['text', 'Short text'], ['textarea', 'Long text'], ['number', 'Number'], ['phone', 'Phone'],
   ['email', 'Email'], ['date', 'Date'], ['select', 'Dropdown'], ['radio', 'Radio'], ['checkbox', 'Checkbox'],
@@ -36,7 +36,7 @@ function makeSpeaker() {
 }
 
 function makePickupLocation() {
-  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', address: '', pickupTime: '', capacity: '', notes: '' }
+  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, busPickupPointId: '', name: '', address: '', pickupTime: '', capacity: '', notes: '' }
 }
 
 function toDateTimeValue(date, time) {
@@ -67,6 +67,7 @@ function makeRegistrationField(label = '') {
 
 export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [organizations, setOrganizations] = useState([])
+  const [pickupPoints, setPickupPoints] = useState([])
   const [title, setTitle] = useState('')
   const [shortDescription, setShortDescription] = useState('')
   const [fullDescription, setFullDescription] = useState('')
@@ -124,12 +125,13 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   useEffect(() => {
     Promise.all([
       adminApi('/api/admin/organizations').then(({ organizations: items = [] }) => setOrganizations(items)),
+      adminApi('/api/admin/reference/bus-pickup-points').then(({ pickupPoints: items = [] }) => setPickupPoints(items)),
       adminApi('/api/admin/groups').then((items) => setAudienceCollections({ ministries: items.ministries || [], cells: items.cells || [], segments: items.segments || [], groups: items.groups || [] })),
       adminApi('/api/admin/events').then(({ events: items = [] }) => setSavedForms(items.filter((item) => Array.isArray(item.registrationForm) && item.registrationForm.length).map((item) => ({ id: item.id, name: item.title, fields: item.registrationForm })))),
     ]).catch(() => {})
   }, [])
 
-  const audienceChoices = audience === 'Ministry' || audience === 'Unit'
+  const audienceChoices = audience === 'Unit'
     ? audienceCollections.ministries
     : audience === 'Fellowship' || audience === 'Cell'
       ? audienceCollections.cells
@@ -145,6 +147,11 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
 
   const pickupUpdate = (id, field, value) => {
     setPickupLocations((current) => current.map((pickup) => pickup.id === id ? { ...pickup, [field]: value } : pickup))
+  }
+
+  const choosePickupPoint = (id, value) => {
+    const point = pickupPoints.find((item) => item.id === value)
+    setPickupLocations((current) => current.map((pickup) => pickup.id === id ? { ...pickup, busPickupPointId: value, name: point?.name || pickup.name, address: point?.address || pickup.address } : pickup))
   }
 
   const addSpeaker = () => setSpeakers((current) => [...current, makeSpeaker()])
@@ -254,6 +261,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
           await adminApi(`/api/admin/events/${created.id}/pickup-locations`, {
             method: 'POST',
             body: JSON.stringify({
+              busPickupPointId: pickup.busPickupPointId || null,
               locationName: pickup.name.trim(),
               addressLandmark: pickup.address.trim(),
               pickupTime: pickup.pickupTime ? new Date(`${startDate}T${pickup.pickupTime}:00`).toISOString() : new Date(`${startDate}T09:00:00`).toISOString(),
@@ -323,7 +331,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                 <label className="modern-field full"><span>Short description</span><textarea value={shortDescription} onChange={(event) => setShortDescription(event.target.value)} rows="3" required /></label>
                 <label className="modern-field full"><span>Full description</span><textarea value={fullDescription} onChange={(event) => setFullDescription(event.target.value)} rows="5" /></label>
                 <label className="modern-field full"><span>Event type</span><select value={eventType} onChange={(event) => setEventType(event.target.value)}>{EVENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
-                <label className="modern-field full"><span>Organizing ministry / unit / fellowship</span><select value={organizationKey} onChange={(event) => setOrganizationKey(event.target.value)}><option value="">No organization</option>{organizations.map((item) => <option value={`${item.kind || 'ministry'}_${item.id}`} key={item.id}>{item.name} · {item.type || item.kind || 'Organization'}</option>)}</select></label>
+                <label className="modern-field full"><span>Organizing unit / fellowship</span><select value={organizationKey} onChange={(event) => setOrganizationKey(event.target.value)}><option value="">No organization</option>{organizations.map((item) => <option value={`${item.kind || 'ministry'}_${item.id}`} key={item.id}>{item.name} · {item.type || item.kind || 'Organization'}</option>)}</select></label>
                 <label className="modern-field full"><span>Event flyer</span><div className={`flyer-upload ${flyerUrl ? 'has-image' : 'empty'}`}>
                   <input id="event-flyer-input" className="file-input-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) { try { readImageFile(file, setFlyerUrl) } catch (requestError) { setError(requestError.message || 'Flyer upload failed.') } } }} />
                   {flyerUrl ? <><img src={flyerUrl} alt="Event flyer preview" /><div className="flyer-upload-actions"><label className="upload-action" htmlFor="event-flyer-input">Change</label><button type="button" className="upload-action" onClick={() => setFlyerUrl('')}>Remove</button></div></> : <label className="flyer-upload-copy" htmlFor="event-flyer-input"><Upload size={20}/><b>Upload event flyer</b><small>PNG, JPG or WEBP</small></label>}
@@ -435,6 +443,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                     {pickupLocations.map((pickup, index) => (
                       <div className="pickup-card" key={pickup.id}>
                         <div className="speaker-header"><strong>Pickup location {index + 1}</strong>{pickupLocations.length > 1 && <button type="button" className="icon-btn" onClick={() => removePickupLocation(pickup.id)} aria-label="Remove pickup location"><Trash2 size={14} /></button>}</div>
+                        <label className="modern-field full"><span>Known pickup point</span><select value={pickup.busPickupPointId} onChange={(event) => choosePickupPoint(pickup.id, event.target.value)}><option value="">Select a pickup point</option>{pickupPoints.map((point) => <option value={point.id} key={point.id}>{point.name}</option>)}</select>{!pickupPoints.length && <small className="field-help">No active pickup points are available.</small>}</label>
                         <div className="modern-field-grid">
                           <label className="modern-field"><span>Pickup location name</span><input value={pickup.name} onChange={(event) => pickupUpdate(pickup.id, 'name', event.target.value)} placeholder="Ikeja" /></label>
                           <label className="modern-field"><span>Pickup time</span><input type="time" value={pickup.pickupTime} onChange={(event) => pickupUpdate(pickup.id, 'pickupTime', event.target.value)} /></label>
