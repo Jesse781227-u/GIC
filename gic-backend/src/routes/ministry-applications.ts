@@ -43,6 +43,7 @@ memberApp.post("/", async (c) => {
     ? await db.query.ministries.findFirst({ where: and(eq(ministries.id, parsed.data.ministryId), eq(ministries.churchId, churchId), eq(ministries.active, true)) })
     : parsed.data.ministry ? await db.query.ministries.findFirst({ where: and(eq(ministries.name, parsed.data.ministry), eq(ministries.churchId, churchId), eq(ministries.active, true)) }) : null;
   if (!ministry) return c.json({ error: "Ministry not found" }, 404);
+  if (!ministry.applicationRequired) return c.json({ error: "This organization allows direct membership and does not accept applications." }, 409);
   const existing = await db.query.ministryApplications.findMany({ where: and(eq(ministryApplications.churchId, churchId), eq(ministryApplications.memberId, user.sub), eq(ministryApplications.ministryId, ministry.id), inArray(ministryApplications.status, ["PENDING", "APPROVED"])) });
   if (existing.some((item) => item.status === "PENDING")) return c.json({ error: "A pending request already exists for this ministry" }, 409);
   if (existing.some((item) => item.status === "APPROVED")) return c.json({ error: "You already belong to this ministry" }, 409);
@@ -65,6 +66,16 @@ memberApp.get("/", async (c) => {
     orderBy: [desc(ministryApplications.createdAt)],
   });
   return c.json({ applications });
+});
+
+memberApp.delete("/:id", async (c) => {
+  const user = c.get("user");
+  const churchId = churchIdForUser(user);
+  const application = await db.query.ministryApplications.findFirst({ where: and(eq(ministryApplications.id, c.req.param("id")), eq(ministryApplications.churchId, churchId), eq(ministryApplications.memberId, user.sub)) });
+  if (!application) return c.json({ error: "Application not found" }, 404);
+  if (application.status !== "PENDING") return c.json({ error: "Only pending applications can be withdrawn." }, 409);
+  const [updated] = await db.update(ministryApplications).set({ status: "CANCELLED", updatedAt: new Date() }).where(eq(ministryApplications.id, application.id)).returning();
+  return c.json({ application: updated });
 });
 
 const adminApp = new Hono();

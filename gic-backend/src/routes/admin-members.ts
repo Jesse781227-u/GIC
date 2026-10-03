@@ -68,6 +68,7 @@ app.get("/", async (c) => {
     cellId: z.union([z.string(), z.array(z.string())]).optional(),
     groupId: z.union([z.string(), z.array(z.string())]).optional(),
     ministryId: z.union([z.string(), z.array(z.string())]).optional(),
+    unitId: z.union([z.string(), z.array(z.string())]).optional(),
     fellowshipId: z.union([z.string(), z.array(z.string())]).optional(),
     segmentId: z.union([z.string(), z.array(z.string())]).optional(),
   }).safeParse(c.req.query());
@@ -83,6 +84,7 @@ app.get("/", async (c) => {
   const cellIds = toIdList(query.data.cellId);
   const groupIds = toIdList(query.data.groupId);
   const ministryIds = toIdList(query.data.ministryId);
+  const unitIds = toIdList(query.data.unitId);
   const fellowshipIds = toIdList(query.data.fellowshipId);
   const segmentIds = toIdList(query.data.segmentId);
 
@@ -123,6 +125,7 @@ app.get("/", async (c) => {
   const categorySets: Set<string>[] = [];
 
   if (ministryIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, ministryIds, "ministry"));
+  if (unitIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, unitIds, "ministry"));
   if (fellowshipIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, fellowshipIds, "cell"));
   if (cellIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, cellIds, "cell"));
   if (groupIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, groupIds, "group"));
@@ -204,8 +207,11 @@ app.get("/", async (c) => {
     page,
     pageSize,
     filters: {
-      ministries: filterOptions[0].map((item) => ({ id: item.id, name: item.name })),
-      fellowships: filterOptions[1].map((item) => ({ id: item.id, name: item.name })),
+      ministries: filterOptions[0].filter((item) => (item.organizationType || "ministry") === "ministry").map((item) => ({ id: item.id, name: item.name })),
+      units: filterOptions[0].filter((item) => item.organizationType === "unit").map((item) => ({ id: item.id, name: item.name })),
+      fellowships: filterOptions[1].filter((item) => item.organizationType === "fellowship").map((item) => ({ id: item.id, name: item.name })),
+      cells: filterOptions[1].filter((item) => (item.organizationType || "cell") === "cell").map((item) => ({ id: item.id, name: item.name })),
+      groups: [...filterOptions[0], ...filterOptions[1]].map((item) => ({ id: item.id, name: item.name })),
       segments: [
         { id: "new-members", name: "New Members", type: "system" },
         { id: "old-members", name: "Old Members", type: "system" },

@@ -119,6 +119,8 @@ export const ministries = pgTable("ministries", {
   name: text("name").notNull(),
   description: text("description"),
   imageUrl: text("image_url"),
+  organizationType: text("organization_type").notNull().default("ministry"),
+  applicationRequired: boolean("application_required").notNull().default(true),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -140,6 +142,8 @@ export const cells = pgTable("cells", {
   name: text("name").notNull(),
   description: text("description"),
   imageUrl: text("image_url"),
+  organizationType: text("organization_type").notNull().default("cell"),
+  applicationRequired: boolean("application_required").notNull().default(false),
   eligibilityRules: jsonb("eligibility_rules").notNull().default({}),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -204,12 +208,28 @@ export const activityLogs = pgTable("activity_logs", {
   actorIdx: index("activity_logs_actor_id_idx").on(t.actorId),
 }));
 
+export const organizationLeaders = pgTable("organization_leaders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  organizationKind: text("organization_kind").notNull(),
+  organizationId: uuid("organization_id").notNull(),
+  memberId: text("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("Leader"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uniqueLeader: unique("organization_leaders_unique").on(t.churchId, t.organizationKind, t.organizationId, t.memberId),
+  organizationIdx: index("organization_leaders_org_idx").on(t.churchId, t.organizationKind, t.organizationId),
+}));
+
 export const ministryApplications = pgTable(
   "ministry_applications",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     churchId: uuid("church_id").notNull().references(() => churches.id),
     ministryId: uuid("ministry_id").references(() => ministries.id),
+    cellId: uuid("cell_id").references(() => cells.id),
+    organizationKind: text("organization_kind").notNull().default("ministry"),
     memberId: text("member_id").notNull(),
     memberName: text("member_name").notNull(),
     ministry: text("ministry").notNull(),
@@ -286,6 +306,8 @@ export const events = pgTable("events", {
   registrationCapacity: integer("registration_capacity"),
   allowWaitlist: boolean("allow_waitlist").notNull().default(false),
   organizerUnit: text("organizer_unit"),
+  organizationKind: text("organization_kind"),
+  organizationId: uuid("organization_id"),
   organizerContactPerson: text("organizer_contact_person"),
   organizerContactPhone: text("organizer_contact_phone"),
   isOnline: boolean("is_online").notNull().default(false),

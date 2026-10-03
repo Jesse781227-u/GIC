@@ -516,7 +516,7 @@ function PersistentAudioPlayerLegacy() {
         <span className="live-pill">{playing ? 'LIVE' : loading ? 'LOADING' : 'MIXLR'}</span>
         <div>
           <strong>{title}</strong>
-          <small>{error || (playing ? 'Playing now' : 'Tap play to listen')}</small>
+          <small>{error || (playing ? recordingDate : 'Ready to play')}</small>
         </div>
       </div>
       <div className="persistent-audio-actions">
@@ -1631,7 +1631,7 @@ function ServiceModalLegacyCurrent({ event, onClose }) {
     setMessage('Calendar app unavailable; calendar file downloaded.')
   }
 
-  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(eventClick) => eventClick.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(startDate)}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
+  return createPortal(<div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(startDate)}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{message && <p className="center muted">{message}</p>}</div></div>, document.body)
 }
 
 function ServiceModalLegacy({ event, onClose }) {
@@ -1660,8 +1660,9 @@ function ServiceModalLegacy({ event, onClose }) {
     try {
       await Promise.all(reminderOptions.map((minutes) => {
         const scheduledFor = new Date(startDate.getTime() - minutes * 60000)
-        if (activeReminders.includes(minutes)) return fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
-        return fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
+        return activeReminders.includes(minutes)
+          ? fetchMemberApi('/api/service-reminders', { method: 'POST', body: JSON.stringify({ serviceType: event.id, occurrenceKey, serviceStartsAt: startDate.toISOString(), offsetMinutes: minutes, scheduledFor: scheduledFor.toISOString() }) })
+          : fetchMemberApi(`/api/service-reminders?occurrenceKey=${encodeURIComponent(occurrenceKey)}&offsetMinutes=${minutes}`, { method: 'DELETE' })
       }))
       setReminderMessage(activeReminders.length ? 'Reminder saved.' : 'Reminders removed.')
     } catch { setReminderMessage('Reminders require an active signed-in connection.') }
@@ -1698,7 +1699,7 @@ function ServiceModalLegacy({ event, onClose }) {
     setCalendarMessage('Calendar invite downloaded. Your device may show it in the default calendar app.')
   }
 
-  return <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><div className="service-modal-header"><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2></div><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'short', day: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label></div><div className="service-modal-actions"><button type="button" className="btn primary wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{calendarMessage && <p className="center muted">{calendarMessage}</p>}</div></div>
+  return <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><div className="service-modal-header"><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2></div><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'short', day: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{calendarMessage && <p className="center muted">{calendarMessage}</p>}</div></div>
 }
 
 function EventDetails() {
@@ -1850,10 +1851,15 @@ function PrayerRequest() {
 function MinistriesPage() {
   const memberName = localStorage.getItem('gic_member_name') || ''
   const [selectedNames, setSelectedNames] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
-  const selectedMinistries = selectedNames.map((name) => ministries.find((ministry) => ministry.title === name)).filter(Boolean)
+  const [memberMinistries, setMemberMinistries] = useState([])
+  const selectedMinistries = memberMinistries.map((item) => {
+    const fallback = ministries.find((ministry) => ministry.title.toLowerCase() === item.name.toLowerCase())
+    return { ...fallback, id: item.id, title: item.name, desc: fallback?.desc || 'Serve and grow with this church ministry.', image: fallback?.image }
+  })
   const [applications, setApplications] = useState([])
 
   useEffect(() => {
+    fetchMemberApi('/api/groups/profile/memberships').then(({ ministries: items = [] }) => setMemberMinistries(items)).catch(() => {})
     fetchMemberApi('/api/ministry-applications')
       .then((response) => {
         const records = response.applications || []
@@ -1878,38 +1884,103 @@ function MinistriesPage() {
 }
 
 function MinistryDirectory() {
+  const [directory, setDirectory] = useState(ministries)
   const [approvedMinistries, setApprovedMinistries] = useState(() => (localStorage.getItem('gic_member_ministries') || '').split(',').map((ministry) => ministry.trim()).filter(Boolean))
+  const [directoryError, setDirectoryError] = useState('')
 
   useEffect(() => {
-    fetchMemberApi('/api/ministry-applications')
-      .then((response) => {
-        const approved = response.applications?.filter((application) => application.status === 'APPROVED').map((application) => application.ministry) || []
+    Promise.all([fetchMemberApi('/api/groups/ministries'), fetchMemberApi('/api/ministry-applications')])
+      .then(([groupData, applicationData]) => {
+        const approved = applicationData.applications?.filter((application) => application.status === 'APPROVED').map((application) => application.ministry) || []
         setApprovedMinistries((current) => [...new Set([...current, ...approved])])
-      })
-      .catch(() => {})
+        setDirectory((groupData.ministries || []).map((item) => {
+          const fallback = ministries.find((entry) => entry.title.toLowerCase() === item.name.toLowerCase())
+          return { ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.', joined: item.joined, applicationStatus: item.applicationStatus, applicationRequired: item.applicationRequired }
+        }))
+      }).catch(() => {})
   }, [])
+
+  const toggleDirectMembership = async (ministry) => {
+    try {
+      const path = `/api/groups/ministries/${ministry.id}/join`
+      await fetchMemberApi(path, { method: ministry.joined ? 'DELETE' : 'POST' })
+      const { ministries: items = [] } = await fetchMemberApi('/api/groups/ministries')
+      setDirectory(items.map((item) => {
+        const fallback = ministries.find((entry) => entry.title.toLowerCase() === item.name.toLowerCase())
+        return { ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.', joined: item.joined, applicationStatus: item.applicationStatus, applicationRequired: item.applicationRequired }
+      }))
+    } catch (error) { setDirectoryError(error.message || 'Membership could not be updated.') }
+  }
+  const withdrawApplication = async (ministry) => {
+    try {
+      await fetchMemberApi(`/api/ministry-applications/${ministry.applicationId}`, { method: 'DELETE' })
+      const { ministries: items = [] } = await fetchMemberApi('/api/groups/ministries')
+      setDirectory(items.map((item) => {
+        const fallback = ministries.find((entry) => entry.title.toLowerCase() === item.name.toLowerCase())
+        return { ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.', joined: item.joined, applicationStatus: item.applicationStatus, applicationId: item.applicationId, applicationRequired: item.applicationRequired }
+      }))
+    } catch (error) { setDirectoryError(error.message || 'Application could not be withdrawn.') }
+  }
 
   return <MemberShell active="ministries" title="Browse Ministries" backTo="/ministries">
     <p className="ministries-subtitle">Find a place to grow, serve, and make an impact.</p>
-    <div className="directory-list">{ministries.map((ministry) => <article className="directory-card" key={ministry.id}>
-      <img src={ministry.image} alt="" />
+    <Link className="btn secondary wide" to="/cells">Browse Fellowships & Cells</Link>
+    {directoryError && <p role="alert">{directoryError}</p>}
+    <div className="directory-list">{directory.map((ministry) => <article className="directory-card" key={ministry.id}>
+      {ministry.image && <img src={ministry.image} alt="" />}
       <div className="directory-card-body">
         <h2>{ministry.title}</h2>
         <p>{ministry.desc}</p>
         <div className="directory-requirements"><b>What you need</b><span>{ministry.requirements}</span></div>
-        {approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
+        {ministry.joined || approvedMinistries.includes(ministry.title) ? <Link className="btn member wide" to={`/ministries/${ministry.id}`}>Member</Link> : ministry.applicationStatus === 'pending' ? <button className="btn secondary wide" onClick={() => withdrawApplication(ministry)}>Withdraw pending application</button> : !ministry.applicationRequired ? <button className="btn primary wide" onClick={() => toggleDirectMembership(ministry)}>Join ministry</button> : <Link className="btn primary wide" to={`/ministries/${ministry.id}/apply`}>Apply to serve</Link>}
       </div>
     </article>)}</div>
+  </MemberShell>
+}
+
+function CellsPage() {
+  const [cells, setCells] = useState([])
+  const [error, setError] = useState('')
+  const load = () => fetchMemberApi('/api/groups/cells').then(({ cells: items = [] }) => setCells(items)).catch((requestError) => setError(requestError.message || 'Cells could not be loaded.'))
+  useEffect(() => { load() }, [])
+  const join = async (cell) => {
+    setError('')
+    try {
+      if (cell.joined) await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'DELETE' })
+      else await fetchMemberApi(`/api/groups/cells/${cell.id}/join`, { method: 'POST' })
+      await load()
+    } catch (requestError) { setError(requestError.message || 'Membership could not be updated.') }
+  }
+  const withdraw = async (cell) => {
+    try {
+      await fetchMemberApi(`/api/ministry-applications/${cell.applicationId}`, { method: 'DELETE' })
+      await load()
+    } catch (requestError) { setError(requestError.message || 'Application could not be withdrawn.') }
+  }
+  return <MemberShell active="ministries" title="Fellowships & Cells" backTo="/ministries/browse">
+    <p className="ministries-subtitle">Join a fellowship or cell that fits your profile.</p>
+    {error && <p role="alert">{error}</p>}
+    <div className="directory-list">{cells.map((cell) => <article className="directory-card" key={cell.id}><div className="directory-card-body"><h2>{cell.name}</h2><p>{cell.description || 'Connect with members in this fellowship or cell.'}</p>{!cell.eligible && <p className="profile-form-help">Your profile does not currently meet this group&apos;s eligibility requirements.</p>}{cell.eligibilityReviewRequired && <p className="profile-form-help">Your membership is awaiting an eligibility review.</p>}{cell.applicationStatus === 'pending' && <button className="btn secondary wide" onClick={() => withdraw(cell)}>Withdraw pending application</button>}{cell.joined && <button className="btn member wide" onClick={() => join(cell)}>Leave group</button>}{!cell.joined && cell.applicationStatus !== 'pending' && <button className="btn primary wide" disabled={!cell.eligible} onClick={() => join(cell)}>{cell.applicationRequired ? 'Apply to join' : 'Join group'}</button>}</div></article>)}</div>
+    {!cells.length && !error && <div className="empty"><h2>No fellowships or cells are available</h2></div>}
   </MemberShell>
 }
 
 function MinistryApplication() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const ministry = ministries.find((item) => item.id === id)
+  const [ministry, setMinistry] = useState(() => ministries.find((item) => item.id === id) || null)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+
+  useEffect(() => {
+    fetchMemberApi('/api/groups/ministries').then(({ ministries: items = [] }) => {
+      const item = items.find((candidate) => candidate.id === id)
+      if (!item) return
+      const fallback = ministries.find((candidate) => candidate.title.toLowerCase() === item.name.toLowerCase())
+      setMinistry({ ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.' })
+    }).catch(() => {})
+  }, [id])
 
   if (!ministry) return <Navigate to="/ministries/browse" replace />
 
@@ -1920,7 +1991,7 @@ function MinistryApplication() {
       await fetchMemberApi('/api/ministry-applications', {
         method: 'POST',
         body: JSON.stringify({
-          ministry: ministry.title,
+          ...(ministry.id.length === 36 ? { ministryId: ministry.id } : { ministry: ministry.title }),
           message,
           memberName: localStorage.getItem('gic_member_name') || '',
         }),
@@ -1942,8 +2013,17 @@ function MinistryApplication() {
 
 function MinistryDetails() {
   const { id } = useParams()
-  const ministry = ministries.find((item) => item.id === id) || ministries[0]
+  const [ministry, setMinistry] = useState(() => ministries.find((item) => item.id === id) || ministries[0])
   const [tab, setTab] = useState('about')
+
+  useEffect(() => {
+    fetchMemberApi('/api/groups/ministries').then(({ ministries: items = [] }) => {
+      const item = items.find((candidate) => candidate.id === id)
+      if (!item) return
+      const fallback = ministries.find((candidate) => candidate.title.toLowerCase() === item.name.toLowerCase())
+      setMinistry({ ...fallback, id: item.id, title: item.name, desc: item.description || fallback?.desc || 'Serve and grow with this church ministry.', image: item.imageUrl || fallback?.image, requirements: fallback?.requirements || 'Contact the ministry leaders for details.' })
+    }).catch(() => {})
+  }, [id])
 
   return <MemberShell active="ministries" title={ministry.title} backTo="/ministries"><div className="ministry-cover" style={{ backgroundImage: `url(${ministry.image})` }}><h1>{ministry.title.toUpperCase()}</h1></div><div className="detail-body ministry-detail-body"><h2>{ministry.title}</h2><p>{ministry.desc}</p><div className="mini-tabs"><button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>About</button><button className={tab === 'updates' ? 'active' : ''} onClick={() => setTab('updates')}>Updates</button></div>{tab === 'about' ? <><section className="ministry-about"><b>About this ministry</b><p>{ministry.title} is a community of people growing in faith, serving with purpose, and making a meaningful impact together. Find your place, build relationships, and use your gifts to serve.</p></section><div className="contact contact-empty"><div className="action-icon"><Users size={16} /></div><div><small>Contact Leader</small><span>Contact details will be added soon.</span></div></div></> : <><div className="upcoming-box"><b>Upcoming Meeting</b><span><CalendarDays size={14} /> Friday, 24 May 2024 · 6:00 PM</span><span><MapPin size={14} /> Youth Hall</span></div><div className="ministry-updates-empty"><Bell size={22} /><b>No updates yet</b><span>New updates from this ministry will appear here.</span></div></>}</div></MemberShell>
 }
@@ -2378,6 +2458,7 @@ export default function App() {
         <Route path="/forms/prayer-request" element={<ProtectedRoute><PrayerRequest /></ProtectedRoute>} />
         <Route path="/ministries" element={<ProtectedRoute><MinistriesPage /></ProtectedRoute>} />
         <Route path="/ministries/browse" element={<ProtectedRoute><MinistryDirectory /></ProtectedRoute>} />
+        <Route path="/cells" element={<ProtectedRoute><CellsPage /></ProtectedRoute>} />
         <Route path="/ministries/:id/apply" element={<ProtectedRoute><MinistryApplication /></ProtectedRoute>} />
         <Route path="/ministries/:id" element={<ProtectedRoute><MinistryDetails /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

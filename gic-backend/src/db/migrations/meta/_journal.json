@@ -15,6 +15,7 @@
     { "idx": 10, "version": "7", "when": 1791000000000, "tag": "0011_update_age_group_ranges", "breakpoints": true },
     { "idx": 11, "version": "7", "when": 1791000100000, "tag": "0012_singularize_age_group_names", "breakpoints": true },
     { "idx": 12, "version": "7", "when": 1791000200000, "tag": "0013_member_app_ministries", "breakpoints": true },
-    { "idx": 13, "version": "7", "when": 1791000300000, "tag": "0014_it_ministry_youth_fellowship", "breakpoints": true }
+    { "idx": 13, "version": "7", "when": 1791000300000, "tag": "0014_it_ministry_youth_fellowship", "breakpoints": true },
+    { "idx": 14, "version": "7", "when": 1791000400000, "tag": "0015_organization_directory", "breakpoints": true }
   ]
 }

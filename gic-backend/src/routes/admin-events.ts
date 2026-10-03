@@ -10,6 +10,8 @@ import {
   eventReminders,
   members,
   busPickupPoints,
+  ministries,
+  cells,
 } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
 import { recordActivity } from "../services/activity.service.js";
@@ -47,6 +49,8 @@ const eventSchemaBase = z.object({
   registrationCapacity: z.number().int().positive().nullable().optional(),
   allowWaitlist: z.boolean().default(false),
   organizerUnit: z.string().trim().nullable().optional(),
+  organizationKind: z.enum(["ministry", "cell"]).nullable().optional(),
+  organizationId: z.string().uuid().nullable().optional(),
   organizerContactPerson: z.string().trim().nullable().optional(),
   organizerContactPhone: z.string().trim().nullable().optional(),
   isOnline: z.boolean().default(false),
@@ -114,6 +118,8 @@ function eventValues(value: z.infer<typeof eventSchema>, createdBy: string, chur
     registrationCapacity: value.registrationCapacity ?? null,
     allowWaitlist: value.allowWaitlist,
     organizerUnit: value.organizerUnit ?? null,
+    organizationKind: value.organizationKind ?? null,
+    organizationId: value.organizationId ?? null,
     organizerContactPerson: value.organizerContactPerson ?? null,
     organizerContactPhone: value.organizerContactPhone ?? null,
     isOnline: value.isOnline,
@@ -148,6 +154,13 @@ app.post("/", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   const parsed = eventSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: "Invalid event", details: parsed.error.issues }, 400);
+  if (parsed.data.organizationId && !parsed.data.organizationKind) return c.json({ error: "Choose an organization type." }, 400);
+  if (parsed.data.organizationId) {
+    const organization = parsed.data.organizationKind === "cell"
+      ? await db.query.cells.findFirst({ where: and(eq(cells.id, parsed.data.organizationId), eq(cells.churchId, churchId)) })
+      : await db.query.ministries.findFirst({ where: and(eq(ministries.id, parsed.data.organizationId), eq(ministries.churchId, churchId)) });
+    if (!organization) return c.json({ error: "Organization not found." }, 400);
+  }
   const [event] = await db.insert(events).values(eventValues(parsed.data, c.get("user").sub, churchId)).returning();
   if (event.notifyOnPublish && event.status === "PUBLISHED") {
     // Event creation must not fail after the event has been saved just because
@@ -184,6 +197,12 @@ app.put("/:id", async (c) => {
   const next = { ...existing, ...parsed.data };
   const normalized = eventSchema.safeParse(next);
   if (!normalized.success) return c.json({ error: "Invalid event", details: normalized.error.issues }, 400);
+  if (normalized.data.organizationId) {
+    const organization = normalized.data.organizationKind === "cell"
+      ? await db.query.cells.findFirst({ where: and(eq(cells.id, normalized.data.organizationId), eq(cells.churchId, churchId)) })
+      : await db.query.ministries.findFirst({ where: and(eq(ministries.id, normalized.data.organizationId), eq(ministries.churchId, churchId)) });
+    if (!organization) return c.json({ error: "Organization not found." }, 400);
+  }
   const [event] = await db.update(events).set(eventValues(normalized.data, existing.createdBy, churchId)).where(and(eq(events.id, id), eq(events.churchId, churchId))).returning();
   return c.json({ event });
 });

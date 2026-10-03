@@ -148,8 +148,8 @@ export default function AdminGroupManagement() {
   }))
 
   return <main className="page">
-    <div className="page-head"><div><h1>Segments, Ministries & Cells</h1><p>Manage groups and messaging audiences for this church.</p></div><Link className="btn secondary" to="/ministry-applications"><ArrowLeft size={14}/> Applications</Link></div>
-    <div className="tabs big">{[['segments','Segments'],['ministries','Ministries'],['cells','Cells'],['ageGroups','Age Groups']].map(([value,label]) => <button key={value} className={tab===value?'active':''} onClick={() => {setTab(value);setSelected(null);resetForm()}}>{label}</button>)}</div>
+    <div className="page-head"><div><h1>Segments</h1><p>Manage audience classifications and age groups independently of church organizations.</p></div><Link className="btn secondary" to="/ministries"><ArrowLeft size={14}/> Ministries</Link></div>
+    <div className="tabs big">{[['segments','Segments'],['ageGroups','Age Groups']].map(([value,label]) => <button key={value} className={tab===value?'active':''} onClick={() => {setTab(value);setSelected(null);resetForm()}}>{label}</button>)}</div>
     {error && <div className="empty-message" role="alert">{error}</div>}{notice && <div className="empty-message" role="status">{notice}</div>}
     <div className="grid-2">
       <section className="card table-card"><div className="card-head"><div><b>{tab[0].toUpperCase()+tab.slice(1)}</b><small>{list.length} groups</small></div><button className="tool" onClick={() => load().catch((err)=>setError(err.message))}><RefreshCw size={14}/> Refresh</button></div>
