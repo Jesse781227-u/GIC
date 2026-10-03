@@ -13,6 +13,7 @@ import {adminAuth} from './firebase'
 import NotificationMessageComposer from './NotificationMessageComposer'
 import AdminGroupManagement from './AdminGroupManagement'
 import {onAuthStateChanged, signInWithEmailAndPassword, signOut} from 'firebase/auth'
+import './member-filters.css'
 
 const purple='#4b20b5'
 const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
@@ -146,11 +147,14 @@ function Members(){
  const toggleAll=()=>setSelected(selected.length===filtered.length?[]:filtered.map((member)=>member.id))
  const groups=[...new Set(memberRecords.flatMap((member)=>member.groups.split(', ')))]
  return <Page title="Members" subtitle="Live member records from the GIC platform">
-  <Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Active</option><option>Inactive</option></select><select aria-label="Filter by ministry" value={ministryId} onChange={(event)=>setMinistryId(event.target.value)}><option value="">All Ministries</option>{filterOptions.ministries.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
- <select aria-label="Filter by cell or fellowship" value={fellowshipId} onChange={(event)=>setFellowshipId(event.target.value)}><option value="">All Cells / Fellowships</option>{filterOptions.fellowships.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
- <select aria-label="Filter by segment" value={segmentId} onChange={(event)=>setSegmentId(event.target.value)}><option value="">All Segments</option>{filterOptions.segments.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
- <select aria-label="Filter by age group" value={ageGroupId} onChange={(event)=>setAgeGroupId(event.target.value)}><option value="">All Age Groups</option>{filterOptions.ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}: {item.minAge}–{item.maxAge ?? '+'}</option>)}</select>
- <select aria-label="Filter by relationship status" value={relationshipStatus} onChange={(event)=>setRelationshipStatus(event.target.value)}><option value="">All Relationship Statuses</option><option value="Single">Single</option><option value="Married">Married</option></select></div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries / Fellowships / Segments</th><th>Member since</th><th>Birthday</th><th>Status</th><th>Last seen</th><th aria-label="Actions" /></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}><div className="avatar">{displayName(member).split(/\s+/).map((part)=>part[0]).join('').slice(0,2).toUpperCase()}</div><b>{displayName(member)}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.centre||'—'}</td><td>{[...(member.groups?.ministries||[]),...(member.groups?.fellowships||[]),...(member.groups?.segments||[])].map((item)=>item.name).join(', ')||member.ministries||'—'}</td><td>{member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'—'}</td><td>{member.birthday||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td><td><button className="icon-btn delete-member" type="button" onClick={()=>deleteMember(member)} disabled={deletingId===member.id} aria-label={`Delete ${member.displayName}`} title="Delete member"><Trash2 size={14}/></button></td></tr>)}</tbody></table></div>}{!loading&&!error&&total>0&&<div className="pagination">
+  <Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div>
+<MultiSelectFilter label="All Statuses" options={[{value:'Active',label:'Active'},{value:'Inactive',label:'Inactive'}]} selected={statusFilters} onChange={setStatusFilters}/>
+<MultiSelectFilter label="All Ministries" options={filterOptions.ministries.map((item)=>({value:item.id,label:item.name}))} selected={ministryIds} onChange={setMinistryIds}/>
+<MultiSelectFilter label="All Cells / Fellowships" options={filterOptions.fellowships.map((item)=>({value:item.id,label:item.name}))} selected={fellowshipIds} onChange={setFellowshipIds}/>
+<MultiSelectFilter label="All Segments" options={filterOptions.segments.map((item)=>({value:item.id,label:item.name}))} selected={segmentIds} onChange={setSegmentIds}/>
+<MultiSelectFilter label="All Age Groups" options={filterOptions.ageGroups.map((item)=>({value:item.id,label:`${item.name}: ${item.minAge}–${item.maxAge ?? '+'}`}))} selected={ageGroupIds} onChange={setAgeGroupIds}/>
+<MultiSelectFilter label="All Relationship Statuses" options={[{value:'Single',label:'Single'},{value:'Married',label:'Married'}]} selected={relationshipStatuses} onChange={setRelationshipStatuses}/>
+</div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries / Fellowships / Segments</th><th>Member since</th><th>Birthday</th><th>Status</th><th>Last seen</th><th aria-label="Actions" /></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}><div className="avatar">{displayName(member).split(/\s+/).map((part)=>part[0]).join('').slice(0,2).toUpperCase()}</div><b>{displayName(member)}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.centre||'—'}</td><td>{[...(member.groups?.ministries||[]),...(member.groups?.fellowships||[]),...(member.groups?.segments||[])].map((item)=>item.name).join(', ')||member.ministries||'—'}</td><td>{member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'—'}</td><td>{member.birthday||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td><td><button className="icon-btn delete-member" type="button" onClick={()=>deleteMember(member)} disabled={deletingId===member.id} aria-label={`Delete ${member.displayName}`} title="Delete member"><Trash2 size={14}/></button></td></tr>)}</tbody></table></div>}{!loading&&!error&&total>0&&<div className="pagination">
   <span>Showing {(page-1)*pageSize+1}–{Math.min(page*pageSize,total)} of {total} members</span>
   <div>
    <button type="button" className="tool" disabled={page<=1} onClick={()=>setPage((current)=>Math.max(1,current-1))}>Previous</button>
@@ -546,17 +550,28 @@ function MinistryApplications(){
   return <Page title="Ministry applications" subtitle="Review member requests to serve in church ministries" action={<Link className="btn secondary" to="/ministry-applications/groups"><Users size={14}/> Manage groups & segments</Link>}><Card className="table-card">{loading&&<div className="empty-message">Loading applications...</div>}{error&&<div className="empty-message">Applications are unavailable right now.</div>}{!loading&&!error&&!applications.length&&<div className="empty-message">No ministry applications yet.</div>}{!loading&&!error&&applications.map((application)=><div className="application-row" key={application.id}><div className="application-applicant">{application.applicant?.avatar?<img className="avatar" src={application.applicant.avatar} alt=""/>:<div className="avatar">{(application.applicant?.name||application.memberName||'?').slice(0,2).toUpperCase()}</div>}<div><b>{application.applicant?.name||application.memberName}</b><small>{application.applicant?.phone||'Phone not provided'} · {application.applicant?.email||'Email not provided'}</small><small>{application.applicant?.center||'Centre not provided'} · Member since {application.applicant?.joinedMonth&&application.applicant?.joinedYear?`${application.applicant.joinedMonth}/${application.applicant.joinedYear}`:'not provided'}</small><small>Already in: {application.applicant?.ministries||'No ministries recorded'}</small><strong>Applying for: {application.ministry}</strong>{application.message&&<p>{application.message}</p>}</div></div><span className={'badge '+(application.status==='APPROVED'?'success':application.status==='DECLINED'?'gray':'blue')}>{application.status}</span><div className="application-actions"><button className="tool" onClick={()=>updateStatus(application.id,'APPROVED')}>Approve</button><button className="tool" onClick={()=>updateStatus(application.id,'DECLINED')}>Decline</button></div></div>)}</Card></Page>
 }
 
+function MultiSelectFilter({label,options,selected,onChange}){
+ return <details className="multi-select-filter">
+  <summary>{selected.length?`${label} (${selected.length})`:label}<ChevronDown size={13}/></summary>
+  <div className="multi-select-options">
+   {options.map((option)=><label key={option.value}><input type="checkbox" checked={selected.includes(option.value)} onChange={()=>onChange(selected.includes(option.value)?selected.filter((value)=>value!==option.value):[...selected,option.value])}/><span>{option.label}</span></label>)}
+   {!options.length&&<span className="multi-select-empty">No options available</span>}
+   {selected.length>0&&<button type="button" onClick={()=>onChange([])}>Clear selection</button>}
+  </div>
+ </details>
+}
+
 function LiveMembers(){
  const [query,setQuery]=useState('')
- const [status,setStatus]=useState('All Statuses')
+ const [statusFilters,setStatusFilters]=useState([])
  const [page,setPage]=useState(1)
  const [pageSize]=useState(50)
  const [total,setTotal]=useState(0)
- const [ministryId,setMinistryId]=useState('')
- const [fellowshipId,setFellowshipId]=useState('')
- const [segmentId,setSegmentId]=useState('')
- const [ageGroupId,setAgeGroupId]=useState('')
- const [relationshipStatus,setRelationshipStatus]=useState('')
+ const [ministryIds,setMinistryIds]=useState([])
+ const [fellowshipIds,setFellowshipIds]=useState([])
+ const [segmentIds,setSegmentIds]=useState([])
+ const [ageGroupIds,setAgeGroupIds]=useState([])
+ const [relationshipStatuses,setRelationshipStatuses]=useState([])
  const [filterOptions,setFilterOptions]=useState({ministries:[],fellowships:[],segments:[],ageGroups:[]})
  const [records,setRecords]=useState([])
  const [loading,setLoading]=useState(true)
@@ -567,12 +582,12 @@ function LiveMembers(){
   let cancelled=false
   const params=new URLSearchParams()
   if(query.trim())params.set('search',query.trim())
-  if(status!=='All Statuses')params.set('status',status)
-  if(ministryId)params.set('ministryId',ministryId)
-  if(fellowshipId)params.set('fellowshipId',fellowshipId)
-  if(segmentId)params.set('segmentId',segmentId)
-  if(ageGroupId)params.set('ageGroupId',ageGroupId)
-  if(relationshipStatus)params.set('relationshipStatus',relationshipStatus)
+  statusFilters.forEach((value)=>params.append('status',value))
+  ministryIds.forEach((value)=>params.append('ministryId',value))
+  fellowshipIds.forEach((value)=>params.append('fellowshipId',value))
+  segmentIds.forEach((value)=>params.append('segmentId',value))
+  ageGroupIds.forEach((value)=>params.append('ageGroupId',value))
+  relationshipStatuses.forEach((value)=>params.append('relationshipStatus',value))
   params.set('page',String(page))
   params.set('pageSize',String(pageSize))
   setLoading(true)
@@ -584,8 +599,8 @@ function LiveMembers(){
   setFilterOptions({ministries:filters.ministries||[],fellowships:filters.fellowships||[],segments:filters.segments||[],ageGroups:filters.ageGroups||[]})
   }).catch((requestError)=>{if(!cancelled)setError(requestError.message)}).finally(()=>{if(!cancelled)setLoading(false)})
   return ()=>{cancelled=true}
- },[query,status,ministryId,fellowshipId,segmentId,ageGroupId,relationshipStatus,page,pageSize])
- useEffect(()=>{setPage(1)},[query,status,ministryId,fellowshipId,segmentId,ageGroupId,relationshipStatus])
+ },[query,statusFilters,ministryIds,fellowshipIds,segmentIds,ageGroupIds,relationshipStatuses,page,pageSize])
+ useEffect(()=>{setPage(1)},[query,statusFilters,ministryIds,fellowshipIds,segmentIds,ageGroupIds,relationshipStatuses])
  const visible=records
  const displayName=(member)=>String(member.displayName||member.name||'Unnamed member').trim()||'Unnamed member'
  const deleteMember=async(member)=>{
@@ -602,11 +617,14 @@ function LiveMembers(){
   }
  }
  return <Page title="Members" subtitle="Live member records from the GIC platform">
-  <Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Active</option><option>Inactive</option></select><select aria-label="Filter by ministry" value={ministryId} onChange={(event)=>setMinistryId(event.target.value)}><option value="">All Ministries</option>{filterOptions.ministries.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
- <select aria-label="Filter by cell or fellowship" value={fellowshipId} onChange={(event)=>setFellowshipId(event.target.value)}><option value="">All Cells / Fellowships</option>{filterOptions.fellowships.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
- <select aria-label="Filter by segment" value={segmentId} onChange={(event)=>setSegmentId(event.target.value)}><option value="">All Segments</option>{filterOptions.segments.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select>
- <select aria-label="Filter by age group" value={ageGroupId} onChange={(event)=>setAgeGroupId(event.target.value)}><option value="">All Age Groups</option>{filterOptions.ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}: {item.minAge}–{item.maxAge ?? '+'}</option>)}</select>
- <select aria-label="Filter by relationship status" value={relationshipStatus} onChange={(event)=>setRelationshipStatus(event.target.value)}><option value="">All Relationship Statuses</option><option value="Single">Single</option><option value="Married">Married</option></select></div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries / Fellowships / Segments</th><th>Member since</th><th>Birthday</th><th>Status</th><th>Last seen</th><th aria-label="Actions" /></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}><div className="avatar">{displayName(member).split(/\s+/).map((part)=>part[0]).join('').slice(0,2).toUpperCase()}</div><b>{displayName(member)}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.centre||'—'}</td><td>{[...(member.groups?.ministries||[]),...(member.groups?.fellowships||[]),...(member.groups?.segments||[])].map((item)=>item.name).join(', ')||member.ministries||'—'}</td><td>{member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'—'}</td><td>{member.birthday||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td><td><button className="icon-btn delete-member" type="button" onClick={()=>deleteMember(member)} disabled={deletingId===member.id} aria-label={`Delete ${member.displayName}`} title="Delete member"><Trash2 size={14}/></button></td></tr>)}</tbody></table></div>}{!loading&&!error&&total>0&&<div className="pagination">
+  <Card className="table-card"><div className="member-toolbar"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search live member records..."/></div>
+<MultiSelectFilter label="All Statuses" options={[{value:'Active',label:'Active'},{value:'Inactive',label:'Inactive'}]} selected={statusFilters} onChange={setStatusFilters}/>
+<MultiSelectFilter label="All Ministries" options={filterOptions.ministries.map((item)=>({value:item.id,label:item.name}))} selected={ministryIds} onChange={setMinistryIds}/>
+<MultiSelectFilter label="All Cells / Fellowships" options={filterOptions.fellowships.map((item)=>({value:item.id,label:item.name}))} selected={fellowshipIds} onChange={setFellowshipIds}/>
+<MultiSelectFilter label="All Segments" options={filterOptions.segments.map((item)=>({value:item.id,label:item.name}))} selected={segmentIds} onChange={setSegmentIds}/>
+<MultiSelectFilter label="All Age Groups" options={filterOptions.ageGroups.map((item)=>({value:item.id,label:`${item.name}: ${item.minAge}–${item.maxAge ?? '+'}`}))} selected={ageGroupIds} onChange={setAgeGroupIds}/>
+<MultiSelectFilter label="All Relationship Statuses" options={[{value:'Single',label:'Single'},{value:'Married',label:'Married'}]} selected={relationshipStatuses} onChange={setRelationshipStatuses}/>
+</div>{loading&&<div className="empty-message">Loading members...</div>}{error&&<div className="empty-message">Members are unavailable: {error}</div>}{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}{!loading&&!error&&!visible.length&&<div className="empty-message">No live members found.</div>}{!loading&&!error&&visible.length>0&&<div className="table-wrap"><table><thead><tr><th>Member</th><th>Contact</th><th>Centre</th><th>Ministries / Fellowships / Segments</th><th>Member since</th><th>Birthday</th><th>Status</th><th>Last seen</th><th aria-label="Actions" /></tr></thead><tbody>{visible.map((member)=><tr key={member.id}><td><Link className="member-cell" to={`/members/${member.id}`}><div className="avatar">{displayName(member).split(/\s+/).map((part)=>part[0]).join('').slice(0,2).toUpperCase()}</div><b>{displayName(member)}</b></Link></td><td><span>{member.phone||'—'}</span><small className="table-subtext">{member.email||'—'}</small></td><td>{member.centre||'—'}</td><td>{[...(member.groups?.ministries||[]),...(member.groups?.fellowships||[]),...(member.groups?.segments||[])].map((item)=>item.name).join(', ')||member.ministries||'—'}</td><td>{member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'—'}</td><td>{member.birthday||'—'}</td><td><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span></td><td>{member.lastSeenAt?new Date(member.lastSeenAt).toLocaleString():'—'}</td><td><button className="icon-btn delete-member" type="button" onClick={()=>deleteMember(member)} disabled={deletingId===member.id} aria-label={`Delete ${member.displayName}`} title="Delete member"><Trash2 size={14}/></button></td></tr>)}</tbody></table></div>}{!loading&&!error&&total>0&&<div className="pagination">
   <span>Showing {(page-1)*pageSize+1}–{Math.min(page*pageSize,total)} of {total} members</span>
   <div>
    <button type="button" className="tool" disabled={page<=1} onClick={()=>setPage((current)=>Math.max(1,current-1))}>Previous</button>

@@ -11,7 +11,7 @@ import { recordActivity } from "../services/activity.service.js";
 import { flagIneligibleCellMembershipsForMember, resolveSegmentMemberIds } from "../services/member-groups.service.js";
 import { listActiveAgeGroups } from "../services/age-groups.service.js";
 import { matchesProfileCondition } from "../services/member-group-rules.js";
-import { ensureMemberAppMinistries } from "../services/ministry-catalog.service.js";
+import { ensureMemberAppMinistries, ensureYouthFellowship } from "../services/ministry-catalog.service.js";
 
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
@@ -59,10 +59,10 @@ app.get("/", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   const query = z.object({
     search: z.string().optional(),
-    status: z.string().optional(),
+    status: z.union([z.string(), z.array(z.string())]).optional(),
     center: z.string().optional(),
-    ageGroupId: z.string().uuid().optional(),
-    relationshipStatus: z.enum(["Single", "Married"]).optional(),
+    ageGroupId: z.union([z.string().uuid(), z.array(z.string().uuid())]).optional(),
+    relationshipStatus: z.union([z.enum(["Single", "Married"]), z.array(z.enum(["Single", "Married"]))]).optional(),
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(50),
     cellId: z.union([z.string(), z.array(z.string())]).optional(),
@@ -74,10 +74,10 @@ app.get("/", async (c) => {
   if (!query.success) return c.json({ error: "Invalid member filters" }, 400);
 
   const searchTerm = (query.data.search || "").trim().toLowerCase();
-  const status = (query.data.status || "").trim();
+  const statuses = toIdList(query.data.status);
   const center = (query.data.center || "").trim();
-  const ageGroupId = query.data.ageGroupId;
-  const relationshipStatus = query.data.relationshipStatus;
+  const ageGroupIds = toIdList(query.data.ageGroupId);
+  const relationshipStatuses = toIdList(query.data.relationshipStatus);
   const page = query.data.page;
   const pageSize = query.data.pageSize;
   const cellIds = toIdList(query.data.cellId);
@@ -87,12 +87,18 @@ app.get("/", async (c) => {
   const segmentIds = toIdList(query.data.segmentId);
 
   const conditions = [eq(members.churchId, churchId)];
-  if (status.toLowerCase() === "active") conditions.push(eq(members.active, true));
-  else if (status.toLowerCase() === "inactive") conditions.push(eq(members.active, false));
-  else if (status) conditions.push(eq(members.membershipStatus, status));
+  const statusConditions = statuses.flatMap((status) => {
+    if (status.toLowerCase() === "active") return [eq(members.active, true)];
+    if (status.toLowerCase() === "inactive") return [eq(members.active, false)];
+    return [eq(members.membershipStatus, status)];
+  });
+  if (statusConditions.length && statuses.length === 1) conditions.push(statusConditions[0]);
+  else if (statusConditions.length > 1 && statuses.length > 1 && !statuses.some((status) => ["active", "inactive"].includes(status.toLowerCase()))) conditions.push(or(...statusConditions)!);
   if (center) conditions.push(eq(members.center, center));
-  if (ageGroupId) conditions.push(eq(members.ageGroupId, ageGroupId));
-  if (relationshipStatus) conditions.push(eq(members.relationshipStatus, relationshipStatus));
+  if (ageGroupIds.length === 1) conditions.push(eq(members.ageGroupId, ageGroupIds[0]));
+  else if (ageGroupIds.length > 1) conditions.push(inArray(members.ageGroupId, ageGroupIds));
+  if (relationshipStatuses.length === 1) conditions.push(eq(members.relationshipStatus, relationshipStatuses[0]));
+  else if (relationshipStatuses.length > 1) conditions.push(inArray(members.relationshipStatus, relationshipStatuses));
   if (searchTerm) {
     const searchClause = or(
       sql`LOWER(${members.displayName}) LIKE ${`%${searchTerm}%`}`,
@@ -106,6 +112,7 @@ app.get("/", async (c) => {
   const baseMembers = await db.query.members.findMany({ where: and(...conditions) });
   const baseIds = new Set(baseMembers.map((member) => member.id));
   await ensureMemberAppMinistries(churchId);
+  await ensureYouthFellowship(churchId);
   const filterOptions = await Promise.all([
     db.query.ministries.findMany({ where: eq(ministries.churchId, churchId) }),
     db.query.cells.findMany({ where: and(eq(cells.churchId, churchId), eq(cells.active, true)) }),
@@ -122,13 +129,14 @@ app.get("/", async (c) => {
   const eventIds = segmentIds.filter((id) => id.startsWith("event:")).map((id) => id.slice("event:".length));
   const systemSegments = segmentIds.filter((id) => ["new-members", "old-members", "male", "female"].includes(id));
   const customSegmentIds = segmentIds.filter((id) => !systemSegments.includes(id) && !id.startsWith("event:"));
+  const segmentMatches = new Set<string>();
   for (const segmentId of systemSegments) {
     const matchedIds = baseMembers.filter((member) => {
       if (segmentId === "new-members") return matchesProfileCondition(member, { field: "joined_within_months", operator: "within", value: 5 });
       if (segmentId === "old-members") return !matchesProfileCondition(member, { field: "joined_within_months", operator: "within", value: 5 });
       return (member.gender || "").toLowerCase() === segmentId;
     }).map((member) => member.id);
-    categorySets.push(new Set(matchedIds));
+    matchedIds.forEach((id) => segmentMatches.add(id));
   }
   const publishedEventIds = new Set(filterOptions[4].map((event) => event.id));
   const selectedEventIds = eventIds.filter((id) => publishedEventIds.has(id));
@@ -136,9 +144,13 @@ app.get("/", async (c) => {
     const registrations = selectedEventIds.length ? await db.query.eventRegistrations.findMany({
       where: and(eq(eventRegistrations.churchId, churchId), inArray(eventRegistrations.eventId, selectedEventIds), eq(eventRegistrations.status, "CONFIRMED")),
     }) : [];
-    categorySets.push(new Set(registrations.map((registration) => registration.memberId)));
+    registrations.forEach((registration) => segmentMatches.add(registration.memberId));
   }
-  if (customSegmentIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, customSegmentIds, "segment"));
+  if (customSegmentIds.length) {
+    const customMatches = await filterMemberIdsByMemberships(churchId, customSegmentIds, "segment");
+    customMatches.forEach((id) => segmentMatches.add(id));
+  }
+  if (segmentIds.length) categorySets.push(segmentMatches);
 
   const candidateIds = categorySets.length ? categorySets.reduce((intersection, current) => {
     const next = new Set<string>();

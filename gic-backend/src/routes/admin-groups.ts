@@ -10,6 +10,7 @@ import type { GroupRules } from "../services/member-group-rules.js";
 import { recordActivity } from "../services/activity.service.js";
 import { ensureAgeGroupsForChurch } from "../services/age-groups.service.js";
 import { ensureMemberAppMinistries } from "../services/ministry-catalog.service.js";
+import { ensureYouthFellowship } from "../services/ministry-catalog.service.js";
 
 const app = new Hono();
 app.use("*", authMiddleware, adminMiddleware);
@@ -47,7 +48,6 @@ async function ensureStandardSegments(churchId: string, actor: string) {
     { name: "Protocol", description: "Protocol and event coordination team members.", rules: { conditions: [] } },
     { name: "Security", description: "Security team members.", rules: { conditions: [] } },
     { name: "Pastors", description: "Pastoral leadership members.", rules: { conditions: [] } },
-    { name: "Youth Fellowship", description: "Youth fellowship members.", rules: { conditions: [] } },
   ];
   for (const item of standards) await db.insert(segments).values({ churchId, ...item, segmentType: "manual", isSystem: true, createdBy: actor }).onConflictDoNothing();
 }
@@ -61,10 +61,11 @@ app.get("/", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   await ensureAgeGroupsForChurch(churchId);
   await ensureMemberAppMinistries(churchId);
+  await ensureYouthFellowship(churchId);
   const [ministryRows, cellRows, segmentRows] = await Promise.all([
     db.query.ministries.findMany({ where: eq(ministries.churchId, churchId) }),
     db.query.cells.findMany({ where: eq(cells.churchId, churchId) }),
-    (async () => { await ensureStandardSegments(churchId, c.get("user").sub); return db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), notInArray(segments.name, ["Choir", "Ushering Team", "Media Team"])) }); })(),
+    (async () => { await ensureStandardSegments(churchId, c.get("user").sub); return db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), notInArray(segments.name, ["Choir", "Ushering Team", "Media Team", "Youth Fellowship"])) }); })(),
   ]);
   const [ministryCounts, cellCounts] = await Promise.all([
     db.select({ groupId: ministryMemberships.ministryId, value: count() }).from(ministryMemberships).where(eq(ministryMemberships.churchId, churchId)).groupBy(ministryMemberships.ministryId),

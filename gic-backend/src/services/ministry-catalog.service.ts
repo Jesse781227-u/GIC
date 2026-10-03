@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { ministries } from "../db/schema.js";
+import { cells, ministries } from "../db/schema.js";
 
 export const memberAppMinistryCatalog = [
   { name: "Ushering Ministry", description: "Serving with excellence and a heart." },
   { name: "Media Ministry", description: "Telling the story of God's work." },
+  { name: "IT Ministry", description: "Supporting the church through technology and digital systems." },
   { name: "Choir", description: "Leading the church in worship through music." },
   { name: "Children's Ministry", description: "Helping children discover faith and grow with joy." },
   { name: "Prayer Ministry", description: "Standing together in prayer for the church and community." },
@@ -15,4 +16,9 @@ export const memberAppMinistryCatalog = [
 export async function ensureMemberAppMinistries(churchId: string) {
   await db.insert(ministries).values(memberAppMinistryCatalog.map((ministry) => ({ churchId, ...ministry }))).onConflictDoNothing();
   return db.query.ministries.findMany({ where: eq(ministries.churchId, churchId) });
+}
+
+export async function ensureYouthFellowship(churchId: string) {
+  await db.insert(cells).values({ churchId, name: "Youth Fellowship", description: "Youth fellowship group." }).onConflictDoNothing();
+  return db.query.cells.findMany({ where: eq(cells.churchId, churchId) });
 }
