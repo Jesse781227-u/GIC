@@ -10,7 +10,7 @@ test('recognizes notification tap and media paths for cold-start routing', () =>
 })
 
 test('allows supported exact and parameterized member routes', () => {
-  for (const route of ['/home', '/profile', '/messages', '/registrations', '/events', '/events/123', '/events/123/register', '/events/123/registration', '/events/event_123/success']) {
+  for (const route of ['/home', '/profile', '/messages', '/registrations', '/events', '/events/123', '/events/123/register', '/events/123/registration', '/events/event_123/success', '/mixlr/recording-123']) {
     assert.equal(validateMemberRoute(route), route)
   }
 })

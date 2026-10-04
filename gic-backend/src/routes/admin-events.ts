@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { desc, count, and, eq, gte, sql } from "drizzle-orm";
+import { desc, count, and, eq, gte, like, sql } from "drizzle-orm";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import {
@@ -9,6 +9,7 @@ import {
   eventPickupLocations,
   eventRegistrations,
   eventReminders,
+  serviceReminders,
   members,
   busPickupPoints,
   ministries,
@@ -220,6 +221,7 @@ app.delete("/:id", async (c) => {
     const current = await tx.query.events.findFirst({ where: and(eq(events.id, id), eq(events.churchId, churchId)) });
     if (!current) return null;
     const [registrationTotal] = await tx.select({ value: count() }).from(eventRegistrations).where(and(eq(eventRegistrations.eventId, id), eq(eventRegistrations.churchId, churchId)));
+    await tx.delete(serviceReminders).where(like(serviceReminders.occurrenceKey, `${id}:%`));
     const [event] = await tx.delete(events).where(and(eq(events.id, id), eq(events.churchId, churchId))).returning();
     return event ? { event, registrationCount: Number(registrationTotal?.value || 0) } : null;
   });

@@ -1,55 +1,23 @@
 import { Hono } from "hono";
+import { getCachedLatestMixlrRecording, getCachedMixlrRecording } from "../services/mixlr.service.js";
 
 const app = new Hono();
-const mixlrApi = "https://api.mixlr.com/v3/channels/globalimpactng";
 
 app.get("/latest", async (c) => {
   try {
-    const recordingsResponse = await fetch(
-      `${mixlrApi}/recordings?page%5Bsize%5D=1&page%5Bnumber%5D=1`,
-      { headers: { "User-Agent": "GIC member platform" } }
-    );
-    if (!recordingsResponse.ok) {
-      return c.json({ error: "Mixlr recordings are unavailable" }, 502);
-    }
-
-    const recordingsPayload = (await recordingsResponse.json()) as {
-      data?: Array<{ id: string; attributes?: { title?: string; url?: string; created_at?: string; duration?: number } }>;
-    };
-    const latest = recordingsPayload.data?.[0];
-    if (!latest?.id || !latest.attributes?.url) {
-      return c.json({ error: "No playable Mixlr recordings found" }, 404);
-    }
-
-    const attributes = latest.attributes;
-    const title = attributes.title || "Latest Global Impact Church recording";
-    const cleanTitle = title.split(" | ")[0].replace(/^#\s*/, "").trim();
-    const dateMatch = title.match(/\|\s*(\d{1,2}(?:st|nd|rd|th)?\s+\w+,\s+\d{4})/i);
-    const displayDate = dateMatch?.[1]?.replace(",", "") || (
-      attributes.created_at
-        ? new Date(attributes.created_at).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "UTC",
-          })
-        : null
-    );
-    return c.json({
-      id: latest.id,
-      title,
-      displayTitle: `# ${cleanTitle}`,
-      displayDate,
-      audioUrl: attributes.url,
-      url: `https://globalimpactng.mixlr.com/recordings/${latest.id}`,
-      duration: attributes.duration || null,
-      source: "Mixlr",
-      fetchedAt: new Date().toISOString(),
-    });
+    const latest = await getCachedLatestMixlrRecording();
+    if (!latest) return c.json({ error: "No cached Mixlr recording is available yet" }, 404);
+    return c.json(latest);
   } catch (error) {
-    console.error("Mixlr latest recording error:", error);
-    return c.json({ error: "Unable to fetch the latest Mixlr recording" }, 502);
+    console.error("Mixlr latest recording cache error:", error);
+    return c.json({ error: "Unable to load the latest Mixlr recording" }, 500);
   }
+});
+
+app.get("/recordings/:id", async (c) => {
+  const recordingId = c.req.param("id");
+  const recording = await getCachedMixlrRecording(recordingId);
+  return recording ? c.json(recording) : c.json({ error: "Mixlr recording not found" }, 404);
 });
 
 export default app;

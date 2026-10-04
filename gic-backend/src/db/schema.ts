@@ -330,6 +330,26 @@ export const events = pgTable("events", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
+export const mixlrChannelState = pgTable("mixlr_channel_state", {
+  channelKey: text("channel_key").primaryKey(),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const mixlrRecordings = pgTable("mixlr_recordings", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  audioUrl: text("audio_url").notNull(),
+  recordingUrl: text("recording_url").notNull(),
+  duration: integer("duration"),
+  recordingCreatedAt: timestamp("recording_created_at", { withTimezone: true }),
+  notificationId: uuid("notification_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  newestIdx: index("mixlr_recordings_created_at_idx").on(t.createdAt),
+}));
+
 export const eventPickupLocations = pgTable(
   "event_pickup_locations",
   {

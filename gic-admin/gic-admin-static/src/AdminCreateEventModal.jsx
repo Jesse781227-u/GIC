@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CalendarDays, X, Plus, Trash2, Upload, Image as ImageIcon } from 'lucide-react'
 import { adminAuth } from './firebase'
+import { activateAllPickupPoints, activePickupPoints, applyPickupTimeToActive, clearPickupPoints, mapPickupPoints, setPickupActive } from './pickupSelection'
+import { getGicServiceRecurrence } from './eventSchedule'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
 const EVENT_TYPES = ['Service', 'Conference', 'Wedding', 'Children', 'Outreach', 'Meeting', 'Retreat', 'Convention', 'Fellowship', 'Training', 'Special Event', 'Other']
@@ -33,10 +35,6 @@ async function adminApi(path, options = {}) {
 
 function makeSpeaker() {
   return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', title: '', description: '', photoUrl: '' }
-}
-
-function makePickupLocation() {
-  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, busPickupPointId: '', name: '', address: '', pickupTime: '', capacity: '', notes: '' }
 }
 
 function toDateTimeValue(date, time) {
@@ -141,7 +139,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [registrationFields, setRegistrationFields] = useState([])
   const [savedForms, setSavedForms] = useState([])
   const [churchBusAvailable, setChurchBusAvailable] = useState(false)
-  const [pickupLocations, setPickupLocations] = useState([makePickupLocation()])
+  const [pickupLocations, setPickupLocations] = useState([])
+  const [uniformPickupTime, setUniformPickupTime] = useState('06:30')
   const [sendReminders, setSendReminders] = useState(false)
   const [selectedReminders, setSelectedReminders] = useState([1440, 60, 30])
   const [customReminderValue, setCustomReminderValue] = useState('')
@@ -160,11 +159,14 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
 
   const registrationRequired = attendanceMode !== 'view_only'
   const paidAttendance = attendanceMode === 'register_paid'
+  const gicServiceRecurrence = getGicServiceRecurrence(eventType, title)
+  const gicServiceType = gicServiceRecurrence?.serviceType || null
+  const eventTimeZone = gicServiceType ? 'Africa/Lagos' : timeZone
 
   useEffect(() => {
     Promise.all([
       adminApi('/api/admin/organizations').then(({ organizations: items = [] }) => setOrganizations(items)),
-      adminApi('/api/admin/reference/bus-pickup-points').then(({ pickupPoints: items = [] }) => setPickupPoints(items)),
+      adminApi('/api/admin/reference/bus-pickup-points').then(({ pickupPoints: items = [] }) => { setPickupPoints(items); setPickupLocations(mapPickupPoints(items, uniformPickupTime)) }),
       adminApi('/api/admin/groups').then((items) => setAudienceCollections({ ministries: items.ministries || [], cells: items.cells || [], segments: items.segments || [], groups: items.groups || [] })),
       adminApi('/api/admin/events').then(({ events: items = [] }) => setSavedForms(items.filter((item) => Array.isArray(item.registrationForm) && item.registrationForm.length).map((item) => ({ id: item.id, name: item.title, fields: item.registrationForm })))),
     ]).catch(() => {})
@@ -190,19 +192,14 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     setSpeakers((current) => current.map((speaker) => speaker.id === id ? { ...speaker, [field]: value } : speaker))
   }
 
-  const pickupUpdate = (id, field, value) => {
-    setPickupLocations((current) => current.map((pickup) => pickup.id === id ? { ...pickup, [field]: value } : pickup))
-  }
-
-  const choosePickupPoint = (id, value) => {
-    const point = pickupPoints.find((item) => item.id === value)
-    setPickupLocations((current) => current.map((pickup) => pickup.id === id ? { ...pickup, busPickupPointId: value, name: point?.name || pickup.name, address: point?.address || pickup.address } : pickup))
-  }
+  const pickupUpdate = (pickupPointId, field, value) => setPickupLocations((current) => current.map((pickup) => pickup.busPickupPointId === pickupPointId ? { ...pickup, [field]: value } : pickup))
+  const togglePickupPoint = (pickupPointId, active) => setPickupLocations((current) => setPickupActive(current, pickupPointId, active))
+  const activateAllPickups = () => setPickupLocations((current) => activateAllPickupPoints(pickupPoints, current, uniformPickupTime))
+  const clearAllPickups = () => setPickupLocations((current) => clearPickupPoints(current))
+  const applyUniformPickupTime = () => setPickupLocations((current) => applyPickupTimeToActive(current, uniformPickupTime))
 
   const addSpeaker = () => setSpeakers((current) => [...current, makeSpeaker()])
   const removeSpeaker = (id) => setSpeakers((current) => current.filter((speaker) => speaker.id !== id))
-  const addPickupLocation = () => setPickupLocations((current) => [...current, makePickupLocation()])
-  const removePickupLocation = (id) => setPickupLocations((current) => current.filter((pickup) => pickup.id !== id))
   const updateTicketType = (id, key, value) => setTicketTypes((current) => current.map((ticket) => ticket.id === id ? { ...ticket, [key]: value } : ticket))
   const addTicketType = () => setTicketTypes((current) => [...current, makeTicketType()])
   const removeTicketType = (id) => setTicketTypes((current) => current.length > 1 ? current.filter((ticket) => ticket.id !== id) : current)
@@ -214,8 +211,14 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     if (!eventType) return 'Event type is required.'
     if (!startDate || (!allDayEvent && !startTime)) return 'Start date and time are required.'
     if (!endDate || (!allDayEvent && !endTime)) return 'End date and time are required.'
-    if (new Date(`${endDate}T${endTime || '23:59'}:00`) <= new Date(`${startDate}T${startTime || '00:00'}:00`)) return 'End date/time must be after the start date/time.'
-    if (!toIso(startDate, allDayEvent ? '00:00' : startTime, timeZone) || !toIso(endDate, allDayEvent ? '23:59' : endTime, timeZone)) return 'The selected date or time is invalid in this timezone.'
+    if (gicServiceType) {
+      const expectedWeekday = gicServiceType === 'sunday-service' ? 0 : 3
+      if (new Date(`${startDate}T00:00:00Z`).getUTCDay() !== expectedWeekday) return `${gicServiceType === 'sunday-service' ? 'Sunday Service' : 'Midweek Service'} must start on its recurring service weekday.`
+    }
+    const startsAt = toIso(startDate, allDayEvent ? '00:00' : startTime, eventTimeZone)
+    const endsAt = toIso(endDate, allDayEvent ? '23:59' : endTime, eventTimeZone)
+    if (!startsAt || !endsAt) return 'The selected date or time is invalid in this timezone.'
+    if (new Date(endsAt) <= new Date(startsAt)) return 'End date/time must be after the start date/time.'
     if ((eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') && !venueName.trim()) return 'Venue name is required for physical or hybrid events.'
     if ((eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') && !address.trim()) return 'Address is required for physical or hybrid events.'
     if (eventFormat === 'ONLINE' || eventFormat === 'HYBRID') {
@@ -226,16 +229,18 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     if (registrationRequired) {
       if (!registrationOpensDate || !registrationOpensTime) return 'Registration opening date/time is required.'
       if (!registrationClosesDate || !registrationClosesTime) return 'Registration closing date/time is required.'
-      if (new Date(`${registrationClosesDate}T${registrationClosesTime}:00`) <= new Date(`${registrationOpensDate}T${registrationOpensTime}:00`)) return 'Registration close time must be after the open time.'
-      if (new Date(`${registrationClosesDate}T${registrationClosesTime}:00`) > new Date(`${endDate}T${allDayEvent ? '23:59' : endTime}:00`)) return 'Registration cannot close after the event ends.'
-      if (!toIso(registrationOpensDate, registrationOpensTime, timeZone) || !toIso(registrationClosesDate, registrationClosesTime, timeZone)) return 'Registration times are invalid in the selected timezone.'
+      const registrationOpensAt = toIso(registrationOpensDate, registrationOpensTime, eventTimeZone)
+      const registrationClosesAt = toIso(registrationClosesDate, registrationClosesTime, eventTimeZone)
+      if (!registrationOpensAt || !registrationClosesAt) return 'Registration times are invalid in the selected timezone.'
+      if (new Date(registrationClosesAt) <= new Date(registrationOpensAt)) return 'Registration close time must be after the open time.'
+      if (new Date(registrationClosesAt) > new Date(endsAt)) return 'Registration cannot close after the event ends.'
       if (capacityType === 'LIMITED' && (!capacity || Number(capacity) <= 0)) return 'Capacity is required when registration is limited.'
       if (registrantModel === 'parent_registers_children' && Number(childMaxAge) < Number(childMinAge)) return 'Child maximum age must be greater than or equal to the minimum age.'
     }
     if (paidAttendance && (!ticketTypes.length || ticketTypes.some((ticket) => !ticket.name.trim() || ticket.price === '' || !Number.isInteger(Number(ticket.price)) || Number(ticket.price) < 0 || (ticket.quantity !== '' && (!Number.isInteger(Number(ticket.quantity)) || Number(ticket.quantity) < 1))) || !ticketTypes.some((ticket) => Number(ticket.price) > 0))) return 'Add valid ticket names and whole-number prices in minor currency units; at least one ticket must cost more than zero.'
     if (['ministry', 'group'].includes(eventAudienceKind) && !eventAudienceId) return 'Choose the ministry or group for this audience.'
     if (visibility === 'ministry' && eventAudienceKind !== 'ministry') return 'Ministry visibility requires a ministry audience.'
-    if (churchBusAvailable && pickupLocations.filter((pickup) => pickup.name.trim() && pickup.address.trim()).length === 0) return 'Add at least one pickup location when church bus transportation is enabled.'
+    if (churchBusAvailable && activePickupPoints(pickupLocations).length === 0) return 'Activate at least one GIC pickup point when church bus transportation is enabled.'
     if (notifyOnPublish && !notificationTitle.trim()) return 'Notification title is required when publish notifications are enabled.'
     if (notifyOnPublish && !notificationMessage.trim()) return 'Notification message is required when publish notifications are enabled.'
     return ''
@@ -245,14 +250,17 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     const separator = organizationKey.indexOf('_')
     const organizationKind = separator < 0 ? null : organizationKey.slice(0, separator)
     const organizationId = separator < 0 ? null : organizationKey.slice(separator + 1)
+    const recurrence = gicServiceRecurrence
+      ? gicServiceRecurrence
+      : recurringEvent ? { frequency: repeatType === 'Daily' ? 'daily' : repeatType === 'Monthly' ? 'monthly' : 'weekly', interval: 1 } : null
     const audienceId = eventAudienceId
     const eventAudience = eventAudienceKind === 'ministry'
       ? { kind: 'ministry', ministryIds: audienceId ? [audienceId] : [] }
       : eventAudienceKind === 'group'
         ? { kind: 'group', groupIds: audienceId ? [audienceId] : [] }
         : { kind: eventAudienceKind }
-    const start = toIso(startDate, allDayEvent ? '00:00' : startTime, timeZone)
-    const end = toIso(endDate || startDate, allDayEvent ? '23:59' : endTime || startTime, timeZone)
+    const start = toIso(startDate, allDayEvent ? '00:00' : startTime, eventTimeZone)
+    const end = toIso(endDate || startDate, allDayEvent ? '23:59' : endTime || startTime, eventTimeZone)
     const reminderOffsets = Array.from(new Set([
       ...selectedReminders,
       ...(customReminderValue && Number(customReminderValue) > 0 ? [Number(customReminderValue) * (customReminderUnit === 'hours' ? 60 : customReminderUnit === 'days' ? 1440 : 1)] : []),
@@ -275,7 +283,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       eventType,
       startsAt: start,
       endsAt: allDayEvent ? null : end,
-      recurrenceRule: recurringEvent ? { frequency: repeatType === 'Daily' ? 'daily' : repeatType === 'Monthly' ? 'monthly' : 'weekly', interval: 1 } : null,
+      recurrenceRule: recurrence,
       location: eventFormat === 'ONLINE' ? 'Online' : venueName || null,
       venueName: (eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') ? venueName || null : null,
       address: (eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') ? address || null : null,
@@ -283,12 +291,12 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       isPaid: paidAttendance,
       price: paidAttendance ? Number(ticketTypes[0]?.price || 0) : null,
       status: 'DRAFT',
-      timeZone,
+      timeZone: eventTimeZone,
       allowRegistrationCancellation: true,
       registrationForm: registrationRequired ? registrationFields : [],
       registrationRequired,
-      registrationOpensAt: registrationRequired ? toIso(registrationOpensDate, registrationOpensTime, timeZone) : null,
-      registrationClosesAt: registrationRequired ? toIso(registrationClosesDate, registrationClosesTime, timeZone) : null,
+      registrationOpensAt: registrationRequired ? toIso(registrationOpensDate, registrationOpensTime, eventTimeZone) : null,
+      registrationClosesAt: registrationRequired ? toIso(registrationClosesDate, registrationClosesTime, eventTimeZone) : null,
       registrationCapacity: registrationRequired && capacityType === 'LIMITED' ? Number(capacity) : null,
       allowWaitlist: registrationRequired && waitlistEnabled,
       isOnline: eventFormat !== 'PHYSICAL',
@@ -314,13 +322,13 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
         galleryUrls: additionalImages,
         contact: contactName.trim() || contactPhone.trim() || contactEmail.trim() ? { name: contactName.trim(), phone: contactPhone.trim() || undefined, email: contactEmail.trim() || undefined } : undefined,
         coOrganizerIds: [],
-        schedule: { timezone: timeZone, start, end, allDay: allDayEvent, recurrence: recurringEvent ? { frequency: repeatType === 'Daily' ? 'daily' : repeatType === 'Monthly' ? 'monthly' : 'weekly', interval: 1 } : undefined },
+        schedule: { timezone: timeZone, start, end, allDay: allDayEvent, recurrence: recurrence || undefined },
         location,
         attendance: attendanceMode,
         speakers: filteredSpeakers.map((speaker) => ({ name: speaker.name.trim(), role: speaker.title.trim() || undefined, bio: speaker.description.trim() || undefined, photoUrl: speaker.photoUrl || undefined })),
         registration: registrationRequired ? {
-          opensAt: toIso(registrationOpensDate, registrationOpensTime, timeZone),
-          closesAt: toIso(registrationClosesDate, registrationClosesTime, timeZone),
+          opensAt: toIso(registrationOpensDate, registrationOpensTime, eventTimeZone),
+          closesAt: toIso(registrationClosesDate, registrationClosesTime, eventTimeZone),
           eligibility: registrationEligibility,
           capacity: capacityType === 'LIMITED' ? { kind: 'limited', max: Number(capacity) } : { kind: 'unlimited' },
           waitlist: waitlistEnabled,
@@ -330,7 +338,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
           allowSelfCancel: true,
         } : undefined,
         ticketing: paidAttendance ? { provider: ticketProvider, ticketTypes: ticketTypeValues, refundPolicy, issueQrTickets: true } : undefined,
-        transport: churchBusAvailable ? { pickupPoints: pickupLocations.filter((pickup) => pickup.name.trim() && pickup.address.trim()).map((pickup) => ({ id: pickup.id, name: pickup.name.trim(), address: pickup.address.trim(), pickupTime: toIso(startDate, pickup.pickupTime || startTime || '09:00', timeZone), seats: Number(pickup.capacity || 1), seatsTaken: 0 })), feeIncludedInTicket: false, returnTrip: false, requireSelection: true } : undefined,
+        transport: churchBusAvailable ? { pickupPoints: activePickupPoints(pickupLocations).map((pickup) => ({ id: pickup.busPickupPointId, name: pickup.name.trim(), address: pickup.address.trim(), pickupTime: toIso(startDate, pickup.pickupTime || startTime || '09:00', eventTimeZone), seats: Number(pickup.capacity || 1), seatsTaken: 0 })), feeIncludedInTicket: false, returnTrip: false, requireSelection: true } : undefined,
         streaming: streamOnline ? { platform: toPlatformId(streamPlatform), url: streamUrl.trim(), instructions: streamInstructions.trim() || undefined, revealTo: 'registered_only' } : undefined,
         reminders: { enabled: sendReminders, offsetsMinutes: sendReminders ? reminderOffsets : [], channels: ['in_app', 'push'] },
         announcement: notifyOnPublish ? { notifyOnPublish: true, title: notificationTitle.trim() || title.trim(), message: notificationMessage.trim(), audience: eventAudience, channels: ['in_app', 'push'] } : undefined,
@@ -356,7 +364,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       })
 
       if (churchBusAvailable) {
-        for (const pickup of pickupLocations.filter((item) => item.name.trim() || item.address.trim())) {
+        for (const pickup of activePickupPoints(pickupLocations)) {
           await adminApi(`/api/admin/events/${created.id}/pickup-locations`, {
             method: 'POST',
             body: JSON.stringify({
@@ -483,10 +491,10 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                   <label className="modern-field"><span>End date</span><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} required /></label>
                   <label className="modern-field"><span>End time</span><input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required={!allDayEvent} disabled={allDayEvent} /></label>
                 </div>
-                <label className="modern-field full"><span>Timezone</span><select value={timeZone} onChange={(event)=>setTimeZone(event.target.value)}><option value="Africa/Lagos">Africa/Lagos (WAT)</option><option value="UTC">UTC</option><option value="Europe/London">Europe/London</option><option value="America/New_York">America/New_York</option></select></label>
+                <label className="modern-field full"><span>Timezone</span><select value={eventTimeZone} disabled={Boolean(gicServiceType)} onChange={(event)=>setTimeZone(event.target.value)}><option value="Africa/Lagos">Africa/Lagos (WAT)</option><option value="UTC">UTC</option><option value="Europe/London">Europe/London</option><option value="America/New_York">America/New_York</option></select></label>
                 <label className="check"><input type="checkbox" checked={allDayEvent} onChange={(event) => setAllDayEvent(event.target.checked)} /> All-day event</label>
-                <label className="check"><input type="checkbox" checked={recurringEvent} onChange={(event) => setRecurringEvent(event.target.checked)} /> Recurring event</label>
-                {recurringEvent && <label className="modern-field full"><span>Repeat</span><select value={repeatType} onChange={(event) => setRepeatType(event.target.value)}><option value="Daily">Daily</option><option value="Weekly">Weekly</option><option value="Monthly">Monthly</option></select></label>}
+                {gicServiceType ? <p className="service-recurrence-note">{gicServiceType==='sunday-service'?'Sunday Service repeats every Sunday.':'Midweek Service repeats every Wednesday.'} Occurrences and reminders are scheduled automatically.</p> : <label className="check"><input type="checkbox" checked={recurringEvent} onChange={(event) => setRecurringEvent(event.target.checked)} /> Recurring event</label>}
+                {recurringEvent&&!gicServiceType&&<label className="modern-field full"><span>Repeat</span><select value={repeatType} onChange={(event) => setRepeatType(event.target.value)}><option value="Daily">Daily</option><option value="Weekly">Weekly</option><option value="Monthly">Monthly</option></select></label>}
               </div>
 
               <div className="event-form-section">
@@ -560,22 +568,16 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                 <label className="check"><input type="checkbox" checked={churchBusAvailable} onChange={(event) => setChurchBusAvailable(event.target.checked)} /> Church bus transportation available</label>
                 {churchBusAvailable && (
                   <>
-                    {pickupLocations.map((pickup, index) => (
-                      <div className="pickup-card" key={pickup.id}>
-                        <div className="speaker-header"><strong>Pickup location {index + 1}</strong>{pickupLocations.length > 1 && <button type="button" className="icon-btn" onClick={() => removePickupLocation(pickup.id)} aria-label="Remove pickup location"><Trash2 size={14} /></button>}</div>
-                        <label className="modern-field full"><span>Known pickup point</span><select value={pickup.busPickupPointId} onChange={(event) => choosePickupPoint(pickup.id, event.target.value)}><option value="">Select a pickup point</option>{pickupPoints.map((point) => <option value={point.id} key={point.id}>{point.name}</option>)}</select>{!pickupPoints.length && <small className="field-help">No active pickup points are available.</small>}</label>
-                        <div className="modern-field-grid">
-                          <label className="modern-field"><span>Pickup location name</span><input value={pickup.name} onChange={(event) => pickupUpdate(pickup.id, 'name', event.target.value)} placeholder="Ikeja" /></label>
-                          <label className="modern-field"><span>Pickup time</span><input type="time" value={pickup.pickupTime} onChange={(event) => pickupUpdate(pickup.id, 'pickupTime', event.target.value)} /></label>
-                        </div>
-                        <div className="modern-field-grid">
-                          <label className="modern-field"><span>Address / landmark</span><input value={pickup.address} onChange={(event) => pickupUpdate(pickup.id, 'address', event.target.value)} /></label>
-                          <label className="modern-field"><span>Capacity</span><input type="number" min="1" value={pickup.capacity} onChange={(event) => pickupUpdate(pickup.id, 'capacity', event.target.value)} /></label>
-                        </div>
-                        <label className="modern-field full"><span>Notes</span><textarea value={pickup.notes} onChange={(event) => pickupUpdate(pickup.id, 'notes', event.target.value)} rows="2" /></label>
+                    <div className="pickup-bulk-actions"><button type="button" className="btn secondary" onClick={activateAllPickups}>Activate all pickup points</button><button type="button" className="btn secondary" onClick={clearAllPickups}>Clear all</button></div>
+                    {!pickupPoints.length&&<p className="field-help">No active GIC pickup points are available.</p>}
+                    <div className="pickup-uniform-time"><label className="modern-field"><span>Pickup time</span><input type="time" value={uniformPickupTime} onChange={(event)=>setUniformPickupTime(event.target.value)}/></label><button type="button" className="btn secondary" onClick={applyUniformPickupTime} disabled={!activePickupPoints(pickupLocations).length}>Apply time to all pickup points</button></div>
+                    <div className="pickup-point-list">{pickupLocations.map((pickup)=>{
+                      const point=pickupPoints.find((item)=>item.id===pickup.busPickupPointId)
+                      return <div className={`pickup-point-row ${pickup.active?'is-active':''}`} key={pickup.busPickupPointId}>
+                        <label className="pickup-point-choice"><input type="checkbox" checked={pickup.active} onChange={(event)=>togglePickupPoint(pickup.busPickupPointId,event.target.checked)}/><span><b>{pickup.name}</b><small>{point?.managerName?`${point.managerName} · ${point.managerPhone} · `:''}{pickup.address}</small></span></label>
+                        {pickup.active&&<div className="pickup-point-fields"><label className="modern-field"><span>Pickup time</span><input type="time" value={pickup.pickupTime} onChange={(event)=>pickupUpdate(pickup.busPickupPointId,'pickupTime',event.target.value)}/></label><label className="modern-field"><span>Capacity</span><input type="number" min="1" value={pickup.capacity} onChange={(event)=>pickupUpdate(pickup.busPickupPointId,'capacity',event.target.value)}/></label></div>}
                       </div>
-                    ))}
-                    <button type="button" className="btn secondary" onClick={addPickupLocation}><Plus size={14}/> Add Pickup Location</button>
+                    })}</div>
                   </>
                 )}
               </div>

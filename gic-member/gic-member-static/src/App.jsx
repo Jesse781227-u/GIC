@@ -823,6 +823,7 @@ function BottomNav({ active = 'home' }) {
 const ACCOUNT_COMPLETION_PATHS = ['/', '/recover', '/onboarding', '/profile/edit']
 const AUTHENTICATED_CONSOLE_PATHS = [
   '/home',
+  '/mixlr',
   '/announcements',
   '/events',
   '/my-registrations',
@@ -1702,6 +1703,41 @@ function ServiceModalLegacy({ event, onClose }) {
   return <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><div className="service-modal-header"><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2></div><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'short', day: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{calendarMessage && <p className="center muted">{calendarMessage}</p>}</div></div>
 }
 
+function MixlrRecordingPage() {
+  const { recordingId } = useParams()
+  const { setStream, resume } = useAudioPlayer()
+  const [recording, setRecording] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API_BASE}/api/mixlr/recordings/${encodeURIComponent(recordingId)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('This recording is unavailable.')
+        return response.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        setRecording(data)
+        setStream(data.audioUrl, data.displayTitle || data.title, { recordingDate: formatRecordingDate(data.displayDate) })
+      })
+      .catch((requestError) => { if (!cancelled) setError(requestError.message || 'This recording is unavailable.') })
+    return () => { cancelled = true }
+  }, [recordingId])
+
+  return <MemberShell active="home" title="Service Recording" backTo="/home">
+    <section className="section mixlr-recording-page">
+      <div className="section-head"><span>GIC Mixlr Recording</span></div>
+      {error ? <p className="center muted" role="alert">{error}</p> : !recording ? <p className="center muted">Loading recording...</p> : <>
+        <h1>{recording.displayTitle || recording.title}</h1>
+        <p className="muted">{recording.displayDate || 'Global Impact Church'}</p>
+        <button type="button" className="btn primary wide" onClick={() => resume()}><Play size={16}/> Play recording</button>
+        <p className="muted">Recording provided by Mixlr.</p>
+      </>}
+    </section>
+  </MemberShell>
+}
+
 function EventDetails() {
   const { id } = useParams()
   const staticEvent = events.find(x => x.id === id)
@@ -2451,6 +2487,7 @@ export default function App() {
         <Route path="/events/:id/register" element={<ProtectedRoute><EventRegistration /></ProtectedRoute>} />
         <Route path="/events/:id/registration" element={<ProtectedRoute><EventRegistrationAlias /></ProtectedRoute>} />
         <Route path="/events/:id/success" element={<ProtectedRoute><RegistrationSuccess /></ProtectedRoute>} />
+        <Route path="/mixlr/:recordingId" element={<ProtectedRoute><MixlrRecordingPage /></ProtectedRoute>} />
         <Route path="/my-registrations" element={<ProtectedRoute><MyRegistrations /></ProtectedRoute>} />
         <Route path="/registrations" element={<Navigate to="/my-registrations" replace />} />
         <Route path="/messages" element={<Navigate to="/announcements" replace />} />

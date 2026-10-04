@@ -1,9 +1,11 @@
 import cron from "node-cron";
 import { db } from "../../db/index.js";
-import { adminNotifications, birthdayNotificationSends, eventRegistrations, eventReminders, events, members, serviceReminders } from "../../db/schema.js";
+import { adminNotifications, birthdayNotificationSends, eventRegistrations, eventReminders, events, members, mixlrRecordings, serviceReminders } from "../../db/schema.js";
 import { notificationService } from "./notification.service.js";
-import { lte, and, eq } from "drizzle-orm";
+import { lte, and, eq, inArray, isNotNull, isNull, like, sql } from "drizzle-orm";
 import { birthdayService, birthdayCelebration, getBirthdayDateKey, getLagosDateParts } from "./birthday.service.js";
+import { buildServiceReminderRows, generateServiceOccurrences } from "../event-occurrences.js";
+import { createMixlrRecordingNotification, syncLatestMixlrRecording } from "../mixlr.service.js";
 
 export class SchedulingService {
   private task: cron.ScheduledTask | null = null;
@@ -19,6 +21,7 @@ export class SchedulingService {
         console.error("Error processing scheduled notifications:", error);
       }
     });
+    void this.processMixlrRecording();
     
     console.log("Scheduling service started");
   }
@@ -33,6 +36,8 @@ export class SchedulingService {
 
   private async processScheduledNotifications() {
     const now = new Date();
+    await this.scheduleRecurringServiceReminders(now);
+    await this.processMixlrRecording();
     
     // Find notifications that are SCHEDULED and their time has come or passed
     const pending = await db.query.adminNotifications.findMany({
@@ -51,6 +56,8 @@ export class SchedulingService {
         console.error(`Failed to process scheduled notification ${notif.id}:`, e);
       }
     }
+
+    await this.processUndispatchedMixlrNotifications();
 
     const dueReminders = await db
       .update(serviceReminders)
@@ -104,6 +111,87 @@ export class SchedulingService {
     }
 
     await this.processBirthdays();
+  }
+
+  private async processMixlrRecording() {
+    try {
+      await syncLatestMixlrRecording();
+    } catch (error) {
+      console.error("Failed to check Mixlr recordings:", error);
+    }
+  }
+
+  private async processUndispatchedMixlrNotifications() {
+    const unannouncedRecordings = await db.query.mixlrRecordings.findMany({
+      where: isNull(mixlrRecordings.notificationId),
+      columns: { id: true },
+    });
+    for (const recording of unannouncedRecordings) {
+      try {
+        await createMixlrRecordingNotification(recording.id);
+      } catch (error) {
+        console.error(`Failed to create Mixlr recording notification for ${recording.id}:`, error);
+      }
+    }
+
+    const recordingRows = await db.query.mixlrRecordings.findMany({
+      where: isNotNull(mixlrRecordings.notificationId),
+      columns: { notificationId: true },
+    });
+    const notificationIds = recordingRows.map(({ notificationId }) => notificationId).filter((id): id is string => Boolean(id));
+    if (!notificationIds.length) return;
+    const pending = await db.query.adminNotifications.findMany({
+      where: and(inArray(adminNotifications.id, notificationIds), eq(adminNotifications.status, "DRAFT")),
+    });
+    for (const notification of pending) {
+      try {
+        await notificationService.sendNow(notification.id);
+      } catch (error) {
+        console.error(`Failed to dispatch Mixlr recording notification ${notification.id}:`, error);
+      }
+    }
+  }
+
+  private async scheduleRecurringServiceReminders(now: Date) {
+    const existingEvents = await db.query.events.findMany({ where: eq(events.eventType, "Service") });
+    for (const event of existingEvents) {
+      const occurrences = event.status === "PUBLISHED" && event.eventType === "Service"
+        ? generateServiceOccurrences(event, now)
+        : [];
+      const activeMembers = occurrences.length ? await db.query.members.findMany({
+        where: and(eq(members.churchId, event.churchId), eq(members.active, true)),
+        columns: { id: true },
+      }) : [];
+      const memberIds = activeMembers.map(({ id }) => id);
+      const rows = occurrences.flatMap((occurrence) => buildServiceReminderRows(occurrence, memberIds, now));
+      const desiredKeys = new Set(rows.map((row) => `${row.memberId}|${row.occurrenceKey}|${row.offsetMinutes}`));
+
+      await db.transaction(async (tx) => {
+        const existing = await tx.query.serviceReminders.findMany({
+          where: like(serviceReminders.occurrenceKey, `${event.id}:%`),
+        });
+        const staleIds = existing
+          .filter((row) => row.status === "pending" && !desiredKeys.has(`${row.memberId}|${row.occurrenceKey}|${row.offsetMinutes}`))
+          .map(({ id }) => id);
+        if (staleIds.length) {
+          for (let start = 0; start < staleIds.length; start += 500) {
+            await tx.delete(serviceReminders).where(and(inArray(serviceReminders.id, staleIds.slice(start, start + 500)), eq(serviceReminders.status, "pending")));
+          }
+        }
+        for (let start = 0; start < rows.length; start += 500) {
+          await tx.insert(serviceReminders).values(rows.slice(start, start + 500)).onConflictDoUpdate({
+            target: [serviceReminders.memberId, serviceReminders.occurrenceKey, serviceReminders.offsetMinutes],
+            set: {
+              serviceType: sql`excluded.service_type`,
+              serviceStartsAt: sql`excluded.service_starts_at`,
+              scheduledFor: sql`excluded.scheduled_for`,
+              updatedAt: now,
+            },
+            setWhere: eq(serviceReminders.status, "pending"),
+          });
+        }
+      });
+    }
   }
 
   private async processBirthdays() {
