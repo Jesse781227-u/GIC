@@ -214,6 +214,32 @@ app.patch("/:id/status", async (c) => {
   return c.json({ event: await eventWithCounts(event) });
 });
 
+app.delete("/:id", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const id = c.req.param("id");
+  const deleted = await db.transaction(async (tx) => {
+    const current = await tx.query.events.findFirst({ where: and(eq(events.id, id), eq(events.churchId, churchId)) });
+    if (!current) return null;
+    const [registrationTotal] = await tx.select({ value: count() }).from(eventRegistrations).where(and(eq(eventRegistrations.eventId, id), eq(eventRegistrations.churchId, churchId)));
+    const [event] = await tx.delete(events).where(and(eq(events.id, id), eq(events.churchId, churchId))).returning();
+    return event ? { event, registrationCount: Number(registrationTotal?.value || 0) } : null;
+  });
+  if (!deleted) return c.json({ error: "Event not found" }, 404);
+
+  const user = c.get("user");
+  await recordActivity({
+    churchId,
+    actorId: user.sub,
+    actorName: user.name,
+    action: "Deleted event",
+    target: deleted.event.title,
+    targetId: id,
+    metadata: { status: deleted.event.status, registrationsDeleted: deleted.registrationCount },
+  }).catch((error) => console.error("Failed to record event deletion activity", error));
+
+  return c.json({ success: true, deletedId: id, registrationsDeleted: deleted.registrationCount });
+});
+
 app.post("/:id/duplicate", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   const source = await db.query.events.findFirst({ where: and(eq(events.id, c.req.param("id")), eq(events.churchId, churchId)) });
