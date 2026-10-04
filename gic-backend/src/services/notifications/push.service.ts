@@ -4,6 +4,7 @@ import { notificationDeliveries, pushDevices } from "../../db/schema.js";
 import { eq, inArray } from "drizzle-orm";
 import { deviceService } from "./device.service.js";
 import { isAllowedMemberRoute } from "../../lib/member-routes.js";
+import { mixlrNotificationTag } from "../mixlr-domain.js";
 
 export class PushService {
   async processDeliveries(deliveryIds: string[], title: string, body: string, url?: string, data?: Record<string, string>) {
@@ -40,6 +41,7 @@ export class PushService {
       const notification = delivery.notification;
       const destinationType = notification?.destinationType || "none";
       const destinationRoute = destinationType === "internal_route" ? notification?.destinationRoute ?? undefined : undefined;
+      const mixlrRecordingId = destinationRoute?.match(/^\/mixlr\/([A-Za-z0-9_-]+)$/)?.[1];
       const mediaId = destinationType === "media_page" ? notification?.destinationMediaId : undefined;
       const safeLegacyRoute = destinationType === "none" && isAllowedMemberRoute(notification?.destinationUrl) ? notification?.destinationUrl ?? undefined : undefined;
       const notificationData = {
@@ -49,6 +51,7 @@ export class PushService {
         ...(destinationRoute || safeLegacyRoute ? { destinationRoute: destinationRoute || safeLegacyRoute } : {}),
         ...(mediaId ? { mediaId } : {}),
         ...data,
+        tag: mixlrRecordingId ? mixlrNotificationTag(mixlrRecordingId) : notification?.id || "",
       };
       const tapUrl = new URL(`/notification-open?notificationId=${encodeURIComponent(notification?.id || "")}`, process.env.MEMBER_APP_URL || "http://localhost:3000").toString();
       return {

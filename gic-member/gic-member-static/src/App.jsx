@@ -2467,7 +2467,7 @@ export default function App() {
       icon: GIC_LOGO,
       badge: GIC_LOGO,
       data: { notificationId: payload?.data?.notificationId || '' },
-      tag: payload?.data?.notificationId || 'gic-fcm-foreground',
+      tag: payload?.data?.tag || payload?.data?.notificationId || 'gic-fcm-foreground',
     })).catch(() => {})
   }), [])
   return <NotificationProvider>

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { announceMixlrRecordingOnce, fetchLatestMixlrRecording, isNewMixlrRecording, mixlrAnnouncement, MIXLR_LOOKUP_INTERVAL_MS, shouldCheckMixlr } from "./mixlr-domain.js";
+import { announceMixlrRecordingOnce, fetchLatestMixlrRecording, isNewMixlrRecording, mixlrAnnouncement, mixlrNotificationTag, MIXLR_LOOKUP_INTERVAL_MS, shouldCheckMixlr } from "./mixlr-domain.js";
 
 test("Mixlr lookup follows the one-hour cache interval", () => {
   const checkedAt = new Date("2026-10-04T10:00:00.000Z");
@@ -30,13 +30,14 @@ test("normalizes Mixlr metadata and builds a preference-aware internal push dest
   assert.equal(recording?.id, "mixlr-123");
   assert.equal(recording?.audioUrl, "https://cdn.mixlr.com/audio/123.mp3");
   assert.equal(recording?.recordingCreatedAt, "2026-10-04T08:00:00.000Z");
-  const announcement = mixlrAnnouncement(recording!.id);
-  assert.equal(announcement.title, "New Message from GIC");
+  const announcement = mixlrAnnouncement(recording!.id, recording!.title);
+  assert.equal(announcement.title, "Sunday Message | 4th October, 2026");
   assert.equal(announcement.body, "The latest service recording is now available.");
   assert.equal(announcement.type, "GENERAL_ANNOUNCEMENT");
   assert.equal(announcement.audience, "everyone");
   assert.equal(announcement.destinationUrl, "/mixlr/mixlr-123");
   assert.equal(announcement.destinationRoute, announcement.destinationUrl);
+  assert.equal(mixlrNotificationTag(recording!.id), "gic-mixlr-mixlr-123");
 });
 
 test("creates one push campaign when the same recording is discovered repeatedly", async () => {
@@ -51,8 +52,9 @@ test("creates one push campaign when the same recording is discovered repeatedly
     campaigns.push(announcement);
     return `campaign-${campaigns.length}`;
   };
-  assert.equal(await announceMixlrRecordingOnce("mixlr-duplicate", claimRecording, createCampaign), "campaign-1");
-  assert.equal(await announceMixlrRecordingOnce("mixlr-duplicate", claimRecording, createCampaign), null);
+  assert.equal(await announceMixlrRecordingOnce("mixlr-duplicate", "Sunday Service Recording", claimRecording, createCampaign), "campaign-1");
+  assert.equal(await announceMixlrRecordingOnce("mixlr-duplicate", "Sunday Service Recording", claimRecording, createCampaign), null);
   assert.equal(campaigns.length, 1);
+  assert.equal(campaigns[0].title, "Sunday Service Recording");
   assert.equal(campaigns[0].destinationUrl, "/mixlr/mixlr-duplicate");
 });

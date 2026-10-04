@@ -51,7 +51,7 @@ export async function createMixlrRecordingNotification(recordingId: string, now 
       .for("update");
     if (!recording || recording.notificationId) return null;
 
-    return announceMixlrRecordingOnce(recording.id, async () => true, async (announcement) => {
+    return announceMixlrRecordingOnce(recording.id, recording.title, async () => true, async (announcement) => {
       const [campaign] = await tx.insert(adminNotifications).values({
         churchId: DEFAULT_CHURCH_ID,
         ...announcement,

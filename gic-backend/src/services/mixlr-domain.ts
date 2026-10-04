@@ -30,10 +30,10 @@ export function isNewMixlrRecording(knownId: string | null | undefined, candidat
   return Boolean(candidateId) && candidateId !== knownId;
 }
 
-export function mixlrAnnouncement(recordingId: string) {
+export function mixlrAnnouncement(recordingId: string, recordingTitle: string) {
   const destinationUrl = MIXLR_RECORDING_ROUTE(recordingId);
   return {
-    title: "New Message from GIC",
+    title: recordingTitle,
     body: "The latest service recording is now available.",
     type: "GENERAL_ANNOUNCEMENT" as const,
     audience: "everyone" as const,
@@ -43,13 +43,18 @@ export function mixlrAnnouncement(recordingId: string) {
   };
 }
 
+export function mixlrNotificationTag(recordingId: string): string {
+  return `gic-mixlr-${recordingId}`;
+}
+
 export async function announceMixlrRecordingOnce(
   recordingId: string,
+  recordingTitle: string,
   claimRecording: () => Promise<boolean>,
   createCampaign: (announcement: ReturnType<typeof mixlrAnnouncement>) => Promise<string>,
 ): Promise<string | null> {
   if (!await claimRecording()) return null;
-  return createCampaign(mixlrAnnouncement(recordingId));
+  return createCampaign(mixlrAnnouncement(recordingId, recordingTitle));
 }
 
 function normalizeRecording(recording: NonNullable<MixlrPayload["data"]>[number], fetchedAt = new Date()): MixlrRecording | null {

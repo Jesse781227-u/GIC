@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination.js'
 
 test('recognizes notification tap and media paths for cold-start routing', () => {
@@ -19,4 +20,11 @@ test('rejects external, unsupported, and traversal destinations', () => {
   for (const route of ['https://example.com', '//example.com/path', '/unknown', '/events/%2f..%2fprofile', '/events/%2e%2e/profile', '/profile?next=https://example.com']) {
     assert.equal(validateMemberRoute(route), null)
   }
+})
+
+test('active service worker displays one background notification and honors stable tags', () => {
+  const worker = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')
+  assert.equal((worker.match(/onBackgroundMessage\(/g) || []).length, 1)
+  assert.match(worker, /payload\?\.data\?\.tag \|\| notificationId/)
+  assert.match(worker, /renotify: false/)
 })
