@@ -99,6 +99,10 @@
   .event-form-section:nth-child(1)>label:nth-of-type(5),.event-form-section:nth-child(4)>label:nth-of-type(3){margin-right:0}
 }
 .registration-builder{margin-top:12px;padding:10px;background:#f8faff;border:1px solid #e0e7f2;border-radius:7px}
+.event-modal-body.event-builder-body{display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch}
+.event-modal-body.event-builder-body>.event-form-section{grid-column:1}
+.ticket-type-row{margin:12px 0;padding:10px 0;border-top:1px solid #e2e7ef}
+.paid-event-note{margin:12px 0 0!important;color:#9a512c!important}
 .registration-builder-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;color:#27385f;font-size:9px}
 .registration-builder-head .btn{margin:0;padding:6px 8px;min-height:0;font-size:8px}
 .registration-field-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(105px,.9fr) auto 24px;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #e6ebf3}

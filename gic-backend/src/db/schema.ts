@@ -324,6 +324,7 @@ export const events = pgTable("events", {
   address: text("address"),
   mapInfo: text("map_info"),
   sendRegistrationConfirmation: boolean("send_registration_confirmation").notNull().default(false),
+  builderData: jsonb("builder_data").$type<Record<string, unknown>>().notNull().default({}),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),

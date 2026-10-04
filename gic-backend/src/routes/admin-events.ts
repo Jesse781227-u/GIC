@@ -29,7 +29,7 @@ app.get("/summary", async (c) => {
   return c.json({ upcomingEvents: Number(upcoming?.value || 0), asOf: now.toISOString() });
 });
 
-const eventTypes = ["Service", "Conference", "Convention", "Fellowship", "Training", "Meeting", "Outreach", "Special Event", "Other"] as const;
+const eventTypes = ["Service", "Conference", "Wedding", "Children", "Outreach", "Meeting", "Retreat", "Convention", "Fellowship", "Training", "Special Event", "Other"] as const;
 const locationTypes = ["CHURCH", "PHYSICAL", "ONLINE", "HYBRID"] as const;
 const dateValue = z.string().datetime().nullable().optional();
 const registrationFieldSchema = z.object({
@@ -75,6 +75,7 @@ const eventSchemaBase = z.object({
   address: z.string().trim().nullable().optional(),
   mapInfo: z.string().trim().nullable().optional(),
   sendRegistrationConfirmation: z.boolean().default(false),
+  builderData: z.record(z.unknown()).default({}),
 });
 const eventSchema = eventSchemaBase.superRefine((value, ctx) => {
   if (value.endsAt && new Date(value.endsAt) <= new Date(value.startsAt)) {
@@ -85,9 +86,6 @@ const eventSchema = eventSchemaBase.superRefine((value, ctx) => {
   }
   if (value.registrationOpensAt && value.registrationClosesAt && new Date(value.registrationClosesAt) <= new Date(value.registrationOpensAt)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationClosesAt"], message: "Registration close time must be after open time" });
-  }
-  if (value.registrationRequired && value.registrationCapacity == null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationCapacity"], message: "Capacity is required when registration is enabled" });
   }
   if (["ONLINE", "HYBRID"].includes(value.locationType) && !value.isOnline) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["isOnline"], message: "Online location must enable online event" });
@@ -149,6 +147,7 @@ function eventValues(value: z.infer<typeof eventSchema>, createdBy: string, chur
     address: value.address ?? null,
     mapInfo: value.mapInfo ?? null,
     sendRegistrationConfirmation: value.sendRegistrationConfirmation,
+    builderData: value.builderData,
     createdBy,
     updatedAt: new Date(),
   };

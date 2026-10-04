@@ -4,7 +4,7 @@ import { CalendarDays, X, Plus, Trash2, Upload, Image as ImageIcon } from 'lucid
 import { adminAuth } from './firebase'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
-const EVENT_TYPES = ['Service', 'Conference', 'Convention', 'Fellowship', 'Training', 'Meeting', 'Outreach', 'Special Event', 'Other']
+const EVENT_TYPES = ['Service', 'Conference', 'Wedding', 'Children', 'Outreach', 'Meeting', 'Retreat', 'Convention', 'Fellowship', 'Training', 'Special Event', 'Other']
 const EVENT_FORMATS = ['PHYSICAL', 'ONLINE', 'HYBRID']
 const STREAM_PLATFORMS = ['Mixlr', 'YouTube', 'Facebook', 'Zoom', 'Other']
 const REMINDER_OPTIONS = [
@@ -44,11 +44,29 @@ function toDateTimeValue(date, time) {
   return `${date}T${time}`
 }
 
-function toIso(date, time) {
+function toIso(date, time, timeZone = 'Africa/Lagos') {
   if (!date || !time) return null
-  const value = new Date(`${date}T${time}:00`)
-  if (Number.isNaN(value.getTime())) return null
-  return value.toISOString()
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  const expected = Date.UTC(year, month - 1, day, hour, minute, 0)
+  if (!Number.isFinite(expected)) return null
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone, calendar: 'gregory', numberingSystem: 'latn', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+  let instant = expected
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]))
+    const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second))
+    const correction = expected - represented
+    instant += correction
+    if (!correction) break
+  }
+  const check = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]))
+  if (`${check.year}-${check.month}-${check.day}` !== date || `${check.hour}:${check.minute}` !== time) return null
+  return new Date(instant).toISOString()
+}
+
+function toPlatformId(platform) {
+  const value = platform.toLowerCase().replaceAll(' ', '_')
+  return ['zoom', 'youtube', 'mixlr', 'google_meet'].includes(value) ? value : 'other'
 }
 
 function readImageFile(file, onReady) {
@@ -65,6 +83,10 @@ function makeRegistrationField(label = '') {
   return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, label, type: 'text', required: false }
 }
 
+function makeTicketType() {
+  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: '', quantity: '' }
+}
+
 export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [organizations, setOrganizations] = useState([])
   const [pickupPoints, setPickupPoints] = useState([])
@@ -73,6 +95,9 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [fullDescription, setFullDescription] = useState('')
   const [eventType, setEventType] = useState('Service')
   const [organizationKey, setOrganizationKey] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
   const [flyerUrl, setFlyerUrl] = useState('')
   const [additionalImages, setAdditionalImages] = useState([])
   const [speakers, setSpeakers] = useState([makeSpeaker()])
@@ -80,6 +105,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [startTime, setStartTime] = useState('')
   const [endDate, setEndDate] = useState('')
   const [endTime, setEndTime] = useState('')
+  const [timeZone, setTimeZone] = useState('Africa/Lagos')
   const [allDayEvent, setAllDayEvent] = useState(false)
   const [recurringEvent, setRecurringEvent] = useState(false)
   const [repeatType, setRepeatType] = useState('Weekly')
@@ -92,13 +118,23 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [streamPlatform, setStreamPlatform] = useState('Mixlr')
   const [streamUrl, setStreamUrl] = useState('')
   const [streamInstructions, setStreamInstructions] = useState('')
-  const [registrationRequired, setRegistrationRequired] = useState(false)
+  const [attendanceMode, setAttendanceMode] = useState('view_only')
+  const [eventAudienceKind, setEventAudienceKind] = useState('everyone')
+  const [eventAudienceId, setEventAudienceId] = useState('')
+  const [registrationEligibility, setRegistrationEligibility] = useState('members')
+  const [registrantModel, setRegistrantModel] = useState('self')
+  const [childMinAge, setChildMinAge] = useState('0')
+  const [childMaxAge, setChildMaxAge] = useState('17')
   const [registrationOpensDate, setRegistrationOpensDate] = useState('')
   const [registrationOpensTime, setRegistrationOpensTime] = useState('')
   const [registrationClosesDate, setRegistrationClosesDate] = useState('')
   const [registrationClosesTime, setRegistrationClosesTime] = useState('')
   const [capacityType, setCapacityType] = useState('UNLIMITED')
   const [capacity, setCapacity] = useState('')
+  const [ticketProvider, setTicketProvider] = useState('flutterwave')
+  const [ticketCurrency, setTicketCurrency] = useState('NGN')
+  const [ticketTypes, setTicketTypes] = useState([makeTicketType()])
+  const [refundPolicy, setRefundPolicy] = useState('')
   const [waitlistEnabled, setWaitlistEnabled] = useState(false)
   const [sendConfirmation, setSendConfirmation] = useState(false)
   const [registrationFormMode, setRegistrationFormMode] = useState('NO_FORM')
@@ -116,11 +152,14 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [audience, setAudience] = useState('All Members')
   const [audienceId, setAudienceId] = useState('')
   const [audienceCollections, setAudienceCollections] = useState({ ministries: [], cells: [], segments: [], groups: [] })
-  const [visibility, setVisibility] = useState('Members only')
+  const [visibility, setVisibility] = useState('members')
   const [status, setStatus] = useState('DRAFT')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [previewMode, setPreviewMode] = useState(false)
+
+  const registrationRequired = attendanceMode !== 'view_only'
+  const paidAttendance = attendanceMode === 'register_paid'
 
   useEffect(() => {
     Promise.all([
@@ -138,6 +177,12 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       : audience === 'Segment'
         ? audienceCollections.segments
         : audience === 'Group' ? audienceCollections.groups : []
+
+  const eventAudienceChoices = eventAudienceKind === 'ministry'
+    ? audienceCollections.ministries
+    : eventAudienceKind === 'group'
+      ? [...audienceCollections.cells, ...audienceCollections.segments]
+      : []
 
   const changeAudience = (value) => { setAudience(value); setAudienceId('') }
 
@@ -158,26 +203,38 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const removeSpeaker = (id) => setSpeakers((current) => current.filter((speaker) => speaker.id !== id))
   const addPickupLocation = () => setPickupLocations((current) => [...current, makePickupLocation()])
   const removePickupLocation = (id) => setPickupLocations((current) => current.filter((pickup) => pickup.id !== id))
+  const updateTicketType = (id, key, value) => setTicketTypes((current) => current.map((ticket) => ticket.id === id ? { ...ticket, [key]: value } : ticket))
+  const addTicketType = () => setTicketTypes((current) => [...current, makeTicketType()])
+  const removeTicketType = (id) => setTicketTypes((current) => current.length > 1 ? current.filter((ticket) => ticket.id !== id) : current)
 
   const validate = () => {
     if (!title.trim()) return 'Event title is required.'
+    if (!flyerUrl) return 'An event flyer is required.'
     if (!shortDescription.trim()) return 'Short description is required.'
     if (!eventType) return 'Event type is required.'
-    if (!startDate || !startTime) return 'Start date and time are required.'
-    if (!endDate || !endTime) return 'End date and time are required.'
-    if (new Date(`${endDate}T${endTime}:00`) <= new Date(`${startDate}T${startTime}:00`)) return 'End date/time must be after the start date/time.'
+    if (!startDate || (!allDayEvent && !startTime)) return 'Start date and time are required.'
+    if (!endDate || (!allDayEvent && !endTime)) return 'End date and time are required.'
+    if (new Date(`${endDate}T${endTime || '23:59'}:00`) <= new Date(`${startDate}T${startTime || '00:00'}:00`)) return 'End date/time must be after the start date/time.'
+    if (!toIso(startDate, allDayEvent ? '00:00' : startTime, timeZone) || !toIso(endDate, allDayEvent ? '23:59' : endTime, timeZone)) return 'The selected date or time is invalid in this timezone.'
     if ((eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') && !venueName.trim()) return 'Venue name is required for physical or hybrid events.'
     if ((eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') && !address.trim()) return 'Address is required for physical or hybrid events.'
-    if ((eventFormat === 'ONLINE' || eventFormat === 'HYBRID') && streamOnline) {
+    if (eventFormat === 'ONLINE' || eventFormat === 'HYBRID') {
+      if (!streamOnline) return 'Enable online access for an online or hybrid event.'
       if (!streamPlatform) return 'Please select a streaming platform.'
-      if (!streamUrl.trim()) return 'Stream URL is required when streaming is enabled.'
+      if (!streamUrl.trim()) return 'Stream URL is required for an online or hybrid event.'
     }
     if (registrationRequired) {
       if (!registrationOpensDate || !registrationOpensTime) return 'Registration opening date/time is required.'
       if (!registrationClosesDate || !registrationClosesTime) return 'Registration closing date/time is required.'
       if (new Date(`${registrationClosesDate}T${registrationClosesTime}:00`) <= new Date(`${registrationOpensDate}T${registrationOpensTime}:00`)) return 'Registration close time must be after the open time.'
+      if (new Date(`${registrationClosesDate}T${registrationClosesTime}:00`) > new Date(`${endDate}T${allDayEvent ? '23:59' : endTime}:00`)) return 'Registration cannot close after the event ends.'
+      if (!toIso(registrationOpensDate, registrationOpensTime, timeZone) || !toIso(registrationClosesDate, registrationClosesTime, timeZone)) return 'Registration times are invalid in the selected timezone.'
       if (capacityType === 'LIMITED' && (!capacity || Number(capacity) <= 0)) return 'Capacity is required when registration is limited.'
+      if (registrantModel === 'parent_registers_children' && Number(childMaxAge) < Number(childMinAge)) return 'Child maximum age must be greater than or equal to the minimum age.'
     }
+    if (paidAttendance && (!ticketTypes.length || ticketTypes.some((ticket) => !ticket.name.trim() || ticket.price === '' || !Number.isInteger(Number(ticket.price)) || Number(ticket.price) < 0 || (ticket.quantity !== '' && (!Number.isInteger(Number(ticket.quantity)) || Number(ticket.quantity) < 1))) || !ticketTypes.some((ticket) => Number(ticket.price) > 0))) return 'Add valid ticket names and whole-number prices in minor currency units; at least one ticket must cost more than zero.'
+    if (['ministry', 'group'].includes(eventAudienceKind) && !eventAudienceId) return 'Choose the ministry or group for this audience.'
+    if (visibility === 'ministry' && eventAudienceKind !== 'ministry') return 'Ministry visibility requires a ministry audience.'
     if (churchBusAvailable && pickupLocations.filter((pickup) => pickup.name.trim() && pickup.address.trim()).length === 0) return 'Add at least one pickup location when church bus transportation is enabled.'
     if (notifyOnPublish && !notificationTitle.trim()) return 'Notification title is required when publish notifications are enabled.'
     if (notifyOnPublish && !notificationMessage.trim()) return 'Notification message is required when publish notifications are enabled.'
@@ -188,24 +245,50 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     const separator = organizationKey.indexOf('_')
     const organizationKind = separator < 0 ? null : organizationKey.slice(0, separator)
     const organizationId = separator < 0 ? null : organizationKey.slice(separator + 1)
+    const audienceId = eventAudienceId
+    const eventAudience = eventAudienceKind === 'ministry'
+      ? { kind: 'ministry', ministryIds: audienceId ? [audienceId] : [] }
+      : eventAudienceKind === 'group'
+        ? { kind: 'group', groupIds: audienceId ? [audienceId] : [] }
+        : { kind: eventAudienceKind }
+    const start = toIso(startDate, allDayEvent ? '00:00' : startTime, timeZone)
+    const end = toIso(endDate || startDate, allDayEvent ? '23:59' : endTime || startTime, timeZone)
+    const reminderOffsets = Array.from(new Set([
+      ...selectedReminders,
+      ...(customReminderValue && Number(customReminderValue) > 0 ? [Number(customReminderValue) * (customReminderUnit === 'hours' ? 60 : customReminderUnit === 'days' ? 1440 : 1)] : []),
+    ]))
+    const filteredSpeakers = speakers.filter((speaker) => speaker.name.trim() || speaker.title.trim() || speaker.description.trim())
+    const ticketTypeValues = paidAttendance ? ticketTypes.map((ticket) => ({
+      id: ticket.id,
+      name: ticket.name.trim(),
+      price: { amount: Number(ticket.price), currency: ticketCurrency },
+      ...(ticket.quantity ? { quantityAvailable: Number(ticket.quantity) } : {}),
+    })) : []
+    const location = eventFormat === 'ONLINE'
+      ? { mode: 'online', online: { platform: toPlatformId(streamPlatform), url: streamUrl.trim(), instructions: streamInstructions.trim() || undefined, revealTo: 'registered_only' } }
+      : eventFormat === 'HYBRID'
+        ? { mode: 'hybrid', venue: { name: venueName.trim(), address: address.trim(), landmark: landmark.trim() || undefined, mapUrl: locationLink.trim() || undefined }, online: { platform: toPlatformId(streamPlatform), url: streamUrl.trim(), instructions: streamInstructions.trim() || undefined, revealTo: 'registered_only' } }
+        : { mode: 'physical', venue: { name: venueName.trim(), address: address.trim(), landmark: landmark.trim() || undefined, mapUrl: locationLink.trim() || undefined } }
     return {
       title: title.trim(),
       description: shortDescription.trim() || fullDescription.trim() || null,
       eventType,
-      startsAt: toIso(startDate, startTime),
-      endsAt: allDayEvent ? null : toIso(endDate || startDate, endTime || startTime),
+      startsAt: start,
+      endsAt: allDayEvent ? null : end,
+      recurrenceRule: recurringEvent ? { frequency: repeatType === 'Daily' ? 'daily' : repeatType === 'Monthly' ? 'monthly' : 'weekly', interval: 1 } : null,
       location: eventFormat === 'ONLINE' ? 'Online' : venueName || null,
       venueName: (eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') ? venueName || null : null,
       address: (eventFormat === 'PHYSICAL' || eventFormat === 'HYBRID') ? address || null : null,
       mapInfo: locationLink || null,
-      isPaid: false,
+      isPaid: paidAttendance,
+      price: paidAttendance ? Number(ticketTypes[0]?.price || 0) : null,
       status: 'DRAFT',
-      timeZone: 'Africa/Lagos',
+      timeZone,
       allowRegistrationCancellation: true,
       registrationForm: registrationRequired ? registrationFields : [],
       registrationRequired,
-      registrationOpensAt: registrationRequired ? toIso(registrationOpensDate, registrationOpensTime) : null,
-      registrationClosesAt: registrationRequired ? toIso(registrationClosesDate, registrationClosesTime) : null,
+      registrationOpensAt: registrationRequired ? toIso(registrationOpensDate, registrationOpensTime, timeZone) : null,
+      registrationClosesAt: registrationRequired ? toIso(registrationClosesDate, registrationClosesTime, timeZone) : null,
       registrationCapacity: registrationRequired && capacityType === 'LIMITED' ? Number(capacity) : null,
       allowWaitlist: registrationRequired && waitlistEnabled,
       isOnline: eventFormat !== 'PHYSICAL',
@@ -218,24 +301,40 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       sendRegistrationConfirmation: registrationRequired && sendConfirmation,
       organizationKind,
       organizationId,
-      organizerContactPerson: null,
-      organizerContactPhone: null,
+      organizerContactPerson: contactName.trim() || null,
+      organizerContactPhone: contactPhone.trim() || null,
       imageUrl: flyerUrl || null,
-      landmark: landmark || null,
-      speakers: speakers.filter((speaker) => speaker.name.trim() || speaker.title.trim() || speaker.description.trim()).map((speaker) => ({
-        name: speaker.name.trim(),
-        title: speaker.title.trim(),
-        description: speaker.description.trim(),
-        photoUrl: speaker.photoUrl || null,
-      })),
-      notificationTitle: notifyOnPublish ? notificationTitle.trim() : null,
-      notificationMessage: notifyOnPublish ? notificationMessage.trim() : null,
-      audience,
-      audienceId: audience === 'All Members' ? null : audienceId || null,
-      visibility,
-      recurringEvent,
-      recurringRule: recurringEvent ? { repeat: repeatType } : null,
-      additionalImages,
+      builderData: {
+        shortDescription: shortDescription.trim(),
+        fullDescription: fullDescription.trim(),
+        type: ({ Service: 'service', Conference: 'conference', Wedding: 'wedding', Children: 'children', Outreach: 'outreach', Meeting: 'meeting', Retreat: 'retreat' })[eventType] || 'other',
+        visibility,
+        audience: eventAudience,
+        flyerUrl,
+        galleryUrls: additionalImages,
+        contact: contactName.trim() || contactPhone.trim() || contactEmail.trim() ? { name: contactName.trim(), phone: contactPhone.trim() || undefined, email: contactEmail.trim() || undefined } : undefined,
+        coOrganizerIds: [],
+        schedule: { timezone: timeZone, start, end, allDay: allDayEvent, recurrence: recurringEvent ? { frequency: repeatType === 'Daily' ? 'daily' : repeatType === 'Monthly' ? 'monthly' : 'weekly', interval: 1 } : undefined },
+        location,
+        attendance: attendanceMode,
+        speakers: filteredSpeakers.map((speaker) => ({ name: speaker.name.trim(), role: speaker.title.trim() || undefined, bio: speaker.description.trim() || undefined, photoUrl: speaker.photoUrl || undefined })),
+        registration: registrationRequired ? {
+          opensAt: toIso(registrationOpensDate, registrationOpensTime, timeZone),
+          closesAt: toIso(registrationClosesDate, registrationClosesTime, timeZone),
+          eligibility: registrationEligibility,
+          capacity: capacityType === 'LIMITED' ? { kind: 'limited', max: Number(capacity) } : { kind: 'unlimited' },
+          waitlist: waitlistEnabled,
+          registrantModel,
+          ...(registrantModel === 'parent_registers_children' ? { childFields: { minAge: Number(childMinAge), maxAge: Number(childMaxAge), collectAllergies: true, collectEmergencyContact: true, collectAuthorizedPickup: true, requirePhotoConsent: false, checkInOutCode: true } } : {}),
+          fields: registrationFields.map(({ type, ...field }) => ({ ...field, kind: type })),
+          allowSelfCancel: true,
+        } : undefined,
+        ticketing: paidAttendance ? { provider: ticketProvider, ticketTypes: ticketTypeValues, refundPolicy, issueQrTickets: true } : undefined,
+        transport: churchBusAvailable ? { pickupPoints: pickupLocations.filter((pickup) => pickup.name.trim() && pickup.address.trim()).map((pickup) => ({ id: pickup.id, name: pickup.name.trim(), address: pickup.address.trim(), pickupTime: toIso(startDate, pickup.pickupTime || startTime || '09:00', timeZone), seats: Number(pickup.capacity || 1), seatsTaken: 0 })), feeIncludedInTicket: false, returnTrip: false, requireSelection: true } : undefined,
+        streaming: streamOnline ? { platform: toPlatformId(streamPlatform), url: streamUrl.trim(), instructions: streamInstructions.trim() || undefined, revealTo: 'registered_only' } : undefined,
+        reminders: { enabled: sendReminders, offsetsMinutes: sendReminders ? reminderOffsets : [], channels: ['in_app', 'push'] },
+        announcement: notifyOnPublish ? { notifyOnPublish: true, title: notificationTitle.trim() || title.trim(), message: notificationMessage.trim(), audience: eventAudience, channels: ['in_app', 'push'] } : undefined,
+      },
     }
   }
 
@@ -321,9 +420,20 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     <div className="event-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-event-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
       <form className="event-modal" onSubmit={(event) => { event.preventDefault(); if (status === 'PUBLISHED') setPreviewMode(true); else saveEvent('draft'); }}>
         <div className="event-modal-header"><div><h2 id="create-event-title">Create Event</h2><p>Add a practical event to the GIC platform</p></div><button type="button" className="event-modal-close" aria-label="Close create event" onClick={onClose}><X size={18}/></button></div>
-        <div className="event-modal-body">
+        <div className="event-modal-body event-builder-body">
           {!previewMode ? (
             <>
+              <div className="event-form-section attendance-mode-section">
+                <h3>Attendance mode</h3>
+                <p className="event-section-description">What must attendees do?</p>
+                <div className="segmented-row">
+                  <label className="segment-option"><input type="radio" name="attendance-mode" checked={attendanceMode === 'view_only'} onChange={() => setAttendanceMode('view_only')} /> View only</label>
+                  <label className="segment-option"><input type="radio" name="attendance-mode" checked={attendanceMode === 'register_free'} onChange={() => setAttendanceMode('register_free')} /> Register free</label>
+                  <label className="segment-option"><input type="radio" name="attendance-mode" checked={attendanceMode === 'register_paid'} onChange={() => setAttendanceMode('register_paid')} /> Register paid</label>
+                </div>
+                {paidAttendance&&<p className="event-section-description paid-event-note">Paid events are saved as drafts; payment processing must be enabled before publishing.</p>}
+              </div>
+
               <div className="event-form-section">
                 <h3>Event details</h3>
                 <p className="event-section-description">Add the basic information people will see about this event.</p>
@@ -332,6 +442,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                 <label className="modern-field full"><span>Full description</span><textarea value={fullDescription} onChange={(event) => setFullDescription(event.target.value)} rows="5" /></label>
                 <label className="modern-field full"><span>Event type</span><select value={eventType} onChange={(event) => setEventType(event.target.value)}>{EVENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
                 <label className="modern-field full"><span>Organizing unit / fellowship</span><select value={organizationKey} onChange={(event) => setOrganizationKey(event.target.value)}><option value="">No organization</option>{organizations.map((item) => <option value={`${item.kind || 'ministry'}_${item.id}`} key={item.id}>{item.name} · {item.type || item.kind || 'Organization'}</option>)}</select></label>
+                <div className="modern-field-grid"><label className="modern-field"><span>Contact name</span><input value={contactName} onChange={(event)=>setContactName(event.target.value)}/></label><label className="modern-field"><span>Contact phone</span><input type="tel" value={contactPhone} onChange={(event)=>setContactPhone(event.target.value)}/></label></div>
+                <label className="modern-field full"><span>Contact email</span><input type="email" value={contactEmail} onChange={(event)=>setContactEmail(event.target.value)}/></label>
                 <label className="modern-field full"><span>Event flyer</span><div className={`flyer-upload ${flyerUrl ? 'has-image' : 'empty'}`}>
                   <input id="event-flyer-input" className="file-input-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) { try { readImageFile(file, setFlyerUrl) } catch (requestError) { setError(requestError.message || 'Flyer upload failed.') } } }} />
                   {flyerUrl ? <><img src={flyerUrl} alt="Event flyer preview" /><div className="flyer-upload-actions"><label className="upload-action" htmlFor="event-flyer-input">Change</label><button type="button" className="upload-action" onClick={() => setFlyerUrl('')}>Remove</button></div></> : <label className="flyer-upload-copy" htmlFor="event-flyer-input"><Upload size={20}/><b>Upload event flyer</b><small>PNG, JPG or WEBP</small></label>}
@@ -354,6 +466,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                       <label className="modern-field"><span>Speaker name</span><input value={speaker.name} onChange={(event) => speakerUpdate(speaker.id, 'name', event.target.value)} /></label>
                       <label className="modern-field"><span>Speaker title / role</span><input value={speaker.title} onChange={(event) => speakerUpdate(speaker.id, 'title', event.target.value)} placeholder="Pastor / Guest Minister" /></label>
                     </div>
+                    <div className="modern-field-grid"><label className="modern-field"><span>Biography</span><textarea value={speaker.description} onChange={(event)=>speakerUpdate(speaker.id,'description',event.target.value)} rows="2"/></label><label className="modern-field"><span>Photo URL</span><input type="url" value={speaker.photoUrl} onChange={(event)=>speakerUpdate(speaker.id,'photoUrl',event.target.value)} placeholder="https://..."/></label></div>
                   </div>
                 ))}
                 <button type="button" className="btn secondary" onClick={addSpeaker}><Plus size={14}/> Add Speaker</button>
@@ -364,16 +477,16 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                 <p className="event-section-description">Set when the event starts and ends.</p>
                 <div className="modern-field-grid">
                   <label className="modern-field"><span>Start date</span><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
-                  <label className="modern-field"><span>Start time</span><input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required /></label>
+                  <label className="modern-field"><span>Start time</span><input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required={!allDayEvent} disabled={allDayEvent} /></label>
                 </div>
                 <div className="modern-field-grid">
                   <label className="modern-field"><span>End date</span><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} required /></label>
-                  <label className="modern-field"><span>End time</span><input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required /></label>
+                  <label className="modern-field"><span>End time</span><input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required={!allDayEvent} disabled={allDayEvent} /></label>
                 </div>
-                <div className="timezone-row"><strong>Timezone:</strong> Africa/Lagos (WAT)</div>
+                <label className="modern-field full"><span>Timezone</span><select value={timeZone} onChange={(event)=>setTimeZone(event.target.value)}><option value="Africa/Lagos">Africa/Lagos (WAT)</option><option value="UTC">UTC</option><option value="Europe/London">Europe/London</option><option value="America/New_York">America/New_York</option></select></label>
                 <label className="check"><input type="checkbox" checked={allDayEvent} onChange={(event) => setAllDayEvent(event.target.checked)} /> All-day event</label>
                 <label className="check"><input type="checkbox" checked={recurringEvent} onChange={(event) => setRecurringEvent(event.target.checked)} /> Recurring event</label>
-                {recurringEvent && <label className="modern-field full"><span>Repeat</span><select value={repeatType} onChange={(event) => setRepeatType(event.target.value)}><option value="Weekly">Weekly</option><option value="Monthly">Monthly</option><option value="Custom">Custom</option></select></label>}
+                {recurringEvent && <label className="modern-field full"><span>Repeat</span><select value={repeatType} onChange={(event) => setRepeatType(event.target.value)}><option value="Daily">Daily</option><option value="Weekly">Weekly</option><option value="Monthly">Monthly</option></select></label>}
               </div>
 
               <div className="event-form-section">
@@ -408,9 +521,14 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
 
               <div className="event-form-section">
                 <h3>Registration</h3>
-                <label className="check"><input type="checkbox" checked={registrationRequired} onChange={(event) => setRegistrationRequired(event.target.checked)} /> Registration is required</label>
+                <p className="event-section-description">{attendanceMode==='register_paid'?'Registration is required for paid attendance.':attendanceMode==='register_free'?'Registration is required for free attendance.':'Registration is off in view-only mode.'}</p>
                 {registrationRequired && (
                   <>
+                    <div className="modern-field-grid">
+                      <label className="modern-field"><span>Eligibility</span><select value={registrationEligibility} onChange={(event)=>setRegistrationEligibility(event.target.value)}><option value="members">Members</option><option value="anyone">Anyone</option><option value="invite_only">Invite only</option></select></label>
+                      <label className="modern-field"><span>Who is being registered?</span><select value={registrantModel} onChange={(event)=>setRegistrantModel(event.target.value)}><option value="self">Self</option><option value="self_plus_guests">Self plus guests</option><option value="parent_registers_children">Parent registers children</option></select></label>
+                    </div>
+                    {registrantModel==='parent_registers_children'&&<div className="modern-field-grid"><label className="modern-field"><span>Child minimum age</span><input type="number" min="0" max="18" value={childMinAge} onChange={(event)=>setChildMinAge(event.target.value)}/></label><label className="modern-field"><span>Child maximum age</span><input type="number" min={childMinAge} max="18" value={childMaxAge} onChange={(event)=>setChildMaxAge(event.target.value)}/></label></div>}
                     <div className="modern-field-grid">
                       <label className="modern-field"><span>Registration opens</span><input type="date" value={registrationOpensDate} onChange={(event) => setRegistrationOpensDate(event.target.value)} /></label>
                       <label className="modern-field"><span>Opening time</span><input type="time" value={registrationOpensTime} onChange={(event) => setRegistrationOpensTime(event.target.value)} /></label>
@@ -434,6 +552,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                   </>
                 )}
               </div>
+
+              {paidAttendance&&<div className="event-form-section"><h3>Ticketing</h3><p className="event-section-description">Prices are stored in minor currency units (kobo for NGN).</p><div className="modern-field-grid"><label className="modern-field"><span>Payment provider</span><select value={ticketProvider} onChange={(event)=>setTicketProvider(event.target.value)}><option value="flutterwave">Flutterwave</option><option value="paystack">Paystack</option><option value="stripe">Stripe</option></select></label><label className="modern-field"><span>Currency</span><select value={ticketCurrency} onChange={(event)=>setTicketCurrency(event.target.value)}><option value="NGN">NGN</option><option value="USD">USD</option><option value="GBP">GBP</option></select></label></div>{ticketTypes.map((ticket,index)=><div className="ticket-type-row" key={ticket.id}><div className="speaker-header"><strong>Ticket type {index+1}</strong>{ticketTypes.length>1&&<button type="button" className="icon-btn" aria-label={`Remove ticket type ${index+1}`} onClick={()=>removeTicketType(ticket.id)}><Trash2 size={13}/></button>}</div><div className="modern-field-grid"><label className="modern-field"><span>Name</span><input value={ticket.name} onChange={(event)=>updateTicketType(ticket.id,'name',event.target.value)} placeholder="General" required/></label><label className="modern-field"><span>Price ({ticketCurrency} minor units)</span><input type="number" min="0" step="1" value={ticket.price} onChange={(event)=>updateTicketType(ticket.id,'price',event.target.value)} required/></label></div><label className="modern-field"><span>Quantity available (blank is unlimited)</span><input type="number" min="1" step="1" value={ticket.quantity} onChange={(event)=>updateTicketType(ticket.id,'quantity',event.target.value)}/></label></div>)}<button type="button" className="btn secondary" onClick={addTicketType}><Plus size={14}/> Add ticket type</button><label className="modern-field full"><span>Refund policy</span><textarea value={refundPolicy} onChange={(event)=>setRefundPolicy(event.target.value)} rows="2"/></label></div>}
 
               <div className="event-form-section">
                 <h3>Transportation</h3>
@@ -494,9 +614,10 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3 className="visually-hidden">Event settings</h3>
-                <label className="modern-field full"><span>Visibility</span><select value={visibility} onChange={(event) => setVisibility(event.target.value)}><option value="Public">Public</option><option value="Members only">Members only</option><option value="Restricted audience">Restricted audience</option></select></label>
-                <label className="modern-field full"><span>Event status</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option></select></label>
+                <h3>Audience & visibility</h3>
+                <div className="modern-field-grid"><label className="modern-field"><span>Who can see this event?</span><select value={visibility} onChange={(event) => setVisibility(event.target.value)}><option value="public">Public</option><option value="members">Members</option><option value="ministry">Ministry</option><option value="invite_only">Invite only</option></select></label><label className="modern-field"><span>Audience</span><select value={eventAudienceKind} onChange={(event)=>{setEventAudienceKind(event.target.value);setEventAudienceId('')}}><option value="everyone">Everyone</option><option value="members">Members</option><option value="ministry">Ministry</option><option value="group">Group</option></select></label></div>
+                {['ministry','group'].includes(eventAudienceKind)&&<label className="modern-field full"><span>Select {eventAudienceKind}</span><select value={eventAudienceId} onChange={(event)=>setEventAudienceId(event.target.value)}><option value="">Choose audience</option>{eventAudienceChoices.map((item)=><option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}
+                <p className="event-section-description">New events are saved as drafts. Publishing is a separate event action.</p>
               </div>
 
               {error && <div className="event-form-error" role="alert">{error}</div>}
@@ -519,7 +640,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
             <>
               <button type="button" className="btn secondary" onClick={onClose}>Cancel</button>
               <button type="button" className="btn secondary" onClick={() => saveEvent('draft')} disabled={saving}>{saving ? 'Saving...' : 'Save Draft'}</button>
-              <button type="button" className="btn primary" onClick={() => { const validationError = validate(); if (validationError) { setError(validationError); return } setPreviewMode(true) }} disabled={saving}>Publish Event</button>
+              <button type="button" className="btn primary" onClick={() => { const validationError = validate(); if (validationError) { setError(validationError); return } setPreviewMode(true) }} disabled={saving||paidAttendance} title={paidAttendance?'Payment processing must be enabled before publishing':'Publish event'}>Publish Event</button>
             </>
           )}
         </div>
