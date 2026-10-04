@@ -29,13 +29,13 @@ app.get("/summary", async (c) => {
   return c.json({ upcomingEvents: Number(upcoming?.value || 0), asOf: now.toISOString() });
 });
 
-const eventTypes = ["Service", "Conference", "Convention", "Fellowship", "Training", "Meeting", "Outreach", "Special Event", "Other"] as const;
+const eventTypes = ["Service", "Conference", "Wedding", "Children", "Outreach", "Meeting", "Retreat", "Convention", "Fellowship", "Training", "Special Event", "Other"] as const;
 const locationTypes = ["CHURCH", "PHYSICAL", "ONLINE", "HYBRID"] as const;
 const dateValue = z.string().datetime().nullable().optional();
 const registrationFieldSchema = z.object({
   id: z.string().trim().min(1).max(80),
   label: z.string().trim().min(1).max(160),
-  type: z.enum(["text", "email", "phone", "textarea", "checkbox"]),
+  type: z.enum(["text", "email", "phone", "textarea", "checkbox", "number", "date", "select", "radio"]),
   required: z.boolean().default(false),
 });
 
@@ -75,6 +75,7 @@ const eventSchemaBase = z.object({
   address: z.string().trim().nullable().optional(),
   mapInfo: z.string().trim().nullable().optional(),
   sendRegistrationConfirmation: z.boolean().default(false),
+  builderData: z.record(z.unknown()).default({}),
 });
 const eventSchema = eventSchemaBase.superRefine((value, ctx) => {
   if (value.endsAt && new Date(value.endsAt) <= new Date(value.startsAt)) {
@@ -85,9 +86,6 @@ const eventSchema = eventSchemaBase.superRefine((value, ctx) => {
   }
   if (value.registrationOpensAt && value.registrationClosesAt && new Date(value.registrationClosesAt) <= new Date(value.registrationOpensAt)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationClosesAt"], message: "Registration close time must be after open time" });
-  }
-  if (value.registrationRequired && value.registrationCapacity == null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["registrationCapacity"], message: "Capacity is required when registration is enabled" });
   }
   if (["ONLINE", "HYBRID"].includes(value.locationType) && !value.isOnline) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["isOnline"], message: "Online location must enable online event" });
@@ -149,6 +147,7 @@ function eventValues(value: z.infer<typeof eventSchema>, createdBy: string, chur
     address: value.address ?? null,
     mapInfo: value.mapInfo ?? null,
     sendRegistrationConfirmation: value.sendRegistrationConfirmation,
+    builderData: value.builderData,
     createdBy,
     updatedAt: new Date(),
   };
@@ -212,6 +211,32 @@ app.patch("/:id/status", async (c) => {
       .catch((error) => console.error(`Event lifecycle push failed for ${event.id}:`, error));
   }
   return c.json({ event: await eventWithCounts(event) });
+});
+
+app.delete("/:id", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const id = c.req.param("id");
+  const deleted = await db.transaction(async (tx) => {
+    const current = await tx.query.events.findFirst({ where: and(eq(events.id, id), eq(events.churchId, churchId)) });
+    if (!current) return null;
+    const [registrationTotal] = await tx.select({ value: count() }).from(eventRegistrations).where(and(eq(eventRegistrations.eventId, id), eq(eventRegistrations.churchId, churchId)));
+    const [event] = await tx.delete(events).where(and(eq(events.id, id), eq(events.churchId, churchId))).returning();
+    return event ? { event, registrationCount: Number(registrationTotal?.value || 0) } : null;
+  });
+  if (!deleted) return c.json({ error: "Event not found" }, 404);
+
+  const user = c.get("user");
+  await recordActivity({
+    churchId,
+    actorId: user.sub,
+    actorName: user.name,
+    action: "Deleted event",
+    target: deleted.event.title,
+    targetId: id,
+    metadata: { status: deleted.event.status, registrationsDeleted: deleted.registrationCount },
+  }).catch((error) => console.error("Failed to record event deletion activity", error));
+
+  return c.json({ success: true, deletedId: id, registrationsDeleted: deleted.registrationCount });
 });
 
 app.post("/:id/duplicate", async (c) => {

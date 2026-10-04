@@ -432,15 +432,26 @@ function EventReminders({eventId,eventStartsAt}){
 
 function AdminEventDetails(){
  const {id}=useParams()
+ const navigate=useNavigate()
  const [event,setEvent]=useState(null)
  const [tab,setTab]=useState('Overview')
  const [error,setError]=useState('')
+ const [deleteError,setDeleteError]=useState('')
+ const [deleting,setDeleting]=useState(false)
  useEffect(()=>{fetchAdminApi(`/api/admin/events/${id}`).then(({event:record})=>setEvent(record)).catch((requestError)=>setError(requestError.message))},[id])
+ const remove=async()=>{
+  if(!window.confirm(`Permanently delete "${event.title}"? This also deletes all registrations, pickup locations, and reminders. Previously sent notifications and audit history remain. This cannot be undone.`))return
+  setDeleting(true);setDeleteError('')
+  try{await fetchAdminApi(`/api/admin/events/${id}`,{method:'DELETE'});navigate('/events',{replace:true})}
+  catch(requestError){setDeleteError(requestError.message||'Event could not be deleted.')}
+  finally{setDeleting(false)}
+ }
  if(error)return <Page title="Event details"><Card className="empty-message">{error}</Card></Page>
  if(!event)return <Page title="Event details"><Card className="empty-message">Loading event...</Card></Page>
  const tabs=['Overview','Registrations','Bus pickups','Reminders']
   return <Page title={event.title} subtitle={event.eventType}>
-    <div className="detail-toolbar modern-detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><span className="badge success">{event.registrationCount||0} registrations</span></div>
+    <div className="detail-toolbar modern-detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><span className="badge success">{event.registrationCount||0} registrations</span><button className="tool" onClick={remove} disabled={deleting}><Trash2 size={15}/>{deleting?'Deleting...':'Delete event'}</button></div>
+    {deleteError&&<Card className="empty-message" role="alert">{deleteError}</Card>}
     <Card className="modern-event-detail">
       <div className="modern-event-summary"><div><span className={'badge '+(event.status==='PUBLISHED'?'success':'draft')}>{event.status}</span><h2>{event.title}</h2><p><CalendarDays size={14}/> {new Date(event.startsAt).toLocaleString()} {event.endsAt&&`– ${new Date(event.endsAt).toLocaleString()}`}</p><p><MapPin size={14}/> {event.locationType==='ONLINE'?'Online':event.venueName||event.location||'Location to be announced'}</p></div><div className="event-detail-facts"><b>{event.registrationRequired?'Registration required':'Registration not required'}</b>{event.registrationCapacity&&<span>Capacity {event.registrationCapacity}</span>}{event.organizerUnit&&<span>Organizer: {event.organizerUnit}</span>}{event.isOnline&&<span>Online link configured</span>}{event.busTransportEnabled&&<span>Bus transportation enabled</span>}</div></div>
       <div className="tabs big">{tabs.map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}</div>
