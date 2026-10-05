@@ -376,31 +376,6 @@ function ModernEvents(){
  const [error,setError]=useState('')
  const [createOpen,setCreateOpen]=useState(false)
  const load=()=>fetchAdminApi('/api/admin/events').then(({events:items=[]})=>setEvents(items)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
- useEffect(()=>{load()},[])
- const created=(event)=>{
-   setCreateOpen(false)
-   if (event?.id) {
-     setEvents((current)=>[event, ...current.filter((item)=>item.id !== event.id)])
-     navigate(`/events/${event.id}`)
-     return
-   }
-   setLoading(true)
-   load()
- }
- const visible=events.filter((event)=>event.title.toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||event.status===status))
- return <Page title="Events" subtitle="Manage church events, registrations, forms, attendance, and reminders" action={<button className="btn primary" onClick={()=>setCreateOpen((open)=>!open)}><Plus size={15}/> Create Event</button>}>{error&&<Card className="empty-message">Events are unavailable right now.</Card>}<Card className="table-card modern-events-card"><div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>PUBLISHED</option><option>DRAFT</option><option>CANCELLED</option></select><button className="tool"><CalendarDays size={14}/> Calendar</button></div>{loading?<div className="empty-message">Loading events...</div>:visible.length?<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.imageUrl?<img src={event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={18}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{new Date(event.startsAt).toLocaleString()} <span>•</span>{event.location||'Location to be announced'}</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':event.status==='CANCELLED'?'gray':'draft')}>{event.status}</span><ChevronRight size={16}/></Link>)}</div>:<div className="empty"><CalendarDays size={30}/><h2>No matching events</h2><p>Create or publish an event to see it here.</p></div>}{createOpen&&<AdminCreateEventModal onClose={()=>setCreateOpen(false)} onCreated={created}/>}</Card></Page>
-}
-
-function PickupLocations({eventId}){
- const blank={busPickupPointId:'',locationName:'',addressLandmark:'',pickupTime:'',capacity:'',notes:'',active:true}
- const [items,setItems]=useState([])
- const [pickupPoints,setPickupPoints]=useState([])
- const [form,setForm]=useState(blank)
- const [editing,setEditing]=useState('')
- const [loading,setLoading]=useState(true)
- const [saving,setSaving]=useState(false)
- const [error,setError]=useState('')
- const load=()=>fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations`).then(({pickupLocations=[]})=>setItems(pickupLocations)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
  useEffect(()=>{load();fetchAdminApi('/api/admin/reference/bus-pickup-points').then(({pickupPoints:points=[]})=>setPickupPoints(points)).catch((requestError)=>setError(requestError.message))},[eventId])
  const change=(field,value)=>setForm((current)=>({...current,[field]:value}))
  const choosePickupPoint=(value)=>{const pickupPoint=pickupPoints.find((item)=>item.id===value);setForm((current)=>({...current,busPickupPointId:value,locationName:pickupPoint?.name||current.locationName,addressLandmark:pickupPoint?.address||current.addressLandmark}))}
@@ -485,7 +460,7 @@ function ModernMemberDetails(){
  const [birthday,setBirthday]=useState('')
  const [profileNotice,setProfileNotice]=useState('')
  const [savingProfile,setSavingProfile]=useState(false)
- const [deleting,setDeletingId]=useState('')
+ const [deletingId,setDeletingId]=useState('')
  const [deleteError,setDeleteError]=useState('')
  useEffect(()=>{let cancelled=false;fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}`).then(({member:record,groups={},ageGroups:options=[]})=>{if(cancelled)return;setMember(record);setGroupMemberships({ministries:groups.ministries||[],cells:groups.fellowships||groups.cells||[],segments:groups.segments||[]});setAgeGroups(options);setAgeGroupId(record.ageGroupId||'');setRelationshipStatus(record.relationshipStatus||'');setBirthday(record.birthday||'')}).catch(()=>{if(!cancelled)setMember(null)});return()=>{cancelled=true}},[id])
  const saveDemographics=async()=>{setSavingProfile(true);setProfileNotice('');try{const {member:updated}=await fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}/profile`,{method:'PATCH',body:JSON.stringify({ageGroupId:ageGroupId||null,relationshipStatus:relationshipStatus||null,birthday})});setMember(updated);setProfileNotice('Personal information updated.')}catch(error){setProfileNotice(error.message||'Profile update failed.')}finally{setSavingProfile(false)}}
@@ -504,7 +479,9 @@ function ModernMemberDetails(){
  }
  if(!member)return <Page title="Member"><Card className="empty-message">Loading live member data...</Card></Page>
  const joined=member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'Not provided'
- return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar modern-detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card className="modern-member-card"><div className="modern-member-head"><div className="modern-member-identity">{member.avatar?<img className="modern-member-avatar" src={member.avatar} alt=""/>:<div className="modern-member-avatar avatar-fallback">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><small>Member since {joined}</small></div></div></div><div className="modern-profile-section"><h3>Personal information</h3><div className="modern-profile-grid"><label className="form-field">Birthday (MM-DD)<input inputMode="numeric" placeholder="MM-DD" value={birthday} onChange={(event)=>setBirthday(event.target.value)}/></label><label className="form-field">Age group<select value={ageGroupId} onChange={(event)=>setAgeGroupId(event.target.value)}><option value="">Not provided</option>{ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}: {item.minAge}–{item.maxAge ?? '+'}</option>)}</select></label><label className="form-field">Relationship status<select value={relationshipStatus} onChange={(event)=>setRelationshipStatus(event.target.value)}><option value="">Not provided</option><option value="Single">Single</option><option value="Married">Married</option></select></label></div>{profileNotice&&<div className="empty-message" role="status">{profileNotice}</div>}<button className="btn primary" onClick={saveDemographics} disabled={savingProfile}>{savingProfile?'Saving...':'Save personal information'}</button></div><div className="modern-profile-section"><h3>Units</h3><div className="tag-list">{groupMemberships.ministries.map((item)=><Link className="tag" key={item.id} to={`/ministries/ministry_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.ministries.length&&<span className="modern-empty-label">No Unit memberships</span>}</div><div className="modern-profile-section"><h3>Fellowships</h3><div className="tag-list">{groupMemberships.cells.map((item)=><Link className="tag" key={item.id} to={`/ministries/cell_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.cells.length&&<span className="modern-empty-label">No Fellowship memberships</span>}</div><div className="modern-profile-section"><h3>Segments</h3><div className="tag-list">{groupMemberships.segments.map((item)=><Link className="tag" key={item.id} to={`/ministries/segment_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.segments.length&&<span className="modern-empty-label">No segment matches</span>}</div>{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}
+ const tenureMonths=joinedDate?Math.max(0,(new Date().getFullYear()-joinedDate.getFullYear())*12+new Date().getMonth()-joinedDate.getMonth()):0
+ const tenure=joinedDate?(tenureMonths<1?'Less than a month':`${Math.floor(tenureMonths/12)?`${Math.floor(tenureMonths/12)} year${Math.floor(tenureMonths/12)===1?'':'s'} `:''}${tenureMonths%12?`${tenureMonths%12} month${tenureMonths%12===1?'':'s'}`:''}`.trim()):'Not provided'
+ return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar modern-detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card className="modern-member-card"><div className="modern-member-head"><div className="modern-member-identity">{member.avatar?<img className="modern-member-avatar" src={member.avatar} alt=""/>:<div className="modern-member-avatar avatar-fallback">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><small>Member since {joined} · {tenure}</small></div></div></div><div className="modern-profile-section"><h3>Personal information</h3><div className="modern-profile-grid"><label className="form-field">Birthday (MM-DD)<input inputMode="numeric" placeholder="MM-DD" value={birthday} onChange={(event)=>setBirthday(event.target.value)}/></label><label className="form-field">Age group<select value={ageGroupId} onChange={(event)=>setAgeGroupId(event.target.value)}><option value="">Not provided</option>{ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}: {item.minAge}–{item.maxAge ?? '+'}</option>)}</select></label><label className="form-field">Relationship status<select value={relationshipStatus} onChange={(event)=>setRelationshipStatus(event.target.value)}><option value="">Not provided</option><option value="Single">Single</option><option value="Married">Married</option></select></label></div>{profileNotice&&<div className="empty-message" role="status">{profileNotice}</div>}<button className="btn primary" onClick={saveDemographics} disabled={savingProfile}>{savingProfile?'Saving...':'Save personal information'}</button></div><div className="modern-profile-section"><h3>Units</h3><div className="tag-list">{groupMemberships.ministries.map((item)=><Link className="tag" key={item.id} to={`/ministries/ministry_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.ministries.length&&<span className="modern-empty-label">No Unit memberships</span>}</div><div className="modern-profile-section"><h3>Fellowships</h3><div className="tag-list">{groupMemberships.cells.map((item)=><Link className="tag" key={item.id} to={`/ministries/cell_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.cells.length&&<span className="modern-empty-label">No Fellowship memberships</span>}</div><div className="modern-profile-section"><h3>Segments</h3><div className="tag-list">{groupMemberships.segments.map((item)=><Link className="tag" key={item.id} to={`/ministries/segment_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.segments.length&&<span className="modern-empty-label">No segment matches</span>}</div>{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}
  <div className="modern-member-actions"><button className="btn secondary" onClick={()=>window.alert('Profile editing will be connected to the member editor next.') }><Edit3 size={14}/> Edit Profile</button><Link className="btn primary" to="/messages/new"><Send size={14}/> Send Message</Link><button className="btn danger" onClick={deleteMember} disabled={deleting}>{deleting?'Deleting...':'Delete Member'}</button></div></Card></Page>
 }
 
@@ -642,6 +619,7 @@ function AttendanceOverview(){
  const [tab,setTab]=useState('Services')
  const [loading,setLoading]=useState(true)
  const [error,setError]=useState('')
+ const [serviceOptions,setServiceOptions]=useState([])
  const [summary,setSummary]=useState({
    totalEligible: 0,
    responded: 0,
@@ -655,20 +633,13 @@ function AttendanceOverview(){
  const [options,setOptions]=useState({
    ageGroups: [],
    genders: [],
-   relationshipStatuses: [],
-   ministries: [],
    cells: [],
    segments: [],
  })
  const [filters,setFilters]=useState({
    occurrenceId: '',
-   attendanceType: '',
    gender: '',
    ageGroupId: '',
-   relationshipStatus: '',
-   ministryId: '',
-   cellId: '',
-   segmentId: '',
  })
 
  const endpoint = tab === 'Services' ? 'service' : tab === 'Event Registrations' ? 'registrations' : 'mixlr'
@@ -682,23 +653,13 @@ function AttendanceOverview(){
   const params = new URLSearchParams()
   if (tab === 'Services') {
    if (filters.occurrenceId) params.set('occurrenceId', filters.occurrenceId)
-   if (filters.attendanceType) params.set('attendanceType', filters.attendanceType)
    if (filters.gender) params.set('gender', filters.gender)
    if (filters.ageGroupId) params.set('ageGroupId', filters.ageGroupId)
-   if (filters.relationshipStatus) params.set('relationshipStatus', filters.relationshipStatus)
-   if (filters.ministryId) params.set('ministryId', filters.ministryId)
-   if (filters.cellId) params.set('cellId', filters.cellId)
-   if (filters.segmentId) params.set('segmentId', filters.segmentId)
   }
 
   if (tab === 'Event Registrations') {
-   if (filters.occurrenceId) params.set('occurrenceId', filters.occurrenceId)
    if (filters.gender) params.set('gender', filters.gender)
    if (filters.ageGroupId) params.set('ageGroupId', filters.ageGroupId)
-   if (filters.relationshipStatus) params.set('relationshipStatus', filters.relationshipStatus)
-   if (filters.ministryId) params.set('ministryId', filters.ministryId)
-   if (filters.cellId) params.set('cellId', filters.cellId)
-   if (filters.segmentId) params.set('segmentId', filters.segmentId)
   }
 
   if (tab === 'Mixlr') {
@@ -718,11 +679,12 @@ function AttendanceOverview(){
         responseRate: payload.summary?.responseRate ?? 0,
         rows: payload.rows || [],
       })
+      if (tab === 'Services' && !filters.occurrenceId && !filters.gender && !filters.ageGroupId) {
+       setServiceOptions(payload.rows || [])
+      }
       setOptions(payload.options || {
         ageGroups: [],
         genders: [],
-        relationshipStatuses: [],
-        ministries: [],
         cells: [],
         segments: [],
       })
@@ -735,11 +697,11 @@ function AttendanceOverview(){
     })
 
   return ()=>{ cancelled = true }
- }, [tab, filters.occurrenceId, filters.attendanceType, filters.gender, filters.ageGroupId, filters.relationshipStatus, filters.ministryId, filters.cellId, filters.segmentId])
+ }, [tab, filters.occurrenceId, filters.gender, filters.ageGroupId])
 
  const metricCards = tab === 'Services'
    ? [
-       {label:'Total eligible', value: summary.totalEligible, icon:Users},
+       {label:'Responses', value: summary.responded, icon:Users},
        {label:'Responded', value: summary.responded, icon:CheckCircle2, type:'green'},
        {label:'In person', value: summary.inPerson, icon:CalendarDays, type:'purple'},
        {label:'Online', value: summary.online, icon:Globe, type:'blue'},
@@ -763,7 +725,6 @@ function AttendanceOverview(){
        {label:'In person', value: summary.inPerson, tone:'success'},
        {label:'Online', value: summary.online, tone:'blue'},
        {label:'Not attending', value: summary.notAttending, tone:'gray'},
-       {label:'No response', value: summary.noResponse, tone:'orange'},
      ]
    : tab === 'Event Registrations'
      ? [
@@ -778,9 +739,9 @@ function AttendanceOverview(){
        ]
 
  const tableHeaders = tab === 'Services'
-   ? ['Member', 'Gender', 'Age group', 'Service', 'Response', 'Responded']
+   ? ['Service', 'In person', 'Online', 'Not attending', 'Total']
    : tab === 'Event Registrations'
-     ? ['Member', 'Status', 'Event', 'Registered', 'Gender']
+     ? ['Event', 'Confirmed', 'Waitlisted', 'Pending', 'Total']
      : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
 
  const tableRows = summary.rows || []
@@ -792,24 +753,17 @@ function AttendanceOverview(){
    </div>
 
    <div className="event-stats compact" style={{marginBottom:'18px'}}>
-    {metricCards.map((item,index)=><Stat key={`${tab}-${item.label}`} label={item.label} value={item.value} icon={item.icon} type={item.type || (index===0 ? 'purple' : 'blue')} change={tab === 'Services' && item.label === 'Total eligible' ? `${summary.responseRate || 0}% response rate` : tab === 'Mixlr' ? 'Live engagement' : 'Participation'} />)}
+    {metricCards.map((item,index)=><Stat key={`${tab}-${item.label}`} label={item.label} value={item.value} icon={item.icon} type={item.type || (index===0 ? 'purple' : 'blue')} change={tab === 'Services' ? 'Recorded attendance' : tab === 'Mixlr' ? 'Live engagement' : 'Participation'} />)}
    </div>
 
    <div className="member-toolbar" style={{marginBottom:'18px'}}>
     {tab === 'Services' && (
       <>
-       <label className="modern-field" style={{minWidth:'180px'}}><span>Service</span><select value={filters.occurrenceId} onChange={(event)=>setFilters((current)=>({...current, occurrenceId:event.target.value}))}><option value="">All services</option><option value="Sunday Service">Sunday Service</option><option value="Midweek Service">Midweek Service</option></select></label>
-       <label className="modern-field" style={{minWidth:'180px'}}><span>Attendance</span><select value={filters.attendanceType} onChange={(event)=>setFilters((current)=>({...current, attendanceType:event.target.value}))}><option value="">All responses</option><option value="in_person">In person</option><option value="online">Online</option><option value="not_attending">Not attending</option></select></label>
+      <label className="modern-field" style={{minWidth:'240px'}}><span>Service</span><select value={filters.occurrenceId} onChange={(event)=>setFilters((current)=>({...current, occurrenceId:event.target.value}))}><option value="">All services</option>{serviceOptions.map((item)=><option key={item.occurrenceId} value={item.occurrenceId}>{item.serviceLabel}</option>)}</select></label>
       </>
     )}
-    <label className="modern-field" style={{minWidth:'180px'}}><span>Gender</span><select value={filters.gender} onChange={(event)=>setFilters((current)=>({...current, gender:event.target.value}))}><option value="">All</option>{options.genders.map((value)=><option key={value} value={value}>{value}</option>)}</select></label>
+    <label className="modern-field" style={{minWidth:'180px'}}><span>Gender</span><select value={filters.gender} onChange={(event)=>setFilters((current)=>({...current, gender:event.target.value}))}><option value="">All genders</option>{options.genders.map((value)=><option key={value} value={value}>{value.charAt(0).toUpperCase()+value.slice(1)}</option>)}</select></label>
     <label className="modern-field" style={{minWidth:'180px'}}><span>Age group</span><select value={filters.ageGroupId} onChange={(event)=>setFilters((current)=>({...current, ageGroupId:event.target.value}))}><option value="">All</option>{options.ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-    {tab !== 'Mixlr' && (
-      <label className="modern-field" style={{minWidth:'180px'}}><span>Relationship</span><select value={filters.relationshipStatus} onChange={(event)=>setFilters((current)=>({...current, relationshipStatus:event.target.value}))}><option value="">All</option>{options.relationshipStatuses.map((value)=><option key={value} value={value}>{value}</option>)}</select></label>
-    )}
-    {tab !== 'Mixlr' && (
-      <label className="modern-field" style={{minWidth:'180px'}}><span>Ministry</span><select value={filters.ministryId} onChange={(event)=>setFilters((current)=>({...current, ministryId:event.target.value}))}><option value="">All</option>{options.ministries.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-    )}
    </div>
 
    {loading && <div className="empty-message">Loading attendance report...</div>}
@@ -843,22 +797,21 @@ function AttendanceOverview(){
                  }
 
                  if (tab === 'Event Registrations') {
-                   return <tr key={`${row.memberId || row.memberName || 'event'}-${index}`}>
-                     <td><b>{row.memberName || row.memberId || 'Member'}</b></td>
-                     <td><span className={'badge '+(row.status === 'CONFIRMED' ? 'success' : row.status === 'WAITLISTED' ? 'orange' : 'gray')}>{row.status || '—'}</span></td>
-                     <td>{row.eventName || row.eventId || '—'}</td>
-                     <td>{row.registeredAt ? new Date(row.registeredAt).toLocaleString() : '—'}</td>
-                     <td>{row.gender || '—'}</td>
+                   return <tr key={`${row.eventId || row.eventTitle || 'event'}-${index}`}>
+                     <td><b>{row.eventTitle || row.eventId || 'Event'}</b></td>
+                     <td>{row.confirmed || 0}</td>
+                     <td>{row.waitlisted || 0}</td>
+                     <td>{row.pending || 0}</td>
+                     <td>{row.total || 0}</td>
                    </tr>
                  }
 
-                 return <tr key={`${row.memberId || row.memberName || 'attendance'}-${index}`}>
-                   <td><b>{row.memberName || 'Member'}</b></td>
-                   <td>{row.gender || '—'}</td>
-                   <td>{row.ageGroupId || '—'}</td>
-                   <td>{row.occurrenceId || 'Service'}</td>
-                   <td><span className={'badge '+(row.response === 'in_person' ? 'success' : row.response === 'online' ? 'blue' : 'gray')}>{row.response === 'in_person' ? 'In person' : row.response === 'online' ? 'Online' : row.response === 'not_attending' ? 'Not attending' : (row.response || '—')}</span></td>
-                   <td>{row.respondedAt ? new Date(row.respondedAt).toLocaleString() : '—'}</td>
+                 return <tr key={`${row.occurrenceId || row.serviceLabel || 'attendance'}-${index}`}>
+                   <td><b>{row.serviceLabel || row.eventTitle || row.occurrenceId || 'Service'}</b></td>
+                   <td>{row.inPerson || 0}</td>
+                   <td>{row.online || 0}</td>
+                   <td>{row.notAttending || 0}</td>
+                   <td>{row.total || 0}</td>
                  </tr>
                })
              )}

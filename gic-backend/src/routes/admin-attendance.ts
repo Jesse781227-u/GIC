@@ -1,157 +1,81 @@
 import { Hono } from "hono";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import {
   ageGroupDefinitions,
-  cellMemberships,
-  cells,
   eventRegistrations,
+  events,
   members,
-  ministries,
-  ministryMemberships,
   mixlrListenerSessions,
   mixlrRecordingStats,
   mixlrRecordings,
   serviceAttendance,
-  segmentMemberships,
-  segments,
 } from "../db/schema.js";
 import { churchIdForUser } from "../lib/tenant.js";
-import { buildAttendanceSummary } from "../services/service-attendance.js";
+import { formatServiceOccurrenceLabel } from "../services/service-attendance.js";
 
 const app = new Hono();
 
 app.use("*", authMiddleware, adminMiddleware);
 
-function toIdList(input?: string | string[]) {
-  const values = Array.isArray(input) ? input : input ? [input] : [];
-  return values.flatMap((value) => String(value ?? "").split(",")).map((part) => part.trim()).filter(Boolean);
-}
-
-async function filterMemberIdsByMemberships(churchId: string, ids: string[], table: "ministry" | "cell" | "segment") {
-  const uniqueIds = [...new Set(ids)];
-  if (!uniqueIds.length) return new Set<string>();
-
-  if (table === "ministry") {
-    const rows = await db.query.ministryMemberships.findMany({
-      where: and(eq(ministryMemberships.churchId, churchId), inArray(ministryMemberships.ministryId, uniqueIds)),
-    });
-    return new Set(rows.map((row) => row.memberId));
-  }
-
-  if (table === "cell") {
-    const rows = await db.query.cellMemberships.findMany({
-      where: and(eq(cellMemberships.churchId, churchId), inArray(cellMemberships.cellId, uniqueIds)),
-    });
-    return new Set(rows.map((row) => row.memberId));
-  }
-
-  const rows = await db.query.segmentMemberships.findMany({
-    where: and(eq(segmentMemberships.churchId, churchId), inArray(segmentMemberships.segmentId, uniqueIds)),
-  });
-  return new Set(rows.map((row) => row.memberId));
-}
-
-async function resolveMemberFilterIds(churchId: string, filters: Record<string, string | undefined>) {
-  const gender = filters.gender?.trim();
-  const ageGroupId = filters.ageGroupId?.trim();
-  const relationshipStatus = filters.relationshipStatus?.trim();
-  const ministryId = filters.ministryId?.trim();
-  const cellId = filters.cellId?.trim();
-  const segmentId = filters.segmentId?.trim();
-
-  const baseConditions = [eq(members.churchId, churchId)];
-  if (gender) baseConditions.push(eq(members.gender, gender));
-  if (ageGroupId) baseConditions.push(eq(members.ageGroupId, ageGroupId));
-  if (relationshipStatus) baseConditions.push(eq(members.relationshipStatus, relationshipStatus));
-
-  const baseMembers = await db.query.members.findMany({ where: and(...baseConditions) });
-  let candidateIds = new Set(baseMembers.map((member) => member.id));
-
-  if (ministryId) {
-    const ministryMatches = await filterMemberIdsByMemberships(churchId, toIdList(ministryId), "ministry");
-    candidateIds = new Set([...candidateIds].filter((id) => ministryMatches.has(id)));
-  }
-
-  if (cellId) {
-    const cellMatches = await filterMemberIdsByMemberships(churchId, toIdList(cellId), "cell");
-    candidateIds = new Set([...candidateIds].filter((id) => cellMatches.has(id)));
-  }
-
-  if (segmentId) {
-    const segmentMatches = await filterMemberIdsByMemberships(churchId, toIdList(segmentId), "segment");
-    candidateIds = new Set([...candidateIds].filter((id) => segmentMatches.has(id)));
-  }
-
-  return [...candidateIds];
-}
-
 async function getDynamicDimensionOptions(churchId: string) {
-  const [ageGroups, genders, relationshipStatuses, ministriesList, cellsList, segmentsList] = await Promise.all([
-    db.query.ageGroupDefinitions.findMany({ where: eq(ageGroupDefinitions.churchId, churchId), orderBy: [ageGroupDefinitions.minAge] }),
-    db.selectDistinct({ value: members.gender }).from(members).where(and(eq(members.churchId, churchId), sql`${members.gender} IS NOT NULL`, sql`TRIM(${members.gender}) <> ''`)).then((rows) => rows.map((row) => row.value).filter(Boolean)),
-    db.selectDistinct({ value: members.relationshipStatus }).from(members).where(and(eq(members.churchId, churchId), sql`${members.relationshipStatus} IS NOT NULL`, sql`TRIM(${members.relationshipStatus}) <> ''`)).then((rows) => rows.map((row) => row.value).filter(Boolean)),
-    db.query.ministries.findMany({ where: eq(ministries.churchId, churchId), orderBy: [ministries.name] }),
-    db.query.cells.findMany({ where: and(eq(cells.churchId, churchId), eq(cells.active, true)), orderBy: [cells.name] }),
-    db.query.segments.findMany({ where: and(eq(segments.churchId, churchId), eq(segments.active, true)), orderBy: [segments.name] }),
-  ]);
+  const ageGroups = await db.query.ageGroupDefinitions.findMany({ where: and(eq(ageGroupDefinitions.churchId, churchId), eq(ageGroupDefinitions.active, true)), orderBy: [ageGroupDefinitions.minAge] });
 
   return {
     ageGroups: ageGroups.map((item) => ({ id: item.id, name: item.name, minAge: item.minAge, maxAge: item.maxAge })),
-    genders,
-    relationshipStatuses,
-    ministries: ministriesList.map((item) => ({ id: item.id, name: item.name })),
-    cells: cellsList.map((item) => ({ id: item.id, name: item.name })),
-    segments: segmentsList.map((item) => ({ id: item.id, name: item.name, type: item.segmentType })),
+    genders: ["male", "female"],
   };
 }
 
 async function listServiceRows(churchId: string, filters: Record<string, string | undefined>) {
   const conditions = [eq(serviceAttendance.churchId, churchId)];
   if (filters.occurrenceId) conditions.push(eq(serviceAttendance.occurrenceId, filters.occurrenceId));
-  if (filters.attendanceType) conditions.push(eq(serviceAttendance.response, filters.attendanceType));
+  if (filters.gender) conditions.push(eq(members.gender, filters.gender));
+  if (filters.ageGroupId) conditions.push(eq(members.ageGroupId, filters.ageGroupId));
 
-  const rows = await db.select().from(serviceAttendance).where(and(...conditions));
-  const memberIds = await resolveMemberFilterIds(churchId, filters);
-  const filtered = memberIds.length ? rows.filter((row) => memberIds.includes(row.memberId)) : rows;
+  const rows = await db.select({
+    occurrenceId: serviceAttendance.occurrenceId,
+    eventTitle: events.title,
+    eventStartsAt: events.startsAt,
+    total: count(),
+    inPerson: sql<number>`count(*) FILTER (WHERE ${serviceAttendance.response} = 'in_person')::int`,
+    online: sql<number>`count(*) FILTER (WHERE ${serviceAttendance.response} = 'online')::int`,
+    notAttending: sql<number>`count(*) FILTER (WHERE ${serviceAttendance.response} = 'not_attending')::int`,
+  }).from(serviceAttendance)
+    .innerJoin(events, and(eq(serviceAttendance.eventId, events.id), eq(events.churchId, churchId)))
+    .innerJoin(members, and(eq(serviceAttendance.memberId, members.id), eq(members.churchId, churchId)))
+    .where(and(...conditions))
+    .groupBy(serviceAttendance.occurrenceId, events.id, events.title, events.startsAt)
+    .orderBy(asc(serviceAttendance.occurrenceId));
 
-  const memberLookup = new Map<string, { displayName: string; gender: string | null; ageGroupId: string | null; relationshipStatus: string | null }>();
-  if (filtered.length) {
-    const memberRecords = await db.select({
-      id: members.id,
-      displayName: members.displayName,
-      gender: members.gender,
-      ageGroupId: members.ageGroupId,
-      relationshipStatus: members.relationshipStatus,
-    }).from(members).where(and(eq(members.churchId, churchId), inArray(members.id, [...new Set(filtered.map((row) => row.memberId))])));
-    for (const member of memberRecords) memberLookup.set(member.id, member);
-  }
-
-  return filtered.map((row) => ({
+  return rows.map((row) => ({
     ...row,
-    memberName: memberLookup.get(row.memberId)?.displayName ?? "Member",
-    gender: memberLookup.get(row.memberId)?.gender ?? "—",
-    ageGroupId: memberLookup.get(row.memberId)?.ageGroupId ?? null,
-    relationshipStatus: memberLookup.get(row.memberId)?.relationshipStatus ?? "—",
+    serviceLabel: formatServiceOccurrenceLabel(row.eventTitle, row.occurrenceId, row.eventStartsAt),
   }));
 }
 
 async function listRegistrationRows(churchId: string, filters: Record<string, string | undefined>) {
   const conditions = [eq(eventRegistrations.churchId, churchId)];
   if (filters.eventId) conditions.push(eq(eventRegistrations.eventId, filters.eventId));
-  if (filters.occurrenceId) conditions.push(eq(eventRegistrations.eventId, filters.eventId || ""));
   if (filters.status) conditions.push(eq(eventRegistrations.status, filters.status));
+  if (filters.gender) conditions.push(eq(members.gender, filters.gender));
+  if (filters.ageGroupId) conditions.push(eq(members.ageGroupId, filters.ageGroupId));
 
-  const rows = await db.select().from(eventRegistrations).where(and(...conditions));
-  const memberIds = await resolveMemberFilterIds(churchId, filters);
-  const filtered = memberIds.length ? rows.filter((row) => memberIds.includes(row.memberId)) : rows;
-
-  return filtered.map((row) => ({
-    ...row,
-    memberName: row.memberId,
-  }));
+  return db.select({
+    eventId: events.id,
+    eventTitle: events.title,
+    total: count(),
+    confirmed: sql<number>`count(*) FILTER (WHERE ${eventRegistrations.status} = 'CONFIRMED')::int`,
+    waitlisted: sql<number>`count(*) FILTER (WHERE ${eventRegistrations.status} = 'WAITLISTED')::int`,
+    pending: sql<number>`count(*) FILTER (WHERE ${eventRegistrations.status} = 'PENDING')::int`,
+  }).from(eventRegistrations)
+    .innerJoin(events, and(eq(eventRegistrations.eventId, events.id), eq(events.churchId, churchId)))
+    .innerJoin(members, and(eq(eventRegistrations.memberId, members.id), eq(members.churchId, churchId)))
+    .where(and(...conditions))
+    .groupBy(events.id, events.title)
+    .orderBy(asc(events.title));
 }
 
 app.get("/options", async (c) => {
@@ -163,20 +87,28 @@ app.get("/service", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   const parsed = z.object({
     occurrenceId: z.string().optional(),
-    attendanceType: z.enum(["in_person", "online", "not_attending"]).optional(),
     gender: z.string().optional(),
     ageGroupId: z.string().optional(),
-    relationshipStatus: z.string().optional(),
-    ministryId: z.string().optional(),
-    cellId: z.string().optional(),
-    segmentId: z.string().optional(),
   }).safeParse(c.req.query());
 
   if (!parsed.success) return c.json({ error: "Invalid service attendance filters" }, 400);
 
   const filters = parsed.data;
   const rows = await listServiceRows(churchId, filters);
-  const summary = buildAttendanceSummary(rows.map((row) => ({ response: row.response })), rows.length);
+  const totalEligible = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const inPerson = rows.reduce((sum, row) => sum + Number(row.inPerson || 0), 0);
+  const online = rows.reduce((sum, row) => sum + Number(row.online || 0), 0);
+  const notAttending = rows.reduce((sum, row) => sum + Number(row.notAttending || 0), 0);
+  const responded = inPerson + online + notAttending;
+  const summary = {
+    totalEligible,
+    responded,
+    inPerson,
+    online,
+    notAttending,
+    noResponse: Math.max(0, totalEligible - responded),
+    responseRate: totalEligible === 0 ? 0 : Math.round((responded / totalEligible) * 100),
+  };
 
   return c.json({
     summary,
@@ -189,21 +121,21 @@ app.get("/registrations", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   const parsed = z.object({
     eventId: z.string().optional(),
-    occurrenceId: z.string().optional(),
     gender: z.string().optional(),
     ageGroupId: z.string().optional(),
-    relationshipStatus: z.string().optional(),
-    ministryId: z.string().optional(),
-    cellId: z.string().optional(),
-    segmentId: z.string().optional(),
     status: z.string().optional(),
   }).safeParse(c.req.query());
 
   if (!parsed.success) return c.json({ error: "Invalid registration filters" }, 400);
 
   const rows = await listRegistrationRows(churchId, parsed.data);
+  const total = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const confirmed = rows.reduce((sum, row) => sum + Number(row.confirmed || 0), 0);
+  const waitlisted = rows.reduce((sum, row) => sum + Number(row.waitlisted || 0), 0);
+  const pending = rows.reduce((sum, row) => sum + Number(row.pending || 0), 0);
+
   return c.json({
-    summary: { total: rows.length },
+    summary: { total, responded: confirmed, notAttending: waitlisted, noResponse: pending, confirmed, waitlisted, pending },
     rows,
     options: await getDynamicDimensionOptions(churchId),
   });
