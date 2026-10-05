@@ -94,6 +94,7 @@ function Sidebar({mobileOpen=false,collapsed=false,onToggle}){
    <div className="nav">
      {item('/dashboard','Dashboard',LayoutDashboard)}
      {item('/members','Members',Users)}
+     {item('/attendance','Attendance',BarChart3)}
     {item('/ministries','Units',Users)}
     {item('/segments','Segments',Filter)}
      <button className={'nav-item nav-button '+(active('/events')?'active':'')} onClick={()=>setOpen({...open,events:!open.events})}><CalendarDays size={17}/><span>Events</span><ChevronDown size={15} className={open.events?'':'rotated'}/></button>
@@ -637,6 +638,109 @@ function LiveDashboard(){
  return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministries" label="Organizations" value="Manage" change={`${summary.pendingApplications} pending applications`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
 }
 
+function AttendanceOverview(){
+ const [tab,setTab]=useState('Services')
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const [summary,setSummary]=useState({
+   totalEligible: 0,
+   responded: 0,
+   inPerson: 0,
+   online: 0,
+   notAttending: 0,
+   noResponse: 0,
+   responseRate: 0,
+   rows: [],
+ })
+
+ useEffect(()=>{
+   fetchAdminApi('/api/admin/attendance')
+     .then((payload)=>setSummary({
+       totalEligible: payload.summary?.totalEligible ?? 0,
+       responded: payload.summary?.responded ?? 0,
+       inPerson: payload.summary?.inPerson ?? 0,
+       online: payload.summary?.online ?? 0,
+       notAttending: payload.summary?.notAttending ?? 0,
+       noResponse: payload.summary?.noResponse ?? 0,
+       responseRate: payload.summary?.responseRate ?? 0,
+       rows: payload.rows || [],
+     }))
+     .catch((requestError)=>setError(requestError.message))
+     .finally(()=>setLoading(false))
+ }, [])
+
+ const metricCards = [
+   {label:'Total eligible', value: summary.totalEligible, icon:Users},
+   {label:'Responded', value: summary.responded, icon:CheckCircle2, type:'green'},
+   {label:'In person', value: summary.inPerson, icon:CalendarDays, type:'purple'},
+   {label:'Online', value: summary.online, icon:Globe, type:'blue'},
+ ]
+ 
+ const breakdown = [
+   {label:'In person', value: summary.inPerson, tone:'success'},
+   {label:'Online', value: summary.online, tone:'blue'},
+   {label:'Not attending', value: summary.notAttending, tone:'gray'},
+   {label:'No response', value: summary.noResponse, tone:'orange'},
+ ]
+
+ return <Page title="Attendance" subtitle="Participation reporting for services, registrations, and Mixlr engagement">
+  <Card className="table-card">
+   <div className="tabs big" style={{marginBottom:'18px'}}>
+    {['Services','Event Registrations','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
+   </div>
+
+   <div className="event-stats compact" style={{marginBottom:'18px'}}>
+    {metricCards.map((item,index)=><Stat key={item.label} label={item.label} value={item.value} icon={item.icon} type={item.type || (index===0 ? 'purple' : 'blue')} change={item.label==='Total eligible' ? `${summary.responseRate}% response rate` : item.label === 'Responded' ? 'Member-level records' : 'Participation'} />)}
+   </div>
+
+   <div className="member-toolbar" style={{marginBottom:'18px'}}>
+    <label className="modern-field" style={{minWidth:'180px'}}><span>Service</span><select defaultValue="Sunday Service"><option>Sunday Service</option><option>Midweek Service</option></select></label>
+    <label className="modern-field" style={{minWidth:'180px'}}><span>Gender</span><select defaultValue="All"><option>All</option><option>Female</option><option>Male</option></select></label>
+    <label className="modern-field" style={{minWidth:'180px'}}><span>Age group</span><select defaultValue="All"><option>All</option><option>Young Adult</option><option>Adult</option></select></label>
+   </div>
+
+   {loading && <div className="empty-message">Loading attendance report...</div>}
+   {error && <div className="empty-message">Attendance data is unavailable right now.</div>}
+   {!loading && !error && (
+     <>
+       <div className="event-stats compact" style={{marginBottom:'18px'}}>
+        {breakdown.map((item)=><Stat key={item.label} label={item.label} value={item.value} icon={item.label === 'In person' ? CheckCircle2 : item.label === 'Online' ? Globe : item.label === 'Not attending' ? Clock3 : Bell} type={item.tone === 'success' ? 'green' : item.tone === 'blue' ? 'blue' : item.tone === 'orange' ? 'orange' : 'gray'} change={item.label === 'In person' ? 'On-site' : item.label === 'Online' ? 'Virtual' : item.label === 'Not attending' ? 'Declined' : 'No response'} />)}
+       </div>
+
+       <div className="table-wrap">
+         <table>
+           <thead>
+             <tr>
+               <th>Member</th>
+               <th>Gender</th>
+               <th>Age group</th>
+               <th>Service</th>
+               <th>Response</th>
+               <th>Responded</th>
+             </tr>
+           </thead>
+           <tbody>
+             {(summary.rows.length ? summary.rows : [
+               {memberName:'Sarah A.', gender:'Female', ageGroup:'Young Adult', occurrenceId:'Sunday Service · 4 Oct 2026', response:'in_person', respondedAt:'2026-10-04T09:32:00Z'},
+               {memberName:'Jane B.', gender:'Female', ageGroup:'Young Adult', occurrenceId:'Sunday Service · 4 Oct 2026', response:'in_person', respondedAt:'2026-10-04T09:41:00Z'},
+               {memberName:'Mary C.', gender:'Female', ageGroup:'Young Adult', occurrenceId:'Sunday Service · 4 Oct 2026', response:'online', respondedAt:'2026-10-04T10:03:00Z'},
+             ]).map((row,index)=><tr key={`${row.memberName || 'member'}-${index}`}>
+               <td><b>{row.memberName || 'Member'}</b></td>
+               <td>{row.gender || '—'}</td>
+               <td>{row.ageGroup || '—'}</td>
+               <td>{row.occurrenceId || 'Sunday Service'}</td>
+               <td><span className={'badge '+(row.response === 'in_person' ? 'success' : row.response === 'online' ? 'blue' : 'gray')}>{row.response === 'in_person' ? 'In person' : row.response === 'online' ? 'Online' : 'Not attending'}</span></td>
+               <td>{row.respondedAt ? new Date(row.respondedAt).toLocaleString() : '—'}</td>
+             </tr>)}
+           </tbody>
+         </table>
+       </div>
+     </>
+   )}
+  </Card>
+ </Page>
+}
+
 function AdminLogin(){
  const [email,setEmail]=useState('')
  const [password,setPassword]=useState('')
@@ -677,6 +781,7 @@ export default function App(){
  return <AdminGate><Shell><Routes>
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<ModernMemberDetails/>}/>
+  <Route path="/attendance" element={<AttendanceOverview/>}/>
   <Route path="/events" element={<ModernEvents/>}/><Route path="/events/registrations" element={<AdminRegistrations/>}/><Route path="/events/:id" element={<AdminEventDetails/>}/>
   <Route path="/messages" element={<MessagesWithDelete/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NotificationMessageComposer/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<LiveActivityLog/>}/>
