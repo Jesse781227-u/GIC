@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { isAllowedMemberRoute } from "./member-routes.js";
 
 test("accepts exact application routes and dynamic event paths", () => {
-  for (const route of ["/home", "/events", "/events/123", "/events/123/registration", "/profile", "/messages", "/registrations"]) {
+  for (const route of ["/home", "/events", "/events/123", "/events/123/registration", "/profile", "/messages", "/registrations", "/mixlr/recording-123"]) {
     assert.equal(isAllowedMemberRoute(route), true);
   }
 });
