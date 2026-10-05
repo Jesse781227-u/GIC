@@ -351,6 +351,33 @@ export const mixlrRecordings = pgTable("mixlr_recordings", {
   newestIdx: index("mixlr_recordings_created_at_idx").on(t.createdAt),
 }));
 
+export const mixlrRecordingStats = pgTable("mixlr_recording_stats", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  recordingId: text("recording_id").notNull().references(() => mixlrRecordings.id, { onDelete: "cascade" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow(),
+  listeners: integer("listeners").notNull().default(0),
+  plays: integer("plays").notNull().default(0),
+  listeningTimeSeconds: integer("listening_time_seconds"),
+  source: text("source").notNull().default("mixlr"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  recordingIdx: index("mixlr_recording_stats_recording_id_idx").on(t.recordingId),
+}));
+
+export const mixlrListenerSessions = pgTable("mixlr_listener_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  recordingId: text("recording_id").notNull().references(() => mixlrRecordings.id, { onDelete: "cascade" }),
+  memberId: text("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  durationSeconds: integer("duration_seconds"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  recordingIdx: index("mixlr_listener_sessions_recording_id_idx").on(t.recordingId),
+  memberIdx: index("mixlr_listener_sessions_member_id_idx").on(t.memberId),
+}));
+
 export const eventPickupLocations = pgTable(
   "event_pickup_locations",
   {
