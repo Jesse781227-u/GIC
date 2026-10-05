@@ -568,16 +568,49 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                 <label className="check"><input type="checkbox" checked={churchBusAvailable} onChange={(event) => setChurchBusAvailable(event.target.checked)} /> Church bus transportation available</label>
                 {churchBusAvailable && (
                   <>
-                    <div className="pickup-bulk-actions"><button type="button" className="btn secondary" onClick={activateAllPickups}>Activate all pickup points</button><button type="button" className="btn secondary" onClick={clearAllPickups}>Clear all</button></div>
-                    {!pickupPoints.length&&<p className="field-help">No active GIC pickup points are available.</p>}
-                    <div className="pickup-uniform-time"><label className="modern-field"><span>Pickup time</span><input type="time" value={uniformPickupTime} onChange={(event)=>setUniformPickupTime(event.target.value)}/></label><button type="button" className="btn secondary" onClick={applyUniformPickupTime} disabled={!activePickupPoints(pickupLocations).length}>Apply time to all pickup points</button></div>
-                    <div className="pickup-point-list">{pickupLocations.map((pickup)=>{
-                      const point=pickupPoints.find((item)=>item.id===pickup.busPickupPointId)
-                      return <div className={`pickup-point-row ${pickup.active?'is-active':''}`} key={pickup.busPickupPointId}>
-                        <label className="pickup-point-choice"><input type="checkbox" checked={pickup.active} onChange={(event)=>togglePickupPoint(pickup.busPickupPointId,event.target.checked)}/><span><b>{pickup.name}</b><small>{point?.managerName?`${point.managerName} · ${point.managerPhone} · `:''}{pickup.address}</small></span></label>
-                        {pickup.active&&<div className="pickup-point-fields"><label className="modern-field"><span>Pickup time</span><input type="time" value={pickup.pickupTime} onChange={(event)=>pickupUpdate(pickup.busPickupPointId,'pickupTime',event.target.value)}/></label><label className="modern-field"><span>Capacity</span><input type="number" min="1" value={pickup.capacity} onChange={(event)=>pickupUpdate(pickup.busPickupPointId,'capacity',event.target.value)}/></label></div>}
-                      </div>
-                    })}</div>
+                    <div className="pickup-bulk-actions">
+                      <button type="button" className="btn secondary compact" onClick={activateAllPickups}>Activate all</button>
+                      <button type="button" className="btn secondary compact" onClick={clearAllPickups}>Clear all</button>
+                    </div>
+                    {!pickupPoints.length && <p className="field-help">No active GIC pickup points are available.</p>}
+                    <div className="pickup-uniform-time">
+                      <label className="modern-field compact-field"><span>Uniform pickup time</span><input type="time" value={uniformPickupTime} onChange={(event)=>setUniformPickupTime(event.target.value)} /></label>
+                      <button type="button" className="btn secondary compact" onClick={applyUniformPickupTime} disabled={!activePickupPoints(pickupLocations).length}>Apply to all</button>
+                    </div>
+                    <div className="pickup-point-list">
+                      {pickupLocations.map((pickup) => {
+                        const point = pickupPoints.find((item) => item.id === pickup.busPickupPointId)
+                        return (
+                          <div className={`pickup-point-row ${pickup.active ? 'is-active' : ''}`} key={pickup.busPickupPointId}>
+                            <div className="pickup-point-top">
+                              <label className="pickup-point-choice" aria-label={`Toggle ${pickup.name}`}>
+                                <input type="checkbox" checked={pickup.active} onChange={(event) => togglePickupPoint(pickup.busPickupPointId, event.target.checked)} />
+                              </label>
+                              <div className="pickup-point-meta">
+                                <div className="pickup-point-name">{pickup.name}</div>
+                                {(point?.managerName || point?.managerPhone) && (
+                                  <div className="pickup-point-contact">
+                                    {point?.managerName && <span>{point.managerName}</span>}
+                                    {point?.managerPhone && <span>{point.managerPhone}</span>}
+                                  </div>
+                                )}
+                                {pickup.address && <div className="pickup-point-address">{pickup.address}</div>}
+                                <div className="pickup-point-footer">
+                                  <span>Pickup: {pickup.pickupTime || uniformPickupTime}</span>
+                                  <span>Capacity: {pickup.capacity || '—'}</span>
+                                </div>
+                              </div>
+                            </div>
+                            {pickup.active && (
+                              <div className="pickup-point-fields">
+                                <label className="modern-field compact-field"><span>Pickup time</span><input type="time" value={pickup.pickupTime} onChange={(event) => pickupUpdate(pickup.busPickupPointId, 'pickupTime', event.target.value)} /></label>
+                                <label className="modern-field compact-field"><span>Capacity</span><input type="number" min="1" value={pickup.capacity} onChange={(event) => pickupUpdate(pickup.busPickupPointId, 'capacity', event.target.value)} /></label>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   </>
                 )}
               </div>
@@ -635,12 +668,12 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
         <div className="event-modal-footer">
           {previewMode ? (
             <>
-              <button type="button" className="btn secondary" onClick={() => setPreviewMode(false)}>Back to edit</button>
+              <button type="button" className="btn tertiary" onClick={() => setPreviewMode(false)}>Back to edit</button>
               <button type="button" className="btn primary" onClick={() => saveEvent('publish')} disabled={saving}>{saving ? 'Publishing...' : 'Confirm publish'}</button>
             </>
           ) : (
             <>
-              <button type="button" className="btn secondary" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn tertiary" onClick={onClose}>Cancel</button>
               <button type="button" className="btn secondary" onClick={() => saveEvent('draft')} disabled={saving}>{saving ? 'Saving...' : 'Save Draft'}</button>
               <button type="button" className="btn primary" onClick={() => { const validationError = validate(); if (validationError) { setError(validationError); return } setPreviewMode(true) }} disabled={saving||paidAttendance} title={paidAttendance?'Payment processing must be enabled before publishing':'Publish event'}>Publish Event</button>
             </>
