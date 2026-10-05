@@ -41,17 +41,82 @@ export function firstName(displayName: string): string {
   return displayName.trim().split(/\s+/)[0] || "friend";
 }
 
+export const BIRTHDAY_TEMPLATES = [
+  {
+    id: "grace",
+    accent: "#f7d783",
+    prayer: "May this new year bring you fresh grace, deep peace, and abundant joy as you walk closely with God.",
+    scripture: {
+      reference: "Numbers 6:24–25",
+      text: "The Lord bless you and keep you; the Lord make his face shine on you and be gracious to you.",
+    },
+  },
+  {
+    id: "purpose",
+    accent: "#d9b6ff",
+    prayer: "May the Lord open new doors of purpose for you, strengthen your faith, and establish the work of your hands.",
+    scripture: {
+      reference: "Jeremiah 29:11",
+      text: "For I know the plans I have for you, declares the Lord, plans to prosper you and not to harm you, plans to give you hope and a future.",
+    },
+  },
+  {
+    id: "strength",
+    accent: "#79d7c2",
+    prayer: "May God renew your strength, steady your heart, and keep you soaring on wings like eagles in every season.",
+    scripture: {
+      reference: "Isaiah 40:31",
+      text: "Those who hope in the Lord will renew their strength. They will soar on wings like eagles; they will run and not grow weary.",
+    },
+  },
+  {
+    id: "gratitude",
+    accent: "#f9b3c7",
+    prayer: "May your heart overflow with gratitude, your days be filled with God’s goodness, and your life continue to reflect His love.",
+    scripture: {
+      reference: "Psalm 90:17",
+      text: "May the favor of the Lord our God rest on us; establish the work of our hands for us.",
+    },
+  },
+  {
+    id: "favor",
+    accent: "#8ec5ff",
+    prayer: "May this new chapter carry divine guidance, favor, and joy as you keep trusting the Lord with your whole heart.",
+    scripture: {
+      reference: "Proverbs 3:5–6",
+      text: "Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight.",
+    },
+  },
+];
+
+export function getBirthdayTemplate(memberId: string, birthdayKey: string) {
+  const seed = Array.from(`${memberId}:${birthdayKey}`).reduce((total, char) => total + char.charCodeAt(0), 0);
+  return BIRTHDAY_TEMPLATES[seed % BIRTHDAY_TEMPLATES.length];
+}
+
 export function birthdayCelebration(member: typeof members.$inferSelect, today = getLagosDateParts()) {
   if (!isBirthdayToday(member.birthday, today)) return null;
-  const name = firstName(member.displayName);
+  const birthdayKey = getBirthdayDateKey(today);
+  const first = firstName(member.displayName || "friend");
+  const template = getBirthdayTemplate(member.id, birthdayKey);
+  const scripture = template.scripture;
+  const message = `Today, we thank God for the gift of your life, ${first}. We celebrate the beauty of who you are and the work God is doing in and through you. ${template.prayer}`;
+  const blessing = `May the Lord continue to bless you, guide your steps, and fill this new year with His presence, purpose, and joy.`;
+
   return {
-    name,
+    memberId: member.id,
+    firstName: first,
+    name: first,
     fullName: member.displayName,
+    profileImage: member.avatar || null,
     avatar: member.avatar || "",
-    title: `Happy Birthday, ${name}!`,
-    message: `Today we celebrate the gift of you, ${name}. May this new year of life bring you deep joy, fresh strength, and beautiful moments with God and the people who love you.`,
-    blessing: "May the Lord bless you and keep you, guide your steps, and fill your days with peace.",
-    date: getBirthdayDateKey(today),
+    birthday: member.birthday,
+    title: `Happy Birthday, ${first}!`,
+    message,
+    blessing,
+    template: template.id,
+    scripture,
+    date: birthdayKey,
     destinationUrl: BIRTHDAY_ROUTE,
   };
 }

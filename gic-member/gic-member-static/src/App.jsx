@@ -1420,6 +1420,62 @@ function Announcements() {
   </MemberShell>
 }
 
+function BirthdayPhoto({ birthday }) {
+  if (!birthday?.profileImage && !birthday?.avatar) return null
+  const image = birthday.profileImage || birthday.avatar
+  return <div className="birthday-photo-wrap"><img className="birthday-avatar" src={image} alt={`${birthday.fullName || birthday.name || 'Member'} portrait`} /></div>
+}
+
+function BirthdayScripture({ scripture }) {
+  if (!scripture) return null
+  return <div className="birthday-scripture">
+    <span className="birthday-scripture-label">Scripture</span>
+    <p className="birthday-verse">“{scripture.text}”</p>
+    <small>{scripture.reference}</small>
+  </div>
+}
+
+function BirthdayPrayer({ message, blessing }) {
+  return <div className="birthday-prayer-block">
+    <span className="birthday-section-label">A prayer for you</span>
+    <p>{message}</p>
+    <p className="birthday-blessing"><span>Our prayer for you</span>{blessing}</p>
+  </div>
+}
+
+function BirthdayTemplate({ birthday }) {
+  const templateId = birthday?.template || 'grace'
+  const hasImage = Boolean(birthday?.profileImage || birthday?.avatar)
+  return <section className={`birthday-page-card birthday-template-${templateId} ${hasImage ? 'birthday-has-photo' : 'birthday-no-photo'}`}>
+    <div className="birthday-celebration" aria-hidden="true">
+      <span className="birthday-glow" />
+      <span className="birthday-orbit birthday-orbit-one" />
+      <span className="birthday-orbit birthday-orbit-two" />
+      <div className="birthday-confetti">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
+    </div>
+
+    <div className="birthday-topline">
+      <span className="birthday-brandmark">Global Impact Church</span>
+    </div>
+
+    <div className="birthday-header-block">
+      <span className="eyebrow">Happy birthday</span>
+      <h1>{birthday?.title || 'Happy Birthday!'}</h1>
+    </div>
+
+    {hasImage ? <BirthdayPhoto birthday={birthday} /> : <div className="birthday-no-photo-art" aria-hidden="true"><div className="birthday-no-photo-mark" /><div className="birthday-no-photo-ring" /></div>}
+
+    <div className="birthday-personal-card">
+      <small>Celebrating</small>
+      <h2>{birthday?.fullName || birthday?.name || 'Friend'}</h2>
+    </div>
+
+    <BirthdayPrayer message={birthday?.message} blessing={birthday?.blessing} />
+    <BirthdayScripture scripture={birthday?.scripture} />
+    <div className="birthday-seal">With love from the GIC family</div>
+  </section>
+}
+
 function BirthdayPage() {
   const [birthday, setBirthday] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1431,20 +1487,7 @@ function BirthdayPage() {
   }, [])
   return <MemberShell active="home" title="Your Birthday" backTo="/announcements">
     {loading && <p className="center muted">Preparing your birthday message...</p>}
-    {!loading && birthday && <section className="birthday-page-card">
-      <div className="birthday-celebration" aria-hidden="true">
-        <span className="birthday-glow" />
-        <span className="birthday-orbit birthday-orbit-one" />
-        <span className="birthday-orbit birthday-orbit-two" />
-        <div className="birthday-confetti">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
-      </div>
-      {birthday.avatar ? <img className="birthday-avatar" src={birthday.avatar} alt="" /> : <div className="birthday-avatar birthday-avatar-fallback">{birthday.name.charAt(0)}</div>}
-      <span className="eyebrow">A message just for you</span>
-      <h1>{birthday.title}</h1>
-      <p className="birthday-message">{birthday.message}</p>
-      <p className="birthday-blessing"><span>Our prayer for you</span>{birthday.blessing}</p>
-      <div className="birthday-seal">With love from the GIC family</div>
-    </section>}
+    {!loading && birthday && <BirthdayTemplate birthday={birthday} />}
     {!loading && !birthday && <div className="empty"><h2>This birthday message is private</h2><p>There is no birthday celebration available today.</p><Link className="btn primary wide" to="/announcements">Back to Announcements</Link></div>}
   </MemberShell>
 }
