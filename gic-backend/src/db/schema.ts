@@ -28,6 +28,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "FORM_AVAILABLE",
   "MINISTRY_UPDATE",
   "SYSTEM_NOTIFICATION",
+  "ATTENDANCE_PULSE",
 ]);
 
 export const deliveryStatusEnum = pgEnum("delivery_status", [
@@ -560,6 +561,52 @@ export const serviceReminders = pgTable(
     memberIdx: index("service_reminders_member_id_idx").on(t.memberId),
     dueIdx: index("service_reminders_due_idx").on(t.status, t.scheduledFor),
     uniqueReminder: unique("service_reminders_member_occurrence_offset_unique").on(t.memberId, t.occurrenceKey, t.offsetMinutes),
+  })
+);
+
+export const serviceAttendance = pgTable(
+  "service_attendance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    occurrenceId: text("occurrence_id").notNull(),
+    memberId: text("member_id").notNull(),
+    response: text("response").notNull(),
+    respondedAt: timestamp("responded_at", { withTimezone: true }).defaultNow(),
+    source: text("source").notNull().default("attendance_pulse"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    occurrenceMemberUnique: unique("service_attendance_occurrence_member_unique").on(t.occurrenceId, t.memberId),
+    memberIdx: index("service_attendance_member_id_idx").on(t.memberId),
+    occurrenceIdx: index("service_attendance_occurrence_id_idx").on(t.occurrenceId),
+    eventIdx: index("service_attendance_event_id_idx").on(t.eventId),
+    responseIdx: index("service_attendance_response_idx").on(t.response),
+  })
+);
+
+export const serviceAttendancePulses = pgTable(
+  "service_attendance_pulses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    churchId: uuid("church_id").notNull().references(() => churches.id),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    occurrenceId: text("occurrence_id").notNull(),
+    scheduledTime: timestamp("scheduled_time", { withTimezone: true }).notNull(),
+    actualSendTime: timestamp("actual_send_time", { withTimezone: true }),
+    status: text("status").notNull().default("pending"),
+    delayCount: integer("delay_count").notNull().default(0),
+    sentBy: text("sent_by"),
+    eligibleCount: integer("eligible_count").notNull().default(0),
+    notificationId: uuid("notification_id").references(() => adminNotifications.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => ({
+    occurrenceStatusIdx: index("service_attendance_pulses_occurrence_status_idx").on(t.occurrenceId, t.status),
+    eventIdx: index("service_attendance_pulses_event_id_idx").on(t.eventId),
   })
 );
 
