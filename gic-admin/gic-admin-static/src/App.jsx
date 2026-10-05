@@ -651,37 +651,139 @@ function AttendanceOverview(){
    noResponse: 0,
    responseRate: 0,
    rows: [],
+  })
+ const [options,setOptions]=useState({
+   ageGroups: [],
+   genders: [],
+   relationshipStatuses: [],
+   ministries: [],
+   cells: [],
+   segments: [],
+ })
+ const [filters,setFilters]=useState({
+   occurrenceId: '',
+   attendanceType: '',
+   gender: '',
+   ageGroupId: '',
+   relationshipStatus: '',
+   ministryId: '',
+   cellId: '',
+   segmentId: '',
  })
 
- useEffect(()=>{
-   fetchAdminApi('/api/admin/attendance')
-     .then((payload)=>setSummary({
-       totalEligible: payload.summary?.totalEligible ?? 0,
-       responded: payload.summary?.responded ?? 0,
-       inPerson: payload.summary?.inPerson ?? 0,
-       online: payload.summary?.online ?? 0,
-       notAttending: payload.summary?.notAttending ?? 0,
-       noResponse: payload.summary?.noResponse ?? 0,
-       responseRate: payload.summary?.responseRate ?? 0,
-       rows: payload.rows || [],
-     }))
-     .catch((requestError)=>setError(requestError.message))
-     .finally(()=>setLoading(false))
- }, [])
+ const endpoint = tab === 'Services' ? 'service' : tab === 'Event Registrations' ? 'registrations' : 'mixlr'
+ const tabLabel = tab === 'Services' ? 'service' : tab === 'Event Registrations' ? 'registration' : 'Mixlr'
 
- const metricCards = [
-   {label:'Total eligible', value: summary.totalEligible, icon:Users},
-   {label:'Responded', value: summary.responded, icon:CheckCircle2, type:'green'},
-   {label:'In person', value: summary.inPerson, icon:CalendarDays, type:'purple'},
-   {label:'Online', value: summary.online, icon:Globe, type:'blue'},
- ]
- 
- const breakdown = [
-   {label:'In person', value: summary.inPerson, tone:'success'},
-   {label:'Online', value: summary.online, tone:'blue'},
-   {label:'Not attending', value: summary.notAttending, tone:'gray'},
-   {label:'No response', value: summary.noResponse, tone:'orange'},
- ]
+ useEffect(()=>{
+  let cancelled = false
+  setLoading(true)
+  setError('')
+
+  const params = new URLSearchParams()
+  if (tab === 'Services') {
+   if (filters.occurrenceId) params.set('occurrenceId', filters.occurrenceId)
+   if (filters.attendanceType) params.set('attendanceType', filters.attendanceType)
+   if (filters.gender) params.set('gender', filters.gender)
+   if (filters.ageGroupId) params.set('ageGroupId', filters.ageGroupId)
+   if (filters.relationshipStatus) params.set('relationshipStatus', filters.relationshipStatus)
+   if (filters.ministryId) params.set('ministryId', filters.ministryId)
+   if (filters.cellId) params.set('cellId', filters.cellId)
+   if (filters.segmentId) params.set('segmentId', filters.segmentId)
+  }
+
+  if (tab === 'Event Registrations') {
+   if (filters.occurrenceId) params.set('occurrenceId', filters.occurrenceId)
+   if (filters.gender) params.set('gender', filters.gender)
+   if (filters.ageGroupId) params.set('ageGroupId', filters.ageGroupId)
+   if (filters.relationshipStatus) params.set('relationshipStatus', filters.relationshipStatus)
+   if (filters.ministryId) params.set('ministryId', filters.ministryId)
+   if (filters.cellId) params.set('cellId', filters.cellId)
+   if (filters.segmentId) params.set('segmentId', filters.segmentId)
+  }
+
+  if (tab === 'Mixlr') {
+   if (filters.occurrenceId) params.set('recordingId', filters.occurrenceId)
+  }
+
+  fetchAdminApi(`/api/admin/attendance/${endpoint}${params.toString() ? `?${params.toString()}` : ''}`)
+    .then((payload)=>{
+      if (cancelled) return
+      setSummary({
+        totalEligible: payload.summary?.totalEligible ?? payload.summary?.totalListeners ?? payload.summary?.total ?? 0,
+        responded: payload.summary?.responded ?? payload.summary?.identifiedListeners ?? 0,
+        inPerson: payload.summary?.inPerson ?? payload.summary?.totalPlays ?? 0,
+        online: payload.summary?.online ?? payload.summary?.totalListeningTimeSeconds ?? 0,
+        notAttending: payload.summary?.notAttending ?? 0,
+        noResponse: payload.summary?.noResponse ?? 0,
+        responseRate: payload.summary?.responseRate ?? 0,
+        rows: payload.rows || [],
+      })
+      setOptions(payload.options || {
+        ageGroups: [],
+        genders: [],
+        relationshipStatuses: [],
+        ministries: [],
+        cells: [],
+        segments: [],
+      })
+    })
+    .catch((requestError)=>{
+      if (!cancelled) setError(requestError.message)
+    })
+    .finally(()=>{
+      if (!cancelled) setLoading(false)
+    })
+
+  return ()=>{ cancelled = true }
+ }, [tab, filters.occurrenceId, filters.attendanceType, filters.gender, filters.ageGroupId, filters.relationshipStatus, filters.ministryId, filters.cellId, filters.segmentId])
+
+ const metricCards = tab === 'Services'
+   ? [
+       {label:'Total eligible', value: summary.totalEligible, icon:Users},
+       {label:'Responded', value: summary.responded, icon:CheckCircle2, type:'green'},
+       {label:'In person', value: summary.inPerson, icon:CalendarDays, type:'purple'},
+       {label:'Online', value: summary.online, icon:Globe, type:'blue'},
+     ]
+   : tab === 'Event Registrations'
+     ? [
+         {label:'Total', value: summary.totalEligible, icon:ClipboardList},
+         {label:'Confirmed', value: summary.responded, icon:CheckCircle2, type:'green'},
+         {label:'Waitlisted', value: summary.notAttending, icon:Clock3, type:'orange'},
+         {label:'Pending', value: summary.noResponse, icon:Bell, type:'blue'},
+       ]
+     : [
+         {label:'Total listeners', value: summary.totalEligible, icon:Users},
+         {label:'Plays', value: summary.inPerson, icon:Globe, type:'blue'},
+         {label:'Listening time', value: summary.online, icon:Clock3, type:'purple'},
+         {label:'Identified', value: summary.responded, icon:CheckCircle2, type:'green'},
+       ]
+
+ const breakdown = tab === 'Services'
+   ? [
+       {label:'In person', value: summary.inPerson, tone:'success'},
+       {label:'Online', value: summary.online, tone:'blue'},
+       {label:'Not attending', value: summary.notAttending, tone:'gray'},
+       {label:'No response', value: summary.noResponse, tone:'orange'},
+     ]
+   : tab === 'Event Registrations'
+     ? [
+         {label:'Confirmed', value: summary.responded, tone:'success'},
+         {label:'Waitlisted', value: summary.notAttending, tone:'orange'},
+         {label:'Pending', value: summary.noResponse, tone:'gray'},
+       ]
+     : [
+         {label:'Listeners', value: summary.totalEligible, tone:'blue'},
+         {label:'Plays', value: summary.inPerson, tone:'success'},
+         {label:'Identified', value: summary.responded, tone:'green'},
+       ]
+
+ const tableHeaders = tab === 'Services'
+   ? ['Member', 'Gender', 'Age group', 'Service', 'Response', 'Responded']
+   : tab === 'Event Registrations'
+     ? ['Member', 'Status', 'Event', 'Registered', 'Gender']
+     : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
+
+ const tableRows = summary.rows || []
 
  return <Page title="Attendance" subtitle="Participation reporting for services, registrations, and Mixlr engagement">
   <Card className="table-card">
@@ -690,13 +792,24 @@ function AttendanceOverview(){
    </div>
 
    <div className="event-stats compact" style={{marginBottom:'18px'}}>
-    {metricCards.map((item,index)=><Stat key={item.label} label={item.label} value={item.value} icon={item.icon} type={item.type || (index===0 ? 'purple' : 'blue')} change={item.label==='Total eligible' ? `${summary.responseRate}% response rate` : item.label === 'Responded' ? 'Member-level records' : 'Participation'} />)}
+    {metricCards.map((item,index)=><Stat key={`${tab}-${item.label}`} label={item.label} value={item.value} icon={item.icon} type={item.type || (index===0 ? 'purple' : 'blue')} change={tab === 'Services' && item.label === 'Total eligible' ? `${summary.responseRate || 0}% response rate` : tab === 'Mixlr' ? 'Live engagement' : 'Participation'} />)}
    </div>
 
    <div className="member-toolbar" style={{marginBottom:'18px'}}>
-    <label className="modern-field" style={{minWidth:'180px'}}><span>Service</span><select defaultValue="Sunday Service"><option>Sunday Service</option><option>Midweek Service</option></select></label>
-    <label className="modern-field" style={{minWidth:'180px'}}><span>Gender</span><select defaultValue="All"><option>All</option><option>Female</option><option>Male</option></select></label>
-    <label className="modern-field" style={{minWidth:'180px'}}><span>Age group</span><select defaultValue="All"><option>All</option><option>Young Adult</option><option>Adult</option></select></label>
+    {tab === 'Services' && (
+      <>
+       <label className="modern-field" style={{minWidth:'180px'}}><span>Service</span><select value={filters.occurrenceId} onChange={(event)=>setFilters((current)=>({...current, occurrenceId:event.target.value}))}><option value="">All services</option><option value="Sunday Service">Sunday Service</option><option value="Midweek Service">Midweek Service</option></select></label>
+       <label className="modern-field" style={{minWidth:'180px'}}><span>Attendance</span><select value={filters.attendanceType} onChange={(event)=>setFilters((current)=>({...current, attendanceType:event.target.value}))}><option value="">All responses</option><option value="in_person">In person</option><option value="online">Online</option><option value="not_attending">Not attending</option></select></label>
+      </>
+    )}
+    <label className="modern-field" style={{minWidth:'180px'}}><span>Gender</span><select value={filters.gender} onChange={(event)=>setFilters((current)=>({...current, gender:event.target.value}))}><option value="">All</option>{options.genders.map((value)=><option key={value} value={value}>{value}</option>)}</select></label>
+    <label className="modern-field" style={{minWidth:'180px'}}><span>Age group</span><select value={filters.ageGroupId} onChange={(event)=>setFilters((current)=>({...current, ageGroupId:event.target.value}))}><option value="">All</option>{options.ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    {tab !== 'Mixlr' && (
+      <label className="modern-field" style={{minWidth:'180px'}}><span>Relationship</span><select value={filters.relationshipStatus} onChange={(event)=>setFilters((current)=>({...current, relationshipStatus:event.target.value}))}><option value="">All</option>{options.relationshipStatuses.map((value)=><option key={value} value={value}>{value}</option>)}</select></label>
+    )}
+    {tab !== 'Mixlr' && (
+      <label className="modern-field" style={{minWidth:'180px'}}><span>Ministry</span><select value={filters.ministryId} onChange={(event)=>setFilters((current)=>({...current, ministryId:event.target.value}))}><option value="">All</option>{options.ministries.map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    )}
    </div>
 
    {loading && <div className="empty-message">Loading attendance report...</div>}
@@ -704,34 +817,51 @@ function AttendanceOverview(){
    {!loading && !error && (
      <>
        <div className="event-stats compact" style={{marginBottom:'18px'}}>
-        {breakdown.map((item)=><Stat key={item.label} label={item.label} value={item.value} icon={item.label === 'In person' ? CheckCircle2 : item.label === 'Online' ? Globe : item.label === 'Not attending' ? Clock3 : Bell} type={item.tone === 'success' ? 'green' : item.tone === 'blue' ? 'blue' : item.tone === 'orange' ? 'orange' : 'gray'} change={item.label === 'In person' ? 'On-site' : item.label === 'Online' ? 'Virtual' : item.label === 'Not attending' ? 'Declined' : 'No response'} />)}
+        {breakdown.map((item)=><Stat key={`${tab}-breakdown-${item.label}`} label={item.label} value={item.value} icon={item.label === 'In person' || item.label === 'Confirmed' || item.label === 'Listeners' ? CheckCircle2 : item.label === 'Online' || item.label === 'Plays' ? Globe : item.label === 'Not attending' || item.label === 'Waitlisted' ? Clock3 : Bell} type={item.tone === 'success' ? 'green' : item.tone === 'blue' ? 'blue' : item.tone === 'orange' ? 'orange' : 'gray'} change={item.label === 'In person' ? 'On-site' : item.label === 'Online' ? 'Virtual' : item.label === 'Not attending' ? 'Declined' : item.label === 'Waitlisted' ? 'Needs review' : 'Live'} />)}
        </div>
 
        <div className="table-wrap">
          <table>
            <thead>
              <tr>
-               <th>Member</th>
-               <th>Gender</th>
-               <th>Age group</th>
-               <th>Service</th>
-               <th>Response</th>
-               <th>Responded</th>
+               {tableHeaders.map((header)=><th key={header}>{header}</th>)}
              </tr>
            </thead>
            <tbody>
-             {(summary.rows.length ? summary.rows : [
-               {memberName:'Sarah A.', gender:'Female', ageGroup:'Young Adult', occurrenceId:'Sunday Service · 4 Oct 2026', response:'in_person', respondedAt:'2026-10-04T09:32:00Z'},
-               {memberName:'Jane B.', gender:'Female', ageGroup:'Young Adult', occurrenceId:'Sunday Service · 4 Oct 2026', response:'in_person', respondedAt:'2026-10-04T09:41:00Z'},
-               {memberName:'Mary C.', gender:'Female', ageGroup:'Young Adult', occurrenceId:'Sunday Service · 4 Oct 2026', response:'online', respondedAt:'2026-10-04T10:03:00Z'},
-             ]).map((row,index)=><tr key={`${row.memberName || 'member'}-${index}`}>
-               <td><b>{row.memberName || 'Member'}</b></td>
-               <td>{row.gender || '—'}</td>
-               <td>{row.ageGroup || '—'}</td>
-               <td>{row.occurrenceId || 'Sunday Service'}</td>
-               <td><span className={'badge '+(row.response === 'in_person' ? 'success' : row.response === 'online' ? 'blue' : 'gray')}>{row.response === 'in_person' ? 'In person' : row.response === 'online' ? 'Online' : 'Not attending'}</span></td>
-               <td>{row.respondedAt ? new Date(row.respondedAt).toLocaleString() : '—'}</td>
-             </tr>)}
+             {tableRows.length === 0 ? (
+               <tr><td colSpan={tableHeaders.length}><div className="empty-message">No records found for this selection.</div></td></tr>
+             ) : (
+               tableRows.map((row,index)=>{
+                 if (tab === 'Mixlr') {
+                   return <tr key={`${row.recordingId || 'mixlr'}-${index}`}>
+                     <td><b>{row.recordingTitle || row.recordingId || 'Recording'}</b></td>
+                     <td>{row.listeners ?? 0}</td>
+                     <td>{row.plays ?? 0}</td>
+                     <td>{row.listeningTimeSeconds ? `${Math.round(row.listeningTimeSeconds / 60)} min` : '0 min'}</td>
+                     <td>{row.identifiedListeners ?? 0}</td>
+                   </tr>
+                 }
+
+                 if (tab === 'Event Registrations') {
+                   return <tr key={`${row.memberId || row.memberName || 'event'}-${index}`}>
+                     <td><b>{row.memberName || row.memberId || 'Member'}</b></td>
+                     <td><span className={'badge '+(row.status === 'CONFIRMED' ? 'success' : row.status === 'WAITLISTED' ? 'orange' : 'gray')}>{row.status || '—'}</span></td>
+                     <td>{row.eventName || row.eventId || '—'}</td>
+                     <td>{row.registeredAt ? new Date(row.registeredAt).toLocaleString() : '—'}</td>
+                     <td>{row.gender || '—'}</td>
+                   </tr>
+                 }
+
+                 return <tr key={`${row.memberId || row.memberName || 'attendance'}-${index}`}>
+                   <td><b>{row.memberName || 'Member'}</b></td>
+                   <td>{row.gender || '—'}</td>
+                   <td>{row.ageGroupId || '—'}</td>
+                   <td>{row.occurrenceId || 'Service'}</td>
+                   <td><span className={'badge '+(row.response === 'in_person' ? 'success' : row.response === 'online' ? 'blue' : 'gray')}>{row.response === 'in_person' ? 'In person' : row.response === 'online' ? 'Online' : row.response === 'not_attending' ? 'Not attending' : (row.response || '—')}</span></td>
+                   <td>{row.respondedAt ? new Date(row.respondedAt).toLocaleString() : '—'}</td>
+                 </tr>
+               })
+             )}
            </tbody>
          </table>
        </div>
