@@ -118,14 +118,14 @@ function getNextEvent() {
   return getUpcomingEvents()[0]
 }
 
-function formatServiceLabel(serviceDate, eventId) {
+function formatServiceLabel(serviceDate) {
   return formatServiceOccurrenceLabel(serviceDate)
 }
 
 function getServiceDisplay(event) {
   const { center } = getSelectedService()
   const serviceDate = getServiceOccurrence(event.id)
-  const label = formatServiceLabel(serviceDate, event.id)
+  const label = formatServiceLabel(serviceDate)
   const sundayTime = getSelectedService().time.replace(/^Sunday Services?:\s*/i, '')
   return event.id === 'sunday-service'
     ? { ...event, date: label, time: sundayTime, location: center, startAt: serviceDate }
