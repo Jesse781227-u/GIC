@@ -14,7 +14,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } fr
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
 import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
-import { createCalendarFile, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
+import { createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
@@ -2573,11 +2573,12 @@ function MyRegistrations() {
   }, [])
   return <MemberShell active="events" title="My Events" backTo="/events">
     {registrations.length ? registrations.map((event) => {
-       const remaining = Math.max(0, new Date(event.startAt || `${event.date.replace(/^\w+, /, '')} ${event.time}`).getTime() - now)
-      const days = Math.floor(remaining / 86400000)
-      const hours = Math.floor((remaining % 86400000) / 3600000)
-      const minutes = Math.floor((remaining % 3600000) / 60000)
-      const seconds = Math.floor((remaining % 60000) / 1000)
+      const eventStartTimestamp = getEventStartTimestamp(event)
+      const remaining = eventStartTimestamp === null ? null : Math.max(0, eventStartTimestamp - now)
+      const days = remaining === null ? 0 : Math.floor(remaining / 86400000)
+      const hours = remaining === null ? 0 : Math.floor((remaining % 86400000) / 3600000)
+      const minutes = remaining === null ? 0 : Math.floor((remaining % 3600000) / 60000)
+      const seconds = remaining === null ? 0 : Math.floor((remaining % 60000) / 1000)
       const flyerUrl = event.flyerMediaUrl || event.image || event.imageUrl || GIC_LOGO
       return <article className="registered-event-card" key={event.id} role="link" tabIndex={0} aria-label={`Open ${event.title} details`} onClick={(clickEvent) => {
         if (!clickEvent.target.closest('a, button')) navigate(`/events/${event.id}`)
@@ -2592,7 +2593,7 @@ function MyRegistrations() {
           {event.flyerMediaType === 'video' && event.flyerMediaUrl && <><video src={event.flyerMediaUrl} muted playsInline preload="metadata"/><span className="registered-video-play"><Play size={15}/> Play video</span></>}
           <span className="status">{event.registered ? event.status === 'WAITLISTED' ? 'Waitlisted' : 'Registered' : event.interested ? 'Interested' : 'Added to My Events'}</span>
         </div>
-         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':event.registered?'Event starts in':'Added to calendar · Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
+         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{remaining===null?'Event time unavailable':event.status==='WAITLISTED'?'Waitlisted · Event starts in':event.registered?'Event starts in':'Added to calendar · Event starts in'}</small>{remaining!==null&&<div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div>}</div></div>
       </article>
     }) : <div className="events-empty-state">
       <div className="events-empty-illustration" aria-hidden="true">

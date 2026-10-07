@@ -13,6 +13,15 @@ export function isCalendarEventSaved(eventId, storage = globalThis.localStorage)
   return readCalendarEvents(storage).some((event) => event.id === eventId)
 }
 
+export function getEventStartTimestamp(event) {
+  const timestamp = Date.parse(event?.startAt || event?.startsAt || '')
+  if (Number.isFinite(timestamp)) return timestamp
+
+  const date = String(event?.date || '').replace(/^\w+,\s*/, '')
+  const fallback = Date.parse(`${date} ${event?.time || ''}`)
+  return Number.isFinite(fallback) ? fallback : null
+}
+
 export function saveCalendarEvent(event, storage = globalThis.localStorage) {
   const current = readCalendarEvents(storage).filter((item) => item.id !== event.id)
   const startsAt = event.startsAt || event.startAt

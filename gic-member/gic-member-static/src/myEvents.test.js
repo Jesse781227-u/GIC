@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { CALENDAR_EVENTS_KEY, createCalendarFile, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents.js'
+import { CALENDAR_EVENTS_KEY, createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents.js'
 
 function createStorage() {
   const values = new Map()
@@ -34,4 +34,14 @@ test('calendar invites use the actual event times and escape text fields', () =>
   assert.match(content, /DTEND:20261101T123000Z/)
   assert.match(content, /SUMMARY:Worship\\, Word\\; & Welcome/)
   assert.match(content, /DESCRIPTION:Bring a friend\\nJoin us\./)
+})
+
+test('countdown reads ISO timestamps from registrations and calendar-saved events', () => {
+  const startsAt = '2026-10-24T09:00:00.000Z'
+  const expected = Date.parse(startsAt)
+
+  assert.equal(getEventStartTimestamp({ startAt: startsAt }), expected)
+  assert.equal(getEventStartTimestamp({ startsAt, date: '24/10/2026', time: '10:00 AM' }), expected)
+  assert.equal(getEventStartTimestamp({ date: 'Oct 24, 2026', time: '10:00 AM' }), Date.parse('Oct 24, 2026 10:00 AM'))
+  assert.equal(getEventStartTimestamp({ date: 'not a date', time: '' }), null)
 })
