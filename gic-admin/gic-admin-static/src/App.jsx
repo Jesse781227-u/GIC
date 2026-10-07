@@ -484,10 +484,36 @@ function AdminEventDetails(){
 }
 
 function AdminRegistrations(){
- const [events,setEvents]=useState([])
- const [eventId,setEventId]=useState('')
- useEffect(()=>{fetchAdminApi('/api/admin/events').then(({events:items=[]})=>{setEvents(items);if(items[0])setEventId(items[0].id)}).catch(()=>{})},[])
- return <Page title="Registrations" subtitle="View member registrations and bus passenger totals"><Card className="table-card"><label className="modern-field"><span>Event</span><select value={eventId} onChange={(event)=>setEventId(event.target.value)}>{events.map((item)=><option key={item.id} value={item.id}>{item.title}</option>)}</select></label>{eventId&&<AdminEventRegistrations eventId={eventId}/>}</Card></Page>
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const [options,setOptions]=useState({events:[],genders:[],ageGroups:[]})
+ const [filters,setFilters]=useState({eventId:'',gender:'',ageGroupId:''})
+ const [report,setReport]=useState({summary:{},rows:[]})
+ useEffect(()=>{
+  let cancelled=false
+  const params=new URLSearchParams(Object.entries(filters).filter(([,value])=>value))
+  setLoading(true)
+  setError('')
+  fetchAdminApi(`/api/admin/attendance/registrations${params.size?`?${params.toString()}`:''}`).then((payload)=>{
+   if(cancelled)return
+   setReport({summary:payload.summary||{},rows:payload.rows||[]})
+   setOptions(payload.options||{events:[],genders:[],ageGroups:[]})
+  }).catch((requestError)=>{if(!cancelled)setError(requestError.message||'Registration data is unavailable.')}).finally(()=>{if(!cancelled)setLoading(false)})
+  return ()=>{cancelled=true}
+ },[filters.eventId,filters.gender,filters.ageGroupId])
+ const summaryItems=[['Total registrations',report.summary.total||0],['Confirmed',report.summary.confirmed||0],['Waitlisted',report.summary.waitlisted||0],['Pending',report.summary.pending||0],...(report.summary.cancelled>0?[['Cancelled',report.summary.cancelled]]:[])]
+ const summaryIcon=(label)=>label==='Confirmed'?CheckCircle2:label==='Waitlisted'?Clock3:ClipboardList
+ return <Page title="Event Registrations" subtitle="Registration totals and attendee status by event">
+  <Card className="table-card">
+   <div className="attendance-summary infographic-summary">{summaryItems.map(([label,value],index)=>{const Icon=summaryIcon(label);return <div className={`infographic-metric metric-${index%4}`} key={label}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
+   <div className="attendance-filters"><div className="attendance-filter-grid">
+    {[["EVENT","eventId",options.events,"All events","title"],["GENDER","gender",options.genders.map((value)=>({id:value,name:value})),"All genders","name"],["AGE GROUP","ageGroupId",options.ageGroups,"All age groups","name"]].map(([label,key,values,placeholder,valueKey])=><label key={key}><span>{label}</span><select value={filters[key]} onChange={(event)=>setFilters((current)=>({...current,[key]:event.target.value}))}><option value="">{placeholder}</option>{values.map((item)=><option key={item.id} value={item.id}>{item[valueKey]||item.name}</option>)}</select></label>)}
+   </div></div>
+   {loading&&<div className="empty-message">Loading registration report...</div>}
+   {!loading&&error&&<div className="empty-message" role="alert">Registration data is unavailable: {error}</div>}
+   {!loading&&!error&&<div className="table-wrap"><table><thead><tr><th>Event</th><th>Confirmed</th><th>Waitlisted</th><th>Pending</th><th>Total</th></tr></thead><tbody>{report.rows.length?report.rows.map((row,index)=><tr key={`${row.eventId||row.eventTitle||'event'}-${index}`}><td><b>{row.eventTitle||row.eventId||'Event'}</b></td><td>{row.confirmed||0}</td><td>{row.waitlisted||0}</td><td>{row.pending||0}</td><td>{row.total||0}</td></tr>):<tr><td colSpan={5}><div className="empty-message">{filters.gender||filters.ageGroupId?'No members match these filters.':'No registrations yet.'}</div></td></tr>}</tbody></table></div>}
+  </Card>
+ </Page>
 }
 
 function ModernMemberDetails(){
@@ -675,13 +701,13 @@ function AttendanceOverview(){
    rows: [],
   })
  const [options,setOptions]=useState({
-   ageGroups: [], genders: [], events: [], recordings: [],
+   ageGroups: [], genders: [], recordings: [],
  })
  const [filters,setFilters]=useState({
-   occurrenceId: '', eventId: '', recordingId: '', date: '', gender: '', ageGroupId: '',
+   occurrenceId: '', recordingId: '', date: '', gender: '', ageGroupId: '',
  })
 
- const endpoint = tab === 'Services' ? 'service' : tab === 'Event Registrations' ? 'registrations' : 'mixlr'
+ const endpoint = tab === 'Services' ? 'service' : 'mixlr'
 
  useEffect(()=>{
   let cancelled = false
@@ -691,9 +717,6 @@ function AttendanceOverview(){
   const params = new URLSearchParams()
   if (tab === 'Services') {
    if (filters.occurrenceId) params.set('occurrenceId', filters.occurrenceId)
-  }
-  if (tab === 'Event Registrations') {
-   if (filters.eventId) params.set('eventId', filters.eventId)
   }
   if (tab === 'Mixlr' && filters.recordingId) params.set('recordingId', filters.recordingId)
   if (filters.gender) params.set('gender', filters.gender)
@@ -714,7 +737,7 @@ function AttendanceOverview(){
        setServiceOptions(payload.rows || [])
       }
       setOptions(payload.options || {
-        ageGroups: [], genders: [], events: [], recordings: [],
+        ageGroups: [], genders: [], recordings: [],
       })
     })
     .catch((requestError)=>{
@@ -729,30 +752,24 @@ function AttendanceOverview(){
 
  const summaryItems = tab === 'Services'
    ? [['Responded', summary.responded], ['In person', summary.inPerson], ['Online', summary.online], ['Not attending', summary.notAttending], ['No response', summary.noResponse], ['Response rate', `${summary.responseRate || 0}%`]]
-   : tab === 'Event Registrations'
-     ? [['Total registrations', summary.total ?? 0], ['Confirmed', summary.confirmed ?? summary.responded ?? 0], ['Waitlisted', summary.waitlisted ?? summary.notAttending ?? 0], ['Pending', summary.pending ?? summary.noResponse ?? 0], ...(summary.cancelled > 0 ? [['Cancelled', summary.cancelled]] : [])]
-     : [['Listeners', summary.totalListeners ?? 0], ['Plays', summary.totalPlays ?? 0], ['Listening time', formatListeningTime(summary.totalListeningTimeSeconds)], ['Identified members', summary.identifiedListeners ?? 0]]
+   : [['Listeners', summary.totalListeners ?? 0], ['Plays', summary.totalPlays ?? 0], ['Listening time', formatListeningTime(summary.totalListeningTimeSeconds)], ['Identified members', summary.identifiedListeners ?? 0]]
  const summaryIcon = (label) => label === 'Online' || label === 'Plays' ? Globe : label === 'In person' || label === 'Confirmed' || label === 'Responded' || label === 'Identified members' ? CheckCircle2 : label === 'Not attending' || label === 'Waitlisted' || label === 'Listening time' ? Clock3 : label === 'Response rate' ? BarChart3 : ClipboardList
 
  const filterSets = tab === 'Services'
    ? [['SERVICE', 'occurrenceId', serviceOptions, 'All services', 'serviceLabel'], ['DATE', 'date', serviceOptions.map((item)=>({id:item.occurrenceId,name:item.eventStartsAt ? new Date(item.eventStartsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : item.serviceLabel})), 'All dates', 'name'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
-   : tab === 'Event Registrations'
-     ? [['EVENT', 'eventId', options.events, 'All events', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
-     : [['RECORDING', 'recordingId', options.recordings, 'All recordings', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
+   : [['RECORDING', 'recordingId', options.recordings, 'All recordings', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
  const allFilters = filterSets
  const tableHeaders = tab === 'Services'
    ? ['Service', 'In person', 'Online', 'Not attending', 'No response', 'Total']
-   : tab === 'Event Registrations'
-     ? ['Event', 'Confirmed', 'Waitlisted', 'Pending', 'Total']
-     : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
+   : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
 
  const tableRows = summary.rows || []
- const emptyMessage = tab === 'Services' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No attendance responses yet') : tab === 'Event Registrations' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No registrations yet') : (filters.recordingId ? 'No listeners recorded for this recording' : 'No Mixlr recordings available')
+ const emptyMessage = tab === 'Services' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No attendance responses yet') : (filters.recordingId ? 'No listeners recorded for this recording' : 'No Mixlr recordings available')
 
- return <Page title="Attendance" subtitle="Service attendance, event registrations, and Mixlr listening reports">
+ return <Page title="Attendance" subtitle="Service attendance and Mixlr listening reports">
   <Card className="table-card">
    <div className="tabs big attendance-tabs" style={{marginBottom:'0'}}>
-    {['Services','Event Registrations','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
+    {['Services','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
    </div>
   <div className={`attendance-summary infographic-summary ${tab === 'Mixlr' ? 'mixlr-summary' : ''}`}>{summaryItems.map(([label,value], index)=>{const Icon=summaryIcon(label); const drilldown=tab==='Mixlr'&&['Listeners','Identified members'].includes(label); return <div className={`infographic-metric metric-${index % 4}${drilldown?' clickable-metric':''}`} key={label} role={drilldown?'button':undefined} tabIndex={drilldown?0:undefined} aria-haspopup={drilldown?'dialog':undefined} onClick={drilldown?()=>setMemberListType(label):undefined} onKeyDown={drilldown?(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setMemberListType(label)}}:undefined}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
    <div className="attendance-filters"><div className="attendance-filter-grid">{allFilters.map(([label,key,values,placeholder,valueKey='name'])=><label key={key}><span>{label}</span><select value={filters[key] || ''} onChange={(event)=>setFilters((current)=>({...current,[key]:event.target.value}))}><option value="">{placeholder || `All ${label.toLowerCase()}`}</option>{(values || []).map((item)=><option key={item.id || item.occurrenceId} value={item.id || item.occurrenceId}>{item[valueKey] || item.name || item.serviceLabel || item.title}</option>)}</select></label>)}</div></div>
@@ -780,16 +797,6 @@ function AttendanceOverview(){
                      <td>{row.plays ?? 0}</td>
                      <td>{formatListeningTime(row.listeningTimeSeconds)}</td>
                      <td>{row.identifiedListeners ?? 0}</td>
-                   </tr>
-                 }
-
-                 if (tab === 'Event Registrations') {
-                   return <tr key={`${row.eventId || row.eventTitle || 'event'}-${index}`}>
-                     <td><b>{row.eventTitle || row.eventId || 'Event'}</b></td>
-                     <td>{row.confirmed || 0}</td>
-                     <td>{row.waitlisted || 0}</td>
-                     <td>{row.pending || 0}</td>
-                     <td>{row.total || 0}</td>
                    </tr>
                  }
 
