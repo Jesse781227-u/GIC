@@ -20,6 +20,7 @@
     { "idx": 15, "version": "7", "when": 1791000500000, "tag": "0016_protocol_security_pastors_units", "breakpoints": true },
     { "idx": 16, "version": "7", "when": 1791000600000, "tag": "0017_event_management_lifecycle", "breakpoints": true },
     { "idx": 17, "version": "7", "when": 1791072000000, "tag": "0018_event_builder_data", "breakpoints": true },
-    { "idx": 18, "version": "7", "when": 1791075600000, "tag": "0019_mixlr_automation", "breakpoints": true }
+    { "idx": 18, "version": "7", "when": 1791075600000, "tag": "0019_mixlr_automation", "breakpoints": true },
+    { "idx": 19, "version": "7", "when": 1791331200000, "tag": "0020_attendance_analytics", "breakpoints": true }
   ]
 }
