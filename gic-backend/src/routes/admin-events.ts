@@ -171,6 +171,19 @@ async function notifyEventRegistrants(churchId: string, event: typeof events.$in
   return notificationService.sendNow(draft.id);
 }
 
+async function notifyEventPublished(churchId: string, event: typeof events.$inferSelect, actorId: string) {
+  const draft = await notificationService.createDraft({
+    churchId,
+    title: event.title,
+    body: event.description || `${event.title} has been published.`,
+    type: "EVENT_PUBLISHED",
+    audience: "everyone",
+    destinationUrl: `/events/${event.id}`,
+    createdBy: actorId,
+  });
+  return notificationService.sendNow(draft.id);
+}
+
 app.get("/", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   const records = await db.query.events.findMany({ where: eq(events.churchId, churchId), orderBy: [desc(events.startsAt)] });
@@ -206,10 +219,12 @@ app.patch("/:id/status", async (c) => {
   const [event] = await db.update(events).set({ status: parsed.data.status, updatedAt: new Date() }).where(and(eq(events.id, id), eq(events.churchId, churchId))).returning();
   const action = parsed.data.status === "PUBLISHED" ? "Published event" : parsed.data.status === "UNPUBLISHED" ? "Unpublished event" : parsed.data.status === "CANCELLED" ? "Cancelled event" : "Completed event";
   await recordActivity({ churchId, actorId: c.get("user").sub, actorName: c.get("user").name, action, target: event.title, targetId: event.id, metadata: { from: current.status, to: event.status } });
-  const shouldNotify = parsed.data.notifyMembers || (parsed.data.status === "PUBLISHED" && event.notifyOnPublish);
-  if (shouldNotify && ["PUBLISHED", "CANCELLED"].includes(event.status)) {
-    void notifyEventRegistrants(churchId, event, event.status === "CANCELLED" ? "EVENT_CANCELLED" : "EVENT_UPDATED", c.get("user").sub, event.status === "CANCELLED" ? `${event.title} has been cancelled.` : `${event.title} has been published.`)
-      .catch((error) => console.error(`Event lifecycle push failed for ${event.id}:`, error));
+  if (event.status === "PUBLISHED") {
+    void notifyEventPublished(churchId, event, c.get("user").sub)
+      .catch((error) => console.error(`Event publish notification failed for ${event.id}:`, error));
+  } else if (event.status === "CANCELLED" && parsed.data.notifyMembers) {
+    void notifyEventRegistrants(churchId, event, "EVENT_CANCELLED", c.get("user").sub, `${event.title} has been cancelled.`)
+      .catch((error) => console.error(`Event cancellation notification failed for ${event.id}:`, error));
   }
   return c.json({ event: await eventWithCounts(event) });
 });
@@ -267,7 +282,14 @@ app.put("/:id", async (c) => {
   const existing = await db.query.events.findFirst({ where: and(eq(events.id, id), eq(events.churchId, churchId)) });
   if (!existing) return c.json({ error: "Event not found" }, 404);
   const { notifyAffectedMembers = false, ...updates } = parsed.data;
-  const next = { ...existing, ...updates };
+  const existingValues = {
+    ...existing,
+    startsAt: existing.startsAt.toISOString(),
+    endsAt: existing.endsAt?.toISOString() ?? null,
+    registrationOpensAt: existing.registrationOpensAt?.toISOString() ?? null,
+    registrationClosesAt: existing.registrationClosesAt?.toISOString() ?? null,
+  };
+  const next = { ...existingValues, ...updates };
   const normalized = eventSchema.safeParse(next);
   if (!normalized.success) return c.json({ error: "Invalid event", details: normalized.error.issues }, 400);
   if (existing.status === "PUBLISHED" && normalized.data.isPaid) return c.json({ error: "Published events cannot be changed to paid until payment processing is available." }, 409);

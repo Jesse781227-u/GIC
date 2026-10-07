@@ -15,7 +15,6 @@ const REMINDER_OPTIONS = [
   { label: '1 hour before', minutes: 60 },
   { label: '30 minutes before', minutes: 30 },
 ]
-const AUDIENCE_OPTIONS = ['All Members', 'Segment', 'Unit', 'Fellowship', 'Cell', 'Group']
 const FORM_FIELD_TYPES = [
   ['text', 'Short text'], ['textarea', 'Long text'], ['number', 'Number'], ['phone', 'Phone'],
   ['email', 'Email'], ['date', 'Date'], ['select', 'Dropdown'], ['radio', 'Radio'], ['checkbox', 'Checkbox'],
@@ -31,10 +30,6 @@ async function adminApi(path, options = {}) {
     try { throw new Error(JSON.parse(body).error || body) } catch (error) { if (error instanceof SyntaxError) throw new Error(body); throw error }
   }
   return response.json()
-}
-
-function makeSpeaker() {
-  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', title: '', description: '', photoUrl: '' }
 }
 
 function toDateTimeValue(date, time) {
@@ -98,7 +93,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [contactEmail, setContactEmail] = useState('')
   const [flyerUrl, setFlyerUrl] = useState('')
   const [additionalImages, setAdditionalImages] = useState([])
-  const [speakers, setSpeakers] = useState([makeSpeaker()])
   const [startDate, setStartDate] = useState('')
   const [startTime, setStartTime] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -145,11 +139,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [selectedReminders, setSelectedReminders] = useState([1440, 60, 30])
   const [customReminderValue, setCustomReminderValue] = useState('')
   const [customReminderUnit, setCustomReminderUnit] = useState('minutes')
-  const [notifyOnPublish, setNotifyOnPublish] = useState(false)
-  const [notificationTitle, setNotificationTitle] = useState('')
-  const [notificationMessage, setNotificationMessage] = useState('')
-  const [audience, setAudience] = useState('All Members')
-  const [audienceId, setAudienceId] = useState('')
   const [audienceCollections, setAudienceCollections] = useState({ ministries: [], cells: [], segments: [], groups: [] })
   const [visibility, setVisibility] = useState('members')
   const [status, setStatus] = useState('DRAFT')
@@ -172,25 +161,11 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     ]).catch(() => {})
   }, [])
 
-  const audienceChoices = audience === 'Unit'
-    ? audienceCollections.ministries
-    : audience === 'Fellowship' || audience === 'Cell'
-      ? audienceCollections.cells
-      : audience === 'Segment'
-        ? audienceCollections.segments
-        : audience === 'Group' ? audienceCollections.groups : []
-
   const eventAudienceChoices = eventAudienceKind === 'ministry'
     ? audienceCollections.ministries
     : eventAudienceKind === 'group'
       ? [...audienceCollections.cells, ...audienceCollections.segments]
       : []
-
-  const changeAudience = (value) => { setAudience(value); setAudienceId('') }
-
-  const speakerUpdate = (id, field, value) => {
-    setSpeakers((current) => current.map((speaker) => speaker.id === id ? { ...speaker, [field]: value } : speaker))
-  }
 
   const pickupUpdate = (pickupPointId, field, value) => setPickupLocations((current) => current.map((pickup) => pickup.busPickupPointId === pickupPointId ? { ...pickup, [field]: value } : pickup))
   const togglePickupPoint = (pickupPointId, active) => setPickupLocations((current) => setPickupActive(current, pickupPointId, active))
@@ -198,8 +173,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const clearAllPickups = () => setPickupLocations((current) => clearPickupPoints(current))
   const applyUniformPickupTime = () => setPickupLocations((current) => applyPickupTimeToActive(current, uniformPickupTime))
 
-  const addSpeaker = () => setSpeakers((current) => [...current, makeSpeaker()])
-  const removeSpeaker = (id) => setSpeakers((current) => current.filter((speaker) => speaker.id !== id))
   const updateTicketType = (id, key, value) => setTicketTypes((current) => current.map((ticket) => ticket.id === id ? { ...ticket, [key]: value } : ticket))
   const addTicketType = () => setTicketTypes((current) => [...current, makeTicketType()])
   const removeTicketType = (id) => setTicketTypes((current) => current.length > 1 ? current.filter((ticket) => ticket.id !== id) : current)
@@ -241,8 +214,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
     if (['ministry', 'group'].includes(eventAudienceKind) && !eventAudienceId) return 'Choose the ministry or group for this audience.'
     if (visibility === 'ministry' && eventAudienceKind !== 'ministry') return 'Ministry visibility requires a ministry audience.'
     if (churchBusAvailable && activePickupPoints(pickupLocations).length === 0) return 'Activate at least one GIC pickup point when church bus transportation is enabled.'
-    if (notifyOnPublish && !notificationTitle.trim()) return 'Notification title is required when publish notifications are enabled.'
-    if (notifyOnPublish && !notificationMessage.trim()) return 'Notification message is required when publish notifications are enabled.'
     return ''
   }
 
@@ -265,7 +236,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       ...selectedReminders,
       ...(customReminderValue && Number(customReminderValue) > 0 ? [Number(customReminderValue) * (customReminderUnit === 'hours' ? 60 : customReminderUnit === 'days' ? 1440 : 1)] : []),
     ]))
-    const filteredSpeakers = speakers.filter((speaker) => speaker.name.trim() || speaker.title.trim() || speaker.description.trim())
     const ticketTypeValues = paidAttendance ? ticketTypes.map((ticket) => ({
       id: ticket.id,
       name: ticket.name.trim(),
@@ -279,7 +249,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
         : { mode: 'physical', venue: { name: venueName.trim(), address: address.trim(), landmark: landmark.trim() || undefined, mapUrl: locationLink.trim() || undefined } }
     return {
       title: title.trim(),
-      description: shortDescription.trim() || fullDescription.trim() || null,
+      description: fullDescription.trim() || shortDescription.trim() || null,
       eventType,
       startsAt: start,
       endsAt: allDayEvent ? null : end,
@@ -305,7 +275,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       onlineAccessInstructions: streamOnline ? streamInstructions.trim() || null : null,
       busTransportEnabled: churchBusAvailable,
       locationType: eventFormat,
-      notifyOnPublish: notifyOnPublish,
+      notifyOnPublish: true,
       sendRegistrationConfirmation: registrationRequired && sendConfirmation,
       organizationKind,
       organizationId,
@@ -325,7 +295,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
         schedule: { timezone: timeZone, start, end, allDay: allDayEvent, recurrence: recurrence || undefined },
         location,
         attendance: attendanceMode,
-        speakers: filteredSpeakers.map((speaker) => ({ name: speaker.name.trim(), role: speaker.title.trim() || undefined, bio: speaker.description.trim() || undefined, photoUrl: speaker.photoUrl || undefined })),
         registration: registrationRequired ? {
           opensAt: toIso(registrationOpensDate, registrationOpensTime, eventTimeZone),
           closesAt: toIso(registrationClosesDate, registrationClosesTime, eventTimeZone),
@@ -341,7 +310,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
         transport: churchBusAvailable ? { pickupPoints: activePickupPoints(pickupLocations).map((pickup) => ({ id: pickup.busPickupPointId, name: pickup.name.trim(), address: pickup.address.trim(), pickupTime: toIso(startDate, pickup.pickupTime || startTime || '09:00', eventTimeZone), seats: Number(pickup.capacity || 1), seatsTaken: 0 })), feeIncludedInTicket: false, returnTrip: false, requireSelection: true } : undefined,
         streaming: streamOnline ? { platform: toPlatformId(streamPlatform), url: streamUrl.trim(), instructions: streamInstructions.trim() || undefined, revealTo: 'registered_only' } : undefined,
         reminders: { enabled: sendReminders, offsetsMinutes: sendReminders ? reminderOffsets : [], channels: ['in_app', 'push'] },
-        announcement: notifyOnPublish ? { notifyOnPublish: true, title: notificationTitle.trim() || title.trim(), message: notificationMessage.trim(), audience: eventAudience, channels: ['in_app', 'push'] } : undefined,
+        announcement: { notifyOnPublish: true, title: title.trim(), message: shortDescription.trim() || fullDescription.trim(), audience: eventAudience, channels: ['in_app', 'push'] },
       },
     }
   }
@@ -394,9 +363,9 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       }
 
       if (mode === 'publish') {
-        await adminApi(`/api/admin/events/${created.id}/status`, {
+          await adminApi(`/api/admin/events/${created.id}/status`, {
           method: 'PATCH',
-          body: JSON.stringify({ status: 'PUBLISHED', notifyMembers: notifyOnPublish }),
+          body: JSON.stringify({ status: 'PUBLISHED', notifyMembers: true }),
         })
       }
 
@@ -462,22 +431,6 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                   event.target.value = ''
                 }} /><label className="upload-action" htmlFor="additional-images-input"><ImageIcon size={13}/> Add images</label></div>
                 {additionalImages.length > 0 && <div className="image-gallery-preview">{additionalImages.map((url, index) => <div className="image-gallery-preview-item" key={`${url}-${index}`}><img src={url} alt={`Additional event ${index + 1}`} /><button type="button" onClick={() => setAdditionalImages((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove additional image ${index + 1}`}>×</button></div>)}</div>}
-              </div>
-
-              <div className="event-form-section">
-                <h3>Speakers</h3>
-                <p className="event-section-description">Add the people leading or contributing to this event.</p>
-                {speakers.map((speaker, index) => (
-                  <div className="speaker-card" key={speaker.id}>
-                    <div className="speaker-header"><strong>Speaker {index + 1}</strong>{speakers.length > 1 && <button type="button" className="icon-btn" onClick={() => removeSpeaker(speaker.id)} aria-label="Remove speaker"><Trash2 size={14} /></button>}</div>
-                    <div className="modern-field-grid">
-                      <label className="modern-field"><span>Speaker name</span><input value={speaker.name} onChange={(event) => speakerUpdate(speaker.id, 'name', event.target.value)} /></label>
-                      <label className="modern-field"><span>Speaker title / role</span><input value={speaker.title} onChange={(event) => speakerUpdate(speaker.id, 'title', event.target.value)} placeholder="Pastor / Guest Minister" /></label>
-                    </div>
-                    <div className="modern-field-grid"><label className="modern-field"><span>Biography</span><textarea value={speaker.description} onChange={(event)=>speakerUpdate(speaker.id,'description',event.target.value)} rows="2"/></label><label className="modern-field"><span>Photo URL</span><input type="url" value={speaker.photoUrl} onChange={(event)=>speakerUpdate(speaker.id,'photoUrl',event.target.value)} placeholder="https://..."/></label></div>
-                  </div>
-                ))}
-                <button type="button" className="btn secondary" onClick={addSpeaker}><Plus size={14}/> Add Speaker</button>
               </div>
 
               <div className="event-form-section">
@@ -637,15 +590,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
               </div>
 
               <div className="event-form-section">
-                <h3 className="visually-hidden">Publish notification details</h3>
-                <label className="check"><input type="checkbox" checked={notifyOnPublish} onChange={(event) => setNotifyOnPublish(event.target.checked)} /> Notify members when published</label>
-                {notifyOnPublish && (
-                  <>
-                    <label className="modern-field full"><span>Notification title</span><input value={notificationTitle} onChange={(event) => setNotificationTitle(event.target.value)} placeholder={title || 'Event title'} /></label>
-                    <label className="modern-field full"><span>Notification message</span><textarea value={notificationMessage} onChange={(event) => setNotificationMessage(event.target.value)} rows="3" placeholder="Join us this Sunday for our Celebration Service." /></label>
-                    <div className="audience-controls"><label className="modern-field"><span>Audience type</span><select value={audience} onChange={(event) => changeAudience(event.target.value)}>{AUDIENCE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></label>{audience !== 'All Members' && <label className="modern-field"><span>Select {audience.toLowerCase()}</span><select value={audienceId} onChange={(event) => setAudienceId(event.target.value)}><option value="">{audienceChoices.length ? `Select ${audience.toLowerCase()}` : `No ${audience.toLowerCase()} available`}</option>{audienceChoices.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}</div>
-                  </>
-                )}
+                <h3>Publish notification</h3>
+                <p className="event-section-description">A notification with the event title and description is sent to members when this event is published.</p>
               </div>
 
               <div className="event-form-section">

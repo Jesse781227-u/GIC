@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo, useRef, useContext, useCallback, c
 import { createPortal } from 'react-dom'
 import './bugfix.css'
 import './birthday.css'
+import './event-details.css'
 import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, listenForForegroundMessages, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Heart, Trash2, Volume2, VolumeX,
-  Play, Pause, CheckCircle2, X
+  Play, Pause, CheckCircle2, Expand, Share2, X
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
@@ -1834,6 +1835,8 @@ function MixlrRecordingPage() {
 
 function EventDetails() {
   const { id } = useParams()
+  const [flyerExpanded, setFlyerExpanded] = useState(false)
+  const [shareMessage, setShareMessage] = useState('')
   const staticEvent = events.find(x => x.id === id)
   const [remoteEvent, setRemoteEvent] = useState(null)
   const [registration, setRegistration] = useState(null)
@@ -1857,7 +1860,34 @@ function EventDetails() {
     return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p></div></MemberShell>
   }
   const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
-  return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{!e.registrationRequired ? <p className="muted">Registration is not required for this event.</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
+  const shareEvent = async () => {
+    const shareUrl = `${window.location.origin}/events/${encodeURIComponent(e.id)}`
+    const shareData = { title: e.title, text: e.description || `Join us for ${e.title}.`, url: shareUrl }
+    try {
+      if (navigator.share) await navigator.share(shareData)
+      else {
+        await navigator.clipboard.writeText(`${shareData.text} ${shareUrl}`)
+        setShareMessage('Event link copied.')
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') setShareMessage('Sharing is unavailable on this device.')
+    }
+  }
+  const description = e.description || e.builderData?.fullDescription || e.builderData?.shortDescription
+  return <MemberShell active="events" backTo="/events" title="">
+    <button type="button" className="event-flyer-expand" onClick={() => setFlyerExpanded(true)} aria-label={`Expand flyer for ${e.title}`}>
+      <img className="detail-image" src={e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} />
+      <span><Expand size={16} /> View flyer</span>
+    </button>
+    <div className="detail-body">
+      <div className="event-detail-heading"><h1>{e.title}</h1><button type="button" className="btn secondary event-share-button" onClick={shareEvent}><Share2 size={16}/> Share</button></div>
+      <div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />{e.isPaid ? 'Paid' : 'Free'}</span></div>
+      {description && <p className="event-description">{description}</p>}
+      {shareMessage && <p className="muted" role="status">{shareMessage}</p>}
+      {!e.registrationRequired ? <p className="muted">Registration is not required for this event.</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}
+    </div>
+    {flyerExpanded && createPortal(<div className="event-flyer-viewer" role="dialog" aria-modal="true" aria-label={`${e.title} flyer`} onClick={() => setFlyerExpanded(false)}><button type="button" className="event-flyer-viewer-close" onClick={() => setFlyerExpanded(false)} aria-label="Close flyer"><X size={22}/></button><img src={e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} onClick={(event) => event.stopPropagation()} /></div>, document.body)}
+  </MemberShell>
 }
 
 function EventRegistration() {
