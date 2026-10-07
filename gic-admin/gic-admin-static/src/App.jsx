@@ -654,7 +654,6 @@ function AttendanceOverview(){
  const [filters,setFilters]=useState({
    occurrenceId: '', eventId: '', recordingId: '', date: '', gender: '', ageGroupId: '',
  })
- const [breakdown,setBreakdown]=useState('Age Group')
 
  const endpoint = tab === 'Services' ? 'service' : tab === 'Event Registrations' ? 'registrations' : 'mixlr'
 
@@ -711,13 +710,11 @@ function AttendanceOverview(){
      ? [['EVENT', 'eventId', options.events, 'All events', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
      : [['RECORDING', 'recordingId', options.recordings, 'All recordings', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
  const allFilters = filterSets
- const breakdownOptions = ['Gender','Age Group','Relationship Status','Ministry','Unit','Fellowship','Cell','Group','Segment']
-
  const tableHeaders = tab === 'Services'
-   ? [breakdown, 'In person', 'Online', 'Not attending', 'No response', 'Total']
+   ? ['Service', 'In person', 'Online', 'Not attending', 'No response', 'Total']
    : tab === 'Event Registrations'
-     ? [breakdown, 'Confirmed', 'Waitlisted', 'Pending', 'Total']
-     : [breakdown, 'Listeners', 'Plays', 'Listening time', 'Identified']
+     ? ['Event', 'Confirmed', 'Waitlisted', 'Pending', 'Total']
+     : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
 
  const tableRows = summary.rows || []
  const emptyMessage = tab === 'Services' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No attendance responses yet') : tab === 'Event Registrations' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No registrations yet') : (filters.recordingId ? 'No listeners recorded for this recording' : 'No Mixlr recordings available')
@@ -734,7 +731,6 @@ function AttendanceOverview(){
    {error && <div className="empty-message">Attendance data is unavailable right now.</div>}
    {!loading && !error && (
      <>
-       <div className="report-toolbar"><label><span>BREAKDOWN BY</span><select value={breakdown} onChange={(event)=>setBreakdown(event.target.value)}>{breakdownOptions.map((item)=><option key={item}>{item}</option>)}</select></label></div>
        <div className="table-wrap">
          <table>
            <thead>
@@ -768,7 +764,7 @@ function AttendanceOverview(){
                  }
 
                  return <tr key={`${row.occurrenceId || row.serviceLabel || 'attendance'}-${index}`}>
-                   <td><b>{row[breakdown.toLowerCase().replaceAll(' ','')] || row.serviceLabel || row.eventTitle || row.occurrenceId || breakdown}</b></td>
+                   <td><b>{row.serviceLabel || row.eventTitle || row.occurrenceId || 'Service'}</b></td>
                    <td>{row.inPerson || 0}</td>
                    <td>{row.online || 0}</td>
                    <td>{row.notAttending || 0}</td>
