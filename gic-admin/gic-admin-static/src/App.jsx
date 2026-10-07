@@ -368,6 +368,29 @@ const LiveActivityLog = function LiveActivityLog() {
 }
 
 function ModernEvents(){
+ const [items,setItems]=useState([])
+ const [query,setQuery]=useState('')
+ const [status,setStatus]=useState('ALL')
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const [createOpen,setCreateOpen]=useState(false)
+ const load=()=>fetchAdminApi('/api/admin/events').then(({events:records=[]})=>{setItems(records);setError('')}).catch((requestError)=>setError(requestError.message||'Events could not be loaded.')).finally(()=>setLoading(false))
+ useEffect(()=>{load()},[])
+ const visible=items.filter((event)=>`${event.title||''} ${event.eventType||''} ${event.venueName||event.location||''}`.toLowerCase().includes(query.toLowerCase())&&(status==='ALL'||event.status===status))
+ const onCreated=()=>{setCreateOpen(false);setLoading(true);load()}
+ return <Page title="Events" subtitle="Manage published events, registrations, transport, and reminders" action={<button className="btn primary" onClick={()=>setCreateOpen(true)}><Plus size={15}/> Create Event</button>}>
+  <Card className="table-card modern-events-card">
+   <div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)} aria-label="Filter events by status"><option value="ALL">All statuses</option><option value="PUBLISHED">Published</option><option value="DRAFT">Draft</option><option value="ARCHIVED">Archived</option></select><Link className="tool" to="/events/registrations"><ClipboardList size={14}/> Registrations</Link></div>
+   {loading&&<div className="empty-message">Loading events...</div>}
+   {!loading&&error&&<div className="empty-message" role="alert">{error}</div>}
+   {!loading&&!error&&!visible.length&&<div className="empty-message">{items.length?'No events match these filters.':'No events yet. Create an event to get started.'}</div>}
+   {!loading&&!error&&visible.length>0&&<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.flyerUrl||event.imageUrl?<img src={event.flyerUrl||event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={20}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{event.startsAt?new Date(event.startsAt).toLocaleString():'Date to be announced'} <span>·</span> {event.venueName||event.location||'Location to be announced'}</small></div><div className="reg-count"><b>{event.registrationCount||0}</b><small>Registrations</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':'draft')}>{event.status}</span><MoreHorizontal size={17}/></Link>)}</div>}
+  </Card>
+  {createOpen&&<AdminCreateEventModal onClose={()=>setCreateOpen(false)} onCreated={onCreated}/>}
+ </Page>
+}
+
+function LegacyModernEvents(){
   const navigate=useNavigate()
  const [events,setEvents]=useState([])
  const [query,setQuery]=useState('')
