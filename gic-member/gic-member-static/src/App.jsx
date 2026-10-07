@@ -8,12 +8,13 @@ import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Heart, Trash2, Volume2, VolumeX,
-  Play, Pause, CheckCircle2, Expand, Share2, X
+  Play, Pause, CheckCircle2, Expand, Share2, Video, X
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
 import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
+import { createCalendarFile, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -1419,7 +1420,7 @@ function HomePage() {
 
 function EventRow({ event, onOpenService }) {
   const displayEvent = event.isService ? getServiceDisplay(event) : event
-  const content = <><img src={displayEvent.image || displayEvent.imageUrl || GIC_LOGO} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleDateString() : '')} · {displayEvent.time || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')}</small><small className="event-location"><MapPin size={13} />{displayEvent.location || displayEvent.venueName || (displayEvent.isOnline ? 'Online' : 'Location to be announced')}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
+  const content = <>{displayEvent.flyerMediaType === 'video' && displayEvent.flyerMediaUrl ? <video className="event-row-video" src={displayEvent.flyerMediaUrl} muted playsInline preload="metadata" /> : <img src={displayEvent.flyerMediaUrl || displayEvent.image || displayEvent.imageUrl || GIC_LOGO} alt="" />}<div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleDateString() : '')} · {displayEvent.time || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')}</small><small className="event-location"><MapPin size={13} />{displayEvent.location || displayEvent.venueName || (displayEvent.isOnline ? 'Online' : 'Location to be announced')}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
   if (displayEvent.isService) {
     return <button type="button" className="event-row service-row" onClick={() => onOpenService?.(event)}>{content}</button>
   }
@@ -1837,29 +1838,50 @@ function EventDetails() {
   const { id } = useParams()
   const [flyerExpanded, setFlyerExpanded] = useState(false)
   const [shareMessage, setShareMessage] = useState('')
+  const [calendarAdded, setCalendarAdded] = useState(() => isCalendarEventSaved(id))
+  const [interested, setInterested] = useState(false)
   const staticEvent = events.find(x => x.id === id)
   const [remoteEvent, setRemoteEvent] = useState(null)
   const [registration, setRegistration] = useState(null)
   const [loading, setLoading] = useState(!staticEvent)
   useEffect(() => {
     if (staticEvent) return
-    fetchMemberApi(`/api/events/${id}`).then(({ event: record, registration: currentRegistration }) => {
+    fetchMemberApi(`/api/events/${id}`).then(({ event: record, registration: currentRegistration, interested: currentInterest }) => {
       setRegistration(currentRegistration)
+      setInterested(Boolean(currentInterest))
       setRemoteEvent({
       ...record,
       date: new Date(record.startsAt).toLocaleDateString(),
       time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      image: record.imageUrl || GIC_LOGO,
+      image: record.imageUrl || record.flyerMediaUrl || GIC_LOGO,
       })
     }).catch(() => {}).finally(() => setLoading(false))
   }, [id, staticEvent])
   if (loading) return <MemberShell active="events" title="Event" backTo="/events"><p className="center muted">Loading event...</p></MemberShell>
   const e = remoteEvent || staticEvent || events[0]
-  if (e.isService) {
-    const service = getServiceDisplay(e)
-    return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p></div></MemberShell>
-  }
   const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
+  const addToCalendar = async (calendarEvent = e) => {
+    try {
+      const invite = createCalendarFile(calendarEvent)
+      saveCalendarEvent(calendarEvent)
+      if (!calendarEvent.registrationRequired && !staticEvent && !interested) {
+        await fetchMemberApi(`/api/events/${encodeURIComponent(calendarEvent.id)}/interest`, { method: 'POST' })
+        setInterested(true)
+      }
+      const blob = new Blob([invite], { type: 'text/calendar;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${calendarEvent.id}.ics`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setCalendarAdded(true)
+    } catch {
+      setShareMessage(calendarEvent.startsAt || calendarEvent.startAt ? 'The event was added on this device, but your interest could not be synced.' : 'This event is missing its start time and cannot be added yet.')
+    }
+  }
   const shareEvent = async () => {
     const shareUrl = `${window.location.origin}/events/${encodeURIComponent(e.id)}`
     const shareData = { title: e.title, text: e.description || `Join us for ${e.title}.`, url: shareUrl }
@@ -1874,19 +1896,25 @@ function EventDetails() {
     }
   }
   const description = e.description || e.builderData?.fullDescription || e.builderData?.shortDescription
+  const flyerVideoUrl = e.flyerMediaType === 'video' ? e.flyerMediaUrl : ''
+  if (e.isService) {
+    const service = getServiceDisplay(e)
+    const serviceEvent = { ...service, id: e.id, title: service.title, startsAt: service.startAt }
+    return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p><button type="button" className="btn primary wide" onClick={() => addToCalendar(serviceEvent)}><CalendarDays size={16}/>{calendarAdded ? 'Added to My Events' : 'Add to Calendar'}</button></div></MemberShell>
+  }
   return <MemberShell active="events" backTo="/events" title="">
     <button type="button" className="event-flyer-expand" onClick={() => setFlyerExpanded(true)} aria-label={`Expand flyer for ${e.title}`}>
-      <img className="detail-image" src={e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} />
-      <span><Expand size={16} /> View flyer</span>
+      {flyerVideoUrl ? <video className="detail-image" src={flyerVideoUrl} muted playsInline preload="metadata" /> : <img className="detail-image" src={e.flyerMediaUrl || e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} />}
+      <span>{flyerVideoUrl ? <Video size={16}/> : <Expand size={16}/>} {flyerVideoUrl ? 'Play event video' : 'View flyer'}</span>
     </button>
     <div className="detail-body">
-      <div className="event-detail-heading"><h1>{e.title}</h1><button type="button" className="btn secondary event-share-button" onClick={shareEvent}><Share2 size={16}/> Share</button></div>
+      <div className="event-detail-heading"><h1>{e.title}</h1><div className="event-detail-actions"><button type="button" className="btn secondary event-share-button" onClick={shareEvent}><Share2 size={16}/> Share</button><button type="button" className="btn secondary event-share-button" onClick={() => addToCalendar()}><CalendarDays size={16}/>{calendarAdded ? 'Added' : 'Add to My Events'}</button></div></div>
       <div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />{e.isPaid ? 'Paid' : 'Free'}</span></div>
       {description && <p className="event-description">{description}</p>}
       {shareMessage && <p className="muted" role="status">{shareMessage}</p>}
-      {!e.registrationRequired ? <p className="muted">Registration is not required for this event.</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}
+      {!e.registrationRequired ? <p className="muted">{interested ? 'You are marked as interested.' : 'Registration is not required for this event.'}</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}
     </div>
-    {flyerExpanded && createPortal(<div className="event-flyer-viewer" role="dialog" aria-modal="true" aria-label={`${e.title} flyer`} onClick={() => setFlyerExpanded(false)}><button type="button" className="event-flyer-viewer-close" onClick={() => setFlyerExpanded(false)} aria-label="Close flyer"><X size={22}/></button><img src={e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} onClick={(event) => event.stopPropagation()} /></div>, document.body)}
+    {flyerExpanded && createPortal(<div className="event-flyer-viewer" role="dialog" aria-modal="true" aria-label={`${e.title} ${flyerVideoUrl ? 'video' : 'flyer'}`} onClick={() => setFlyerExpanded(false)}><button type="button" className="event-flyer-viewer-close" onClick={() => setFlyerExpanded(false)} aria-label="Close flyer"><X size={22}/></button>{flyerVideoUrl ? <video src={flyerVideoUrl} controls autoPlay playsInline onClick={(event) => event.stopPropagation()} /> : <img src={e.flyerMediaUrl || e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} onClick={(event) => event.stopPropagation()} />}</div>, document.body)}
   </MemberShell>
 }
 
@@ -1906,7 +1934,7 @@ function EventRegistration() {
     ]).then(([eventResponse, profileResponse]) => {
       if (!staticEvent) {
         const record = eventResponse.event
-        setEvent({ ...record, date: new Date(record.startsAt).toLocaleDateString(), time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), image: record.imageUrl || GIC_LOGO })
+        setEvent({ ...record, date: new Date(record.startsAt).toLocaleDateString(), time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), image: record.imageUrl || record.flyerMediaUrl || GIC_LOGO })
       }
       setProfile(profileResponse.profile)
     }).catch((requestError) => setError(requestError.message || 'Event registration is unavailable.'))
@@ -1930,7 +1958,7 @@ function EventRegistration() {
       }
       setSaving(false)
     }
-    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image } }))
+    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image, flyerMediaUrl: event.flyerMediaUrl, flyerMediaType: event.flyerMediaType, startsAt: event.startsAt, endsAt: event.endsAt, description: event.description } }))
     navigate(`/events/${event.id}/success`)
   }
 
@@ -1959,31 +1987,22 @@ function RegistrationSuccess() {
   const event = events.find((item) => item.id === id) || storedEvent || events[0]
   const [calendarAdded, setCalendarAdded] = useState(false)
   const handleAddToCalendar = () => {
-    const calendarEvent = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Global Impact Church//Events//EN',
-      'BEGIN:VEVENT',
-      `UID:${event.id}@gic.org`,
-      'DTSTAMP:20260905T000000Z',
-      'DTSTART:20261024T100000',
-      'DTEND:20261024T130000',
-      `SUMMARY:${event.title}`,
-      `LOCATION:${event.location.replace(',', '\\,')}`,
-      'DESCRIPTION:An exciting time of worship, word, workshops and encounters.',
-      'END:VEVENT',
-      'END:VCALENDAR'
-    ].join('\\r\\n')
-    const blob = new Blob([calendarEvent], { type: 'text/calendar;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${event.id}.ics`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
-    setCalendarAdded(true)
+    try {
+      const invite = createCalendarFile(event)
+      saveCalendarEvent(event)
+      const blob = new Blob([invite], { type: 'text/calendar;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${event.id}.ics`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setCalendarAdded(true)
+    } catch {
+      setCalendarAdded(false)
+    }
   }
 
   return <div className="success-page"><div className="success-card"><div className="success-icon green"><Check size={34} /></div><h1>You're Registered!</h1><p>You have successfully registered for<br /><b>{event.title}</b></p><button className="btn white wide" onClick={handleAddToCalendar}><CalendarDays size={16} /> {calendarAdded ? 'Calendar Invite Downloaded' : 'Add to Calendar'}</button><Link className="btn outline wide" to="/events">Back to Events</Link></div></div>
@@ -2474,9 +2493,14 @@ function EditProfile() {
 function MyRegistrations() {
   const [now, setNow] = useState(Date.now())
   const [remoteRegistrations, setRemoteRegistrations] = useState([])
+  const [remoteInterests, setRemoteInterests] = useState([])
+  const [calendarEvents] = useState(() => readCalendarEvents())
   useEffect(() => {
     fetchMemberApi('/api/events/registrations')
       .then(({ registrations = [] }) => setRemoteRegistrations(registrations))
+      .catch(() => {})
+    fetchMemberApi('/api/events/interests')
+      .then(({ interests = [] }) => setRemoteInterests(interests))
       .catch(() => {})
   }, [])
   const localRegistrations = events.filter((event) => {
@@ -2486,21 +2510,52 @@ function MyRegistrations() {
       return false
     }
   })
-  const registrations = [...remoteRegistrations.map((registration) => ({
+  const registeredEvents = remoteRegistrations.filter((registration) => registration.status !== 'CANCELLED').map((registration) => ({
     id: registration.eventId,
     title: registration.eventTitle,
     date: new Date(registration.startsAt).toLocaleDateString(),
     time: new Date(registration.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
     location: registration.location || 'Location to be announced',
     startAt: registration.startsAt,
+    endAt: registration.endsAt,
     pickupLocationName: registration.pickupLocationName,
     pickupLocationAddress: registration.pickupLocationAddress,
     pickupLocationTime: registration.pickupLocationTime,
     pickupManagerName: registration.pickupManagerName,
     pickupManagerPhone: registration.pickupManagerPhone,
     status: registration.status,
-    image: GIC_LOGO,
-  })), ...localRegistrations.filter((event) => !remoteRegistrations.some((registration) => registration.eventId === event.id))]
+    image: registration.imageUrl || registration.flyerMediaUrl || GIC_LOGO,
+    flyerMediaUrl: registration.flyerMediaUrl,
+    flyerMediaType: registration.flyerMediaType,
+    registered: true,
+  }))
+  const registrationIds = new Set(registeredEvents.map((event) => event.id))
+  const remoteEventIds = new Set(remoteRegistrations.map((registration) => registration.eventId))
+  const localEvents = localRegistrations.filter((event) => !remoteEventIds.has(event.id)).map((event) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(`gic_registration_${event.id}`) || 'null')
+      return { ...event, ...(stored?.event || {}), status: 'CONFIRMED', registered: true }
+    } catch {
+      return { ...event, status: 'CONFIRMED', registered: true }
+    }
+  })
+  const interestedEvents = remoteInterests.filter((interest) => !registrationIds.has(interest.eventId)).map((interest) => ({
+    id: interest.eventId,
+    title: interest.eventTitle,
+    date: new Date(interest.startsAt).toLocaleDateString(),
+    time: new Date(interest.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    location: interest.location || 'Location to be announced',
+    startAt: interest.startsAt,
+    endAt: interest.endsAt,
+    image: interest.imageUrl || interest.flyerMediaUrl || GIC_LOGO,
+    flyerMediaUrl: interest.flyerMediaUrl,
+    flyerMediaType: interest.flyerMediaType,
+    status: 'INTERESTED',
+    registered: false,
+    interested: true,
+  }))
+  const listedIds = new Set([...registrationIds, ...localEvents.map((event) => event.id), ...interestedEvents.map((event) => event.id)])
+  const registrations = [...registeredEvents, ...localEvents, ...interestedEvents, ...calendarEvents.filter((event) => !listedIds.has(event.id)).map((event) => ({ ...event, registered: false }))]
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
@@ -2513,8 +2568,11 @@ function MyRegistrations() {
       const minutes = Math.floor((remaining % 3600000) / 60000)
       const seconds = Math.floor((remaining % 60000) / 1000)
       return <article className="registered-event-card" key={event.id}>
-        <div className="registered-event-cover" style={{ backgroundImage: `url(${event.image})` }}><span className="status">Registered</span></div>
-         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':'Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
+        <Link className={`registered-event-cover ${event.flyerMediaType === 'video' ? 'has-video' : ''}`} to={`/events/${event.id}`} style={event.flyerMediaType === 'video' ? undefined : { backgroundImage: `url(${event.image || event.imageUrl || GIC_LOGO})` }} aria-label={`Open ${event.title}`}>
+          {event.flyerMediaType === 'video' && event.flyerMediaUrl && <><video src={event.flyerMediaUrl} muted playsInline preload="metadata"/><span className="registered-video-play"><Play size={15}/> Play video</span></>}
+          <span className="status">{event.registered ? event.status === 'WAITLISTED' ? 'Waitlisted' : 'Registered' : event.interested ? 'Interested' : 'Added to My Events'}</span>
+        </Link>
+         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':event.registered?'Event starts in':'Added to calendar · Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
       </article>
     }) : <div className="events-empty-state">
       <div className="events-empty-illustration" aria-hidden="true">

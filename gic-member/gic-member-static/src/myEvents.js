@@ -1,0 +1,68 @@
+export const CALENDAR_EVENTS_KEY = 'gic_member_calendar_events'
+
+export function readCalendarEvents(storage = globalThis.localStorage) {
+  try {
+    const records = JSON.parse(storage.getItem(CALENDAR_EVENTS_KEY) || '[]')
+    return Array.isArray(records) ? records : []
+  } catch {
+    return []
+  }
+}
+
+export function isCalendarEventSaved(eventId, storage = globalThis.localStorage) {
+  return readCalendarEvents(storage).some((event) => event.id === eventId)
+}
+
+export function saveCalendarEvent(event, storage = globalThis.localStorage) {
+  const current = readCalendarEvents(storage).filter((item) => item.id !== event.id)
+  const startsAt = event.startsAt || event.startAt
+  const savedEvent = {
+    id: event.id,
+    title: event.title,
+    date: event.date || (startsAt ? new Date(startsAt).toLocaleDateString() : ''),
+    time: event.time || (startsAt ? new Date(startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''),
+    location: event.location || event.venueName || 'Location to be announced',
+    image: event.image || event.imageUrl || '',
+    flyerMediaUrl: event.flyerMediaUrl || '',
+    flyerMediaType: event.flyerMediaType || '',
+    startsAt: startsAt ? new Date(startsAt).toISOString() : null,
+    endsAt: event.endsAt || event.endAt || null,
+    status: 'CALENDAR_ADDED',
+    addedAt: new Date().toISOString(),
+  }
+  storage.setItem(CALENDAR_EVENTS_KEY, JSON.stringify([...current, savedEvent]))
+  return savedEvent
+}
+
+function escapeCalendarText(value = '') {
+  return String(value).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
+}
+
+function toCalendarDate(value) {
+  return new Date(value).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+}
+
+export function createCalendarFile(event) {
+  const startsAt = event.startsAt || event.startAt
+  if (!startsAt || Number.isNaN(new Date(startsAt).getTime())) throw new Error('Event start time is unavailable.')
+  const start = new Date(startsAt)
+  const end = event.endsAt || event.endAt
+    ? new Date(event.endsAt || event.endAt)
+    : new Date(start.getTime() + 2 * 60 * 60 * 1000)
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Global Impact Church//Events//EN',
+    'BEGIN:VEVENT',
+    `UID:${escapeCalendarText(event.id)}@gic.org`,
+    `DTSTAMP:${toCalendarDate(new Date())}`,
+    `DTSTART:${toCalendarDate(start)}`,
+    `DTEND:${toCalendarDate(end)}`,
+    `SUMMARY:${escapeCalendarText(event.title)}`,
+    `LOCATION:${escapeCalendarText(event.location || event.venueName || '')}`,
+    `DESCRIPTION:${escapeCalendarText(event.description || '')}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ]
+  return lines.join('\r\n')
+}

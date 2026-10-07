@@ -17,6 +17,7 @@ import AdminEventOrganizationSetting from './AdminEventOrganizationSetting'
 import AdminCreateEventModal from './AdminCreateEventModal'
 import {onAuthStateChanged, signInWithEmailAndPassword, signOut} from 'firebase/auth'
 import './member-filters.css'
+import './admin-event-media.css'
 
 const purple='#4b20b5'
 const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
@@ -384,7 +385,7 @@ function ModernEvents(){
    {loading&&<div className="empty-message">Loading events...</div>}
    {!loading&&error&&<div className="empty-message" role="alert">{error}</div>}
    {!loading&&!error&&!visible.length&&<div className="empty-message">{items.length?'No events match these filters.':'No events yet. Create an event to get started.'}</div>}
-   {!loading&&!error&&visible.length>0&&<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.flyerUrl||event.imageUrl?<img src={event.flyerUrl||event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={20}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{event.startsAt?new Date(event.startsAt).toLocaleString():'Date to be announced'} <span>·</span> {event.venueName||event.location||'Location to be announced'}</small></div><div className="reg-count"><b>{event.registrationCount||0}</b><small>Registrations</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':'draft')}>{event.status}</span><MoreHorizontal size={17}/></Link>)}</div>}
+  {!loading&&!error&&visible.length>0&&<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.flyerUrl||event.imageUrl?<img src={event.flyerUrl||event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={20}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{event.startsAt?new Date(event.startsAt).toLocaleString():'Date to be announced'} <span>·</span> {event.venueName||event.location||'Location to be announced'}</small></div><div className="reg-count"><b>{event.registrationRequired?event.registrationCount||0:event.interestCount||0}</b><small>{event.registrationRequired?'Registrants':'Interested'}</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':'draft')}>{event.status}</span><MoreHorizontal size={17}/></Link>)}</div>}
   </Card>
   {createOpen&&<AdminCreateEventModal onClose={()=>setCreateOpen(false)} onCreated={onCreated}/>}
  </Page>
@@ -436,7 +437,15 @@ function AdminEventRegistrations({eventId}){
  const [loading,setLoading]=useState(true)
  const [error,setError]=useState('')
  useEffect(()=>{setLoading(true);fetchAdminApi(`/api/admin/events/${eventId}/registrations`).then(setData).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))},[eventId])
- return <div className="event-admin-section"><h3>Registrations</h3>{loading?<p className="muted">Loading registrations...</p>:error?<p className="event-form-error">{error}</p>:<><div className="transport-summary">{data.passengerCounts.filter((item)=>item.pickupLocationId).map((item)=><div key={item.pickupLocationId}><small>{item.pickupLocationName}</small><b>{item.passengerCount} passengers</b></div>)}{!data.passengerCounts.filter((item)=>item.pickupLocationId).length&&<p className="muted">No passenger selections yet.</p>}</div><div className="table-wrap"><table><thead><tr><th>Member</th><th>Phone</th><th>Status</th><th>Bus pickup</th><th>Registered</th></tr></thead><tbody>{data.registrations.map((item)=><tr key={item.id}><td><b>{item.memberName||item.memberId}</b></td><td>{item.memberPhone||'—'}</td><td><span className="badge blue">{item.status}</span></td><td>{item.pickupLocationName||'—'}</td><td>{item.registeredAt?new Date(item.registeredAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>{!data.registrations.length&&<p className="muted">No registrations yet.</p>}</>}</div>
+ return <div className="event-admin-section"><h3>Registrations</h3>{loading?<p className="muted">Loading registrations...</p>:error?<p className="event-form-error">{error}</p>:<><div className="transport-summary">{data.passengerCounts.filter((item)=>item.pickupLocationId).map((item)=><div key={item.pickupLocationId}><small>{item.pickupLocationName}</small><b>{item.passengerCount} passengers</b></div>)}{!data.passengerCounts.filter((item)=>item.pickupLocationId).length&&<p className="muted">No passenger selections yet.</p>}</div><div className="table-wrap"><table><thead><tr><th>Member profile</th><th>Contact</th><th>Status</th><th>Bus pickup</th><th>Registered</th></tr></thead><tbody>{data.registrations.map((item)=><tr key={item.id}><td><div className="admin-event-member-profile">{item.memberAvatar?<img src={item.memberAvatar} alt=""/>:<span>{(item.memberName||'?').slice(0,1).toUpperCase()}</span>}<div><b>{item.memberName||item.memberId}</b><small>{item.memberCenter||'Center not provided'}</small></div></div></td><td>{item.memberEmail||'—'}<small>{item.memberPhone||'—'}</small></td><td><span className="badge blue">{item.status}</span></td><td>{item.pickupLocationName||'—'}</td><td>{item.registeredAt?new Date(item.registeredAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>{!data.registrations.length&&<p className="muted">No registrations yet.</p>}</>}</div>
+}
+
+function AdminEventInterests({eventId}){
+ const [interests,setInterests]=useState([])
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ useEffect(()=>{fetchAdminApi(`/api/admin/events/${eventId}/interests`).then(({interests:items=[]})=>setInterests(items)).catch((requestError)=>setError(requestError.message||'Interested member profiles could not be loaded.')).finally(()=>setLoading(false))},[eventId])
+ return <div className="event-admin-section"><h3>Interested members ({interests.length})</h3>{loading?<p className="muted">Loading interested member profiles...</p>:error?<p className="event-form-error">{error}</p>:interests.length?<div className="table-wrap"><table><thead><tr><th>Member profile</th><th>Contact</th><th>Center</th><th>Interested since</th></tr></thead><tbody>{interests.map((item)=><tr key={item.id}><td><div className="admin-event-member-profile">{item.memberAvatar?<img src={item.memberAvatar} alt=""/>:<span>{(item.memberName||'?').slice(0,1).toUpperCase()}</span>}<div><b>{item.memberName||item.memberId}</b><small>{item.memberId}</small></div></div></td><td>{item.memberEmail||'—'}<small>{item.memberPhone||'—'}</small></td><td>{item.memberCenter||'—'}</td><td>{item.interestedAt?new Date(item.interestedAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>:<p className="muted">No members have marked interest yet.</p>}</div>
 }
 
 function EventReminders({eventId,eventStartsAt}){
@@ -468,15 +477,16 @@ function AdminEventDetails(){
  }
  if(error)return <Page title="Event details"><Card className="empty-message">{error}</Card></Page>
  if(!event)return <Page title="Event details"><Card className="empty-message">Loading event...</Card></Page>
- const tabs=['Overview','Registrations','Bus pickups','Reminders']
+ const tabs=['Overview','Registrations','Interested','Bus pickups','Reminders']
   return <Page title={event.title} subtitle={event.eventType}>
-    <div className="detail-toolbar modern-detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><span className="badge success">{event.registrationCount||0} registrations</span><button className="tool" onClick={remove} disabled={deleting}><Trash2 size={15}/>{deleting?'Deleting...':'Delete event'}</button></div>
+   <div className="detail-toolbar modern-detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><span className="badge success">{event.registrationRequired?`${event.registrationCount||0} registrants`:`${event.interestCount||0} interested`}</span><button className="tool" onClick={remove} disabled={deleting}><Trash2 size={15}/>{deleting?'Deleting...':'Delete event'}</button></div>
     {deleteError&&<Card className="empty-message" role="alert">{deleteError}</Card>}
     <Card className="modern-event-detail">
       <div className="modern-event-summary"><div><span className={'badge '+(event.status==='PUBLISHED'?'success':'draft')}>{event.status}</span><h2>{event.title}</h2><p><CalendarDays size={14}/> {new Date(event.startsAt).toLocaleString()} {event.endsAt&&`– ${new Date(event.endsAt).toLocaleString()}`}</p><p><MapPin size={14}/> {event.locationType==='ONLINE'?'Online':event.venueName||event.location||'Location to be announced'}</p></div><div className="event-detail-facts"><b>{event.registrationRequired?'Registration required':'Registration not required'}</b>{event.registrationCapacity&&<span>Capacity {event.registrationCapacity}</span>}{event.organizerUnit&&<span>Organizer: {event.organizerUnit}</span>}{event.isOnline&&<span>Online link configured</span>}{event.busTransportEnabled&&<span>Bus transportation enabled</span>}</div></div>
       <div className="tabs big">{tabs.map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}</div>
       {tab==='Overview'&&<div className="event-admin-section"><div className="modern-profile-grid"><div><small>Description</small><b>{event.description||'—'}</b></div><div><small>Contact person</small><b>{event.organizerContactPerson||'—'} {event.organizerContactPhone&&`· ${event.organizerContactPhone}`}</b></div><div><small>Online access</small><b>{event.onlineUrl||'—'}</b></div><div><small>Confirmation push</small><b>{event.sendRegistrationConfirmation?'Enabled':'Disabled'}</b></div></div><AdminEventOrganizationSetting event={event} onSaved={setEvent}/></div>}
       {tab==='Registrations'&&<AdminEventRegistrations eventId={id}/>}
+      {tab==='Interested'&&<AdminEventInterests eventId={id}/>}
       {tab==='Bus pickups'&&<PickupLocations eventId={id}/>}
       {tab==='Reminders'&&<EventReminders eventId={id} eventStartsAt={event.startsAt}/>}
     </Card>

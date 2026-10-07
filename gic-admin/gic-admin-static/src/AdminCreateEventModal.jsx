@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CalendarDays, X, Plus, Trash2, Upload, Image as ImageIcon } from 'lucide-react'
+import { CalendarDays, X, Plus, Trash2, Upload, Image as ImageIcon, Video } from 'lucide-react'
 import { adminAuth } from './firebase'
 import { activateAllPickupPoints, activePickupPoints, applyPickupTimeToActive, clearPickupPoints, mapPickupPoints, setPickupActive } from './pickupSelection'
 import { getGicServiceRecurrence } from './eventSchedule'
@@ -30,6 +30,18 @@ async function adminApi(path, options = {}) {
     try { throw new Error(JSON.parse(body).error || body) } catch (error) { if (error instanceof SyntaxError) throw new Error(body); throw error }
   }
   return response.json()
+}
+
+async function uploadEventFlyer(file) {
+  const user = adminAuth.currentUser
+  if (!user) throw new Error('Admin session is unavailable')
+  const token = await user.getIdToken()
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(`${API_BASE}/api/admin/notifications/media`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'Video upload failed.')
+  return payload.media
 }
 
 function toDateTimeValue(date, time) {
@@ -92,6 +104,9 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const [contactPhone, setContactPhone] = useState('')
   const [contactEmail, setContactEmail] = useState('')
   const [flyerUrl, setFlyerUrl] = useState('')
+  const [flyerMedia, setFlyerMedia] = useState(null)
+  const [flyerVideoPreview, setFlyerVideoPreview] = useState('')
+  const [uploadingFlyer, setUploadingFlyer] = useState(false)
   const [additionalImages, setAdditionalImages] = useState([])
   const [startDate, setStartDate] = useState('')
   const [startTime, setStartTime] = useState('')
@@ -160,6 +175,43 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
       adminApi('/api/admin/events').then(({ events: items = [] }) => setSavedForms(items.filter((item) => Array.isArray(item.registrationForm) && item.registrationForm.length).map((item) => ({ id: item.id, name: item.title, fields: item.registrationForm })))),
     ]).catch(() => {})
   }, [])
+  useEffect(() => () => { if (flyerVideoPreview) URL.revokeObjectURL(flyerVideoPreview) }, [flyerVideoPreview])
+
+  const handleFlyerUpload = async (changeEvent) => {
+    const file = changeEvent.target.files?.[0]
+    if (!file) return
+    setError('')
+    if (file.type === 'video/mp4') {
+      if (file.size > 25 * 1024 * 1024) {
+        setError('MP4 videos must be 25 MB or smaller.')
+        changeEvent.target.value = ''
+        return
+      }
+      setUploadingFlyer(true)
+      try {
+        const uploaded = await uploadEventFlyer(file)
+        setFlyerMedia(uploaded)
+        setFlyerUrl('')
+        setFlyerVideoPreview(URL.createObjectURL(file))
+      } catch (requestError) {
+        setError(requestError.message || 'Video upload failed.')
+      } finally {
+        setUploadingFlyer(false)
+      }
+    } else {
+      if (file.size > 8 * 1024 * 1024) {
+        setError('Event flyer images must be 8 MB or smaller.')
+        changeEvent.target.value = ''
+        return
+      }
+      try {
+        readImageFile(file, (url) => { setFlyerUrl(url); setFlyerMedia(null); setFlyerVideoPreview('') })
+      } catch (requestError) {
+        setError(requestError.message || 'Flyer upload failed.')
+      }
+    }
+    changeEvent.target.value = ''
+  }
 
   const eventAudienceChoices = eventAudienceKind === 'ministry'
     ? audienceCollections.ministries
@@ -179,7 +231,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
 
   const validate = () => {
     if (!title.trim()) return 'Event title is required.'
-    if (!flyerUrl) return 'An event flyer is required.'
+    if (!flyerUrl && !flyerMedia?.id) return 'An event flyer is required.'
     if (!shortDescription.trim()) return 'Short description is required.'
     if (!eventType) return 'Event type is required.'
     if (!startDate || (!allDayEvent && !startTime)) return 'Start date and time are required.'
@@ -289,6 +341,8 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
         visibility,
         audience: eventAudience,
         flyerUrl,
+        flyerMediaId: flyerMedia?.id,
+        flyerMediaType: flyerMedia?.mediaType,
         galleryUrls: additionalImages,
         contact: contactName.trim() || contactPhone.trim() || contactEmail.trim() ? { name: contactName.trim(), phone: contactPhone.trim() || undefined, email: contactEmail.trim() || undefined } : undefined,
         coOrganizerIds: [],
@@ -380,7 +434,7 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
   const confirmationPreview = (
     <div className="event-modal-preview">
       <div className="event-preview-hero">
-        {flyerUrl ? <img src={flyerUrl} alt={title || 'Event flyer'} /> : <div className="event-image-placeholder"><CalendarDays size={18} /></div>}
+        {flyerVideoPreview ? <video src={flyerVideoPreview} controls playsInline /> : flyerUrl ? <img src={flyerUrl} alt={title || 'Event flyer'} /> : <div className="event-image-placeholder"><CalendarDays size={18} /></div>}
       </div>
       <h3>{title || 'Untitled event'}</h3>
       <p>{shortDescription || 'No short description yet.'}</p>
@@ -421,9 +475,9 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
                 <label className="modern-field full"><span>Organizing unit / fellowship</span><select value={organizationKey} onChange={(event) => setOrganizationKey(event.target.value)}><option value="">No organization</option>{organizations.map((item) => <option value={`${item.kind || 'ministry'}_${item.id}`} key={item.id}>{item.name} · {item.type || item.kind || 'Organization'}</option>)}</select></label>
                 <div className="modern-field-grid"><label className="modern-field"><span>Contact name</span><input value={contactName} onChange={(event)=>setContactName(event.target.value)}/></label><label className="modern-field"><span>Contact phone</span><input type="tel" value={contactPhone} onChange={(event)=>setContactPhone(event.target.value)}/></label></div>
                 <label className="modern-field full"><span>Contact email</span><input type="email" value={contactEmail} onChange={(event)=>setContactEmail(event.target.value)}/></label>
-                <label className="modern-field full"><span>Event flyer</span><div className={`flyer-upload ${flyerUrl ? 'has-image' : 'empty'}`}>
-                  <input id="event-flyer-input" className="file-input-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) { try { readImageFile(file, setFlyerUrl) } catch (requestError) { setError(requestError.message || 'Flyer upload failed.') } } }} />
-                  {flyerUrl ? <><img src={flyerUrl} alt="Event flyer preview" /><div className="flyer-upload-actions"><label className="upload-action" htmlFor="event-flyer-input">Change</label><button type="button" className="upload-action" onClick={() => setFlyerUrl('')}>Remove</button></div></> : <label className="flyer-upload-copy" htmlFor="event-flyer-input"><Upload size={20}/><b>Upload event flyer</b><small>PNG, JPG or WEBP</small></label>}
+                <label className="modern-field full"><span>Event flyer or video</span><div className={`flyer-upload ${flyerUrl || flyerVideoPreview ? 'has-image' : 'empty'}`}>
+                  <input id="event-flyer-input" className="file-input-hidden" type="file" accept="image/jpeg,image/png,image/webp,video/mp4" onChange={handleFlyerUpload} />
+                  {flyerVideoPreview ? <><video src={flyerVideoPreview} controls playsInline /><div className="flyer-upload-actions"><label className="upload-action" htmlFor="event-flyer-input">Change</label><button type="button" className="upload-action" onClick={() => { setFlyerMedia(null); setFlyerVideoPreview('') }}>Remove</button></div></> : flyerUrl ? <><img src={flyerUrl} alt="Event flyer preview" /><div className="flyer-upload-actions"><label className="upload-action" htmlFor="event-flyer-input">Change</label><button type="button" className="upload-action" onClick={() => setFlyerUrl('')}>Remove</button></div></> : <label className="flyer-upload-copy" htmlFor="event-flyer-input"><Upload size={20}/><b>{uploadingFlyer ? 'Uploading video...' : 'Upload image or MP4 video'}</b><small>Images up to 8 MB · MP4 up to 25 MB</small></label>}
                 </div></label>
                 <div className="modern-field full"><span>Additional images</span><input id="additional-images-input" className="file-input-hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => {
                   const files = Array.from(event.target.files || [])
@@ -615,13 +669,13 @@ export default function AdminCreateEventModal({ onClose, onCreated }) {
           {previewMode ? (
             <>
               <button type="button" className="btn tertiary" onClick={() => setPreviewMode(false)}>Back to edit</button>
-              <button type="button" className="btn primary" onClick={() => saveEvent('publish')} disabled={saving}>{saving ? 'Publishing...' : 'Confirm publish'}</button>
+              <button type="button" className="btn primary" onClick={() => saveEvent('publish')} disabled={saving||uploadingFlyer}>{saving ? 'Publishing...' : 'Confirm publish'}</button>
             </>
           ) : (
             <>
               <button type="button" className="btn tertiary" onClick={onClose}>Cancel</button>
-              <button type="button" className="btn secondary" onClick={() => saveEvent('draft')} disabled={saving}>{saving ? 'Saving...' : 'Save Draft'}</button>
-              <button type="button" className="btn primary" onClick={() => { const validationError = validate(); if (validationError) { setError(validationError); return } setPreviewMode(true) }} disabled={saving||paidAttendance} title={paidAttendance?'Payment processing must be enabled before publishing':'Publish event'}>Publish Event</button>
+              <button type="button" className="btn secondary" onClick={() => saveEvent('draft')} disabled={saving||uploadingFlyer}>{saving ? 'Saving...' : 'Save Draft'}</button>
+              <button type="button" className="btn primary" onClick={() => { const validationError = validate(); if (validationError) { setError(validationError); return } setPreviewMode(true) }} disabled={saving||uploadingFlyer||paidAttendance} title={paidAttendance?'Payment processing must be enabled before publishing':'Publish event'}>Publish Event</button>
             </>
           )}
         </div>

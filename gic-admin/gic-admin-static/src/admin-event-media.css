@@ -1,0 +1,7 @@
+.flyer-upload>video{display:block;width:100%;max-height:280px;object-fit:contain;background:#111}
+.event-modal-preview .event-preview-hero>video{display:block;width:100%;max-height:360px;object-fit:contain;background:#111}
+.admin-event-member-profile{display:flex;align-items:center;gap:9px;min-width:190px}
+.admin-event-member-profile>img,.admin-event-member-profile>span{display:grid;flex:none;width:36px;height:36px;place-items:center;border-radius:50%;object-fit:cover;background:#ebe8f1;color:#4b20b5;font-size:12px;font-weight:700}
+.admin-event-member-profile>div{display:flex;min-width:0;flex-direction:column;gap:3px}
+.admin-event-member-profile small,.event-admin-section td>small{display:block;margin-top:3px;color:var(--muted);font-size:9px}
+@media(max-width:620px){.admin-event-member-profile{min-width:155px}.flyer-upload>video{max-height:210px}}

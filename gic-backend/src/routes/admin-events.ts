@@ -6,6 +6,7 @@ import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import {
   events,
+  eventInterests,
   eventPickupLocations,
   eventRegistrations,
   eventReminders,
@@ -155,12 +156,19 @@ function eventValues(value: z.infer<typeof eventSchema>, createdBy: string, chur
 }
 
 async function eventWithCounts(event: typeof events.$inferSelect) {
-  const counts = await db.select({ status: eventRegistrations.status, value: count() }).from(eventRegistrations).where(and(
-    eq(eventRegistrations.eventId, event.id),
-  )).groupBy(eventRegistrations.status);
+  const [counts, interestCount] = await Promise.all([
+    db.select({ status: eventRegistrations.status, value: count() }).from(eventRegistrations).where(and(
+      eq(eventRegistrations.eventId, event.id),
+      eq(eventRegistrations.churchId, event.churchId),
+    )).groupBy(eventRegistrations.status),
+    db.select({ value: count() }).from(eventInterests).where(and(
+      eq(eventInterests.eventId, event.id),
+      eq(eventInterests.churchId, event.churchId),
+    )),
+  ]);
   const confirmed = Number(counts.find((row) => row.status === "CONFIRMED")?.value || 0);
   const waitlisted = Number(counts.find((row) => row.status === "WAITLISTED")?.value || 0);
-  return { ...event, registrationCount: confirmed, waitlistCount: waitlisted };
+  return { ...event, registrationCount: confirmed, waitlistCount: waitlisted, interestCount: Number(interestCount[0]?.value || 0) };
 }
 
 async function notifyEventRegistrants(churchId: string, event: typeof events.$inferSelect, type: "EVENT_UPDATED" | "EVENT_CANCELLED", actorId: string, body: string) {
@@ -399,7 +407,10 @@ app.get("/:id/registrations", async (c) => {
     id: eventRegistrations.id,
     memberId: eventRegistrations.memberId,
     memberName: members.displayName,
+    memberEmail: members.email,
     memberPhone: members.phone,
+    memberAvatar: members.avatar,
+    memberCenter: members.center,
     status: eventRegistrations.status,
     attendanceStatus: eventRegistrations.attendanceStatus,
     formAnswers: eventRegistrations.formAnswers,
@@ -422,6 +433,27 @@ app.get("/:id/registrations", async (c) => {
     .where(and(eq(eventRegistrations.eventId, eventId), eq(eventRegistrations.status, "CONFIRMED")))
     .groupBy(eventRegistrations.pickupLocationId, eventPickupLocations.locationName);
   return c.json({ registrations, passengerCounts });
+});
+
+app.get("/:id/interests", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const eventId = c.req.param("id");
+  const event = await db.query.events.findFirst({ where: and(eq(events.id, eventId), eq(events.churchId, churchId)) });
+  if (!event) return c.json({ error: "Event not found" }, 404);
+  const interests = await db.select({
+    id: eventInterests.id,
+    memberId: members.id,
+    memberName: members.displayName,
+    memberEmail: members.email,
+    memberPhone: members.phone,
+    memberAvatar: members.avatar,
+    memberCenter: members.center,
+    interestedAt: eventInterests.createdAt,
+  }).from(eventInterests)
+    .innerJoin(members, and(eq(members.id, eventInterests.memberId), eq(members.churchId, churchId)))
+    .where(and(eq(eventInterests.eventId, eventId), eq(eventInterests.churchId, churchId)))
+    .orderBy(desc(eventInterests.createdAt));
+  return c.json({ interests });
 });
 
 app.patch("/:id/registrations/:registrationId/attendance", async (c) => {

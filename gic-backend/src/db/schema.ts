@@ -426,6 +426,19 @@ export const eventRegistrations = pgTable(
   })
 );
 
+export const eventInterests = pgTable("event_interests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  churchId: uuid("church_id").notNull().references(() => churches.id),
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  memberId: text("member_id").notNull().references(() => members.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  eventMemberUnique: unique("event_interests_event_member_unique").on(t.eventId, t.memberId),
+  eventIdx: index("event_interests_event_id_idx").on(t.eventId),
+  memberIdx: index("event_interests_member_id_idx").on(t.memberId),
+  churchIdx: index("event_interests_church_id_idx").on(t.churchId),
+}));
+
 export const eventReminders = pgTable(
   "event_reminders",
   {
