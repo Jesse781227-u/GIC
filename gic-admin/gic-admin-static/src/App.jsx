@@ -649,10 +649,10 @@ function AttendanceOverview(){
    rows: [],
   })
  const [options,setOptions]=useState({
-   ageGroups: [], genders: [], ministries: [], units: [], fellowships: [], cells: [], groups: [], segments: [], relationshipStatuses: [], events: [], recordings: [],
+   ageGroups: [], genders: [], events: [], recordings: [],
  })
  const [filters,setFilters]=useState({
-   occurrenceId: '', eventId: '', recordingId: '', gender: '', ageGroupId: '', ministryId: '', unitId: '', fellowshipId: '', cellId: '', groupId: '', segmentId: '', relationshipStatus: '',
+   occurrenceId: '', eventId: '', recordingId: '', date: '', gender: '', ageGroupId: '',
  })
  const [breakdown,setBreakdown]=useState('Age Group')
 
@@ -673,13 +673,6 @@ function AttendanceOverview(){
   if (tab === 'Mixlr' && filters.recordingId) params.set('recordingId', filters.recordingId)
   if (filters.gender) params.set('gender', filters.gender)
   if (filters.ageGroupId) params.set('ageGroupId', filters.ageGroupId)
-  if (filters.ministryId) params.set('ministryId', filters.ministryId)
-  if (filters.unitId) params.set('unitId', filters.unitId)
-  if (filters.fellowshipId) params.set('fellowshipId', filters.fellowshipId)
-  if (filters.cellId) params.set('cellId', filters.cellId)
-  if (filters.groupId) params.set('groupId', filters.groupId)
-  if (filters.segmentId) params.set('segmentId', filters.segmentId)
-  if (filters.relationshipStatus) params.set('relationshipStatus', filters.relationshipStatus)
 
   fetchAdminApi(`/api/admin/attendance/${endpoint}${params.toString() ? `?${params.toString()}` : ''}`)
     .then((payload)=>{
@@ -692,7 +685,7 @@ function AttendanceOverview(){
        setServiceOptions(payload.rows || [])
       }
       setOptions(payload.options || {
-        ageGroups: [], genders: [], ministries: [], units: [], fellowships: [], cells: [], groups: [], segments: [], relationshipStatuses: [], events: [], recordings: [],
+        ageGroups: [], genders: [], events: [], recordings: [],
       })
     })
     .catch((requestError)=>{
@@ -710,14 +703,14 @@ function AttendanceOverview(){
    : tab === 'Event Registrations'
      ? [['Total registrations', summary.total ?? 0], ['Confirmed', summary.confirmed ?? summary.responded ?? 0], ['Waitlisted', summary.waitlisted ?? summary.notAttending ?? 0], ['Pending', summary.pending ?? summary.noResponse ?? 0], ...(summary.cancelled > 0 ? [['Cancelled', summary.cancelled]] : [])]
      : [['Listeners', summary.totalListeners ?? 0], ['Plays', summary.totalPlays ?? 0], ['Listening time', formatListeningTime(summary.totalListeningTimeSeconds)], ['Identified members', summary.identifiedListeners ?? 0]]
+ const summaryIcon = (label) => label === 'Online' || label === 'Plays' ? Globe : label === 'In person' || label === 'Confirmed' || label === 'Responded' || label === 'Identified members' ? CheckCircle2 : label === 'Not attending' || label === 'Waitlisted' || label === 'Listening time' ? Clock3 : label === 'Response rate' ? BarChart3 : ClipboardList
 
  const filterSets = tab === 'Services'
    ? [['SERVICE', 'occurrenceId', serviceOptions, 'All services', 'serviceLabel'], ['DATE', 'date', serviceOptions.map((item)=>({id:item.occurrenceId,name:item.eventStartsAt ? new Date(item.eventStartsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : item.serviceLabel})), 'All dates', 'name'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
    : tab === 'Event Registrations'
      ? [['EVENT', 'eventId', options.events, 'All events', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
      : [['RECORDING', 'recordingId', options.recordings, 'All recordings', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
- const dimensionFilters = [['MINISTRY','ministryId',options.ministries],['UNIT','unitId',options.units],['FELLOWSHIP','fellowshipId',options.fellowships],['CELL','cellId',options.cells],['GROUP','groupId',options.groups],['SEGMENT','segmentId',options.segments],['RELATIONSHIP STATUS','relationshipStatus',options.relationshipStatuses]]
- const allFilters = [...filterSets, ...dimensionFilters]
+ const allFilters = filterSets
  const breakdownOptions = ['Gender','Age Group','Relationship Status','Ministry','Unit','Fellowship','Cell','Group','Segment']
 
  const tableHeaders = tab === 'Services'
@@ -734,7 +727,7 @@ function AttendanceOverview(){
    <div className="tabs big attendance-tabs" style={{marginBottom:'0'}}>
     {['Services','Event Registrations','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
    </div>
-   <div className="attendance-summary">{summaryItems.map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+   <div className={`attendance-summary infographic-summary ${tab === 'Mixlr' ? 'mixlr-summary' : ''}`}>{summaryItems.map(([label,value], index)=>{const Icon=summaryIcon(label); return <div className={`infographic-metric metric-${index % 4}`} key={label}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
    <div className="attendance-filters"><div className="attendance-filter-grid">{allFilters.map(([label,key,values,placeholder,valueKey='name'])=><label key={key}><span>{label}</span><select value={filters[key] || ''} onChange={(event)=>setFilters((current)=>({...current,[key]:event.target.value}))}><option value="">{placeholder || `All ${label.toLowerCase()}`}</option>{(values || []).map((item)=><option key={item.id || item.occurrenceId} value={item.id || item.occurrenceId}>{item[valueKey] || item.name || item.serviceLabel || item.title}</option>)}</select></label>)}</div></div>
 
    {loading && <div className="empty-message">Loading attendance report...</div>}
