@@ -477,7 +477,7 @@ function AdminEventDetails(){
  }
  if(error)return <Page title="Event details"><Card className="empty-message">{error}</Card></Page>
  if(!event)return <Page title="Event details"><Card className="empty-message">Loading event...</Card></Page>
- const tabs=['Overview','Registrations','Interested','Bus pickups','Reminders']
+ const tabs=['Overview',...(event.registrationRequired?['Registrations']:['Interested']),'Bus pickups','Reminders']
   return <Page title={event.title} subtitle={event.eventType}>
    <div className="detail-toolbar modern-detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><span className="badge success">{event.registrationRequired?`${event.registrationCount||0} registrants`:`${event.interestCount||0} interested`}</span><button className="tool" onClick={remove} disabled={deleting}><Trash2 size={15}/>{deleting?'Deleting...':'Delete event'}</button></div>
     {deleteError&&<Card className="empty-message" role="alert">{deleteError}</Card>}

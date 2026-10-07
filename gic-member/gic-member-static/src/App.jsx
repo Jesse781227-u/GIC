@@ -15,6 +15,7 @@ import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } fro
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
 import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
 import { createCalendarFile, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
+import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -594,6 +595,12 @@ function wait(milliseconds) {
 
 async function fetchMemberApi(path, options = {}) {
   const token = localStorage.getItem('gic_auth_token')
+  const method = (options.method || 'GET').toUpperCase()
+  const cacheable = method === 'GET' && shouldCacheEventApiRequest(path)
+  if (cacheable) {
+    const cached = readEventApiCache(path, token || '', localStorage)
+    if (cached.found) return cached.data
+  }
   const request = () => fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -602,7 +609,7 @@ async function fetchMemberApi(path, options = {}) {
       ...(options.headers || {}),
     },
   })
-  const retryable = !options.method || options.method.toUpperCase() === 'GET'
+  const retryable = method === 'GET'
   let response
   for (let attempt = 0; attempt < (retryable ? 2 : 1); attempt += 1) {
     try {
@@ -628,7 +635,10 @@ async function fetchMemberApi(path, options = {}) {
     throw error
   }
 
-  return response.json()
+  const data = await response.json()
+  if (cacheable) writeEventApiCache(path, token || '', data, localStorage)
+  if (method !== 'GET' && path.startsWith('/api/events/')) invalidateEventApiCache(token || '', localStorage)
+  return data
 }
 
 function getSecureMode() {
