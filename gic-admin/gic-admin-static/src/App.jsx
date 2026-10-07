@@ -94,6 +94,7 @@ function Sidebar({mobileOpen=false,collapsed=false,onToggle}){
    <div className="nav">
      {item('/dashboard','Dashboard',LayoutDashboard)}
      {item('/members','Members',Users)}
+     {item('/attendance','Attendance',BarChart3)}
     {item('/ministries','Units',Users)}
     {item('/segments','Segments',Filter)}
      <button className={'nav-item nav-button '+(active('/events')?'active':'')} onClick={()=>setOpen({...open,events:!open.events})}><CalendarDays size={17}/><span>Events</span><ChevronDown size={15} className={open.events?'':'rotated'}/></button>
@@ -179,7 +180,7 @@ function Events(){
  const [query,setQuery]=useState('')
  const [status,setStatus]=useState('All Statuses')
  const visibleEvents=events.filter((event)=>event[0].toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||event[4]===status))
- return <Page title="Events" subtitle="Manage church events, registrations, forms, attendance, and reminders" action={<button className="btn primary"><Plus size={15}/> Create Event</button>}><Card className="table-card"><div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Published</option><option>Draft</option></select><button className="tool"><CalendarDays size={14}/> Calendar</button></div><div className="event-list">{visibleEvents.map((e,i)=><Link className="event-admin-row" to={i===0?'/events/youth-conference-2024':'#'} key={e[0]}><img src={e[5]}/><div className="event-info"><b>{e[0]}</b><small><CalendarDays size={12}/>{e[1]} <span>•</span> <MapPinIcon/>{e[2]}</small></div><div className="reg-count"><b>{e[3]}</b><small>Registrations</small></div><span className={'badge '+(e[4]==='Published'?'success':'draft')}>{e[4]}</span><MoreHorizontal size={17}/></Link>)}</div><div className="pagination"><span>Showing {visibleEvents.length} of 15 events</span><div><button>‹</button><button className="current">1</button><button>2</button><button>3</button><button>…</button><button>307</button><button>›</button></div></div></Card></Page>
+ return <Page title="Events" subtitle="Manage church events, registrations, forms, attendance, and reminders" action={<button className="btn primary"><Plus size={15}/> Create Event</button>}><Card className="table-card"><div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>Published</option><option>Draft</option></select><button className="tool"><CalendarDays size={14}/> Calendar</button></div><div className="event-list">{visibleEvents.map((e,i)=><Link className="event-admin-row" to={i===0?'/events/youth-conference-2024':'#'} key={e[0]}><img src={e[5]}/><div className="event-info"><b>{e[0]}</b><small><CalendarDays size={12}/>{e[1]} <span>·</span> {e[2]}</small></div><div className="reg-count"><b>{e[3]}</b><small>Registrations</small></div><span className={'badge '+(e[4]==='Published'?'success':'draft')}>{e[4]}</span><MoreHorizontal size={17}/></Link>)}</div><div className="pagination"><span>Showing {visibleEvents.length} of 15 events</span><div><button>‹</button><button className="current">1</button><button>2</button><button>3</button><button>…</button><button>307</button><button>›</button></div></div></Card></Page>
 }
 function MapPinIcon(){return <span>⌖</span>}
 
@@ -375,19 +376,15 @@ function ModernEvents(){
  const [error,setError]=useState('')
  const [createOpen,setCreateOpen]=useState(false)
  const load=()=>fetchAdminApi('/api/admin/events').then(({events:items=[]})=>setEvents(items)).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))
- useEffect(()=>{load()},[])
- const created=(event)=>{
-   setCreateOpen(false)
-   if (event?.id) {
-     setEvents((current)=>[event, ...current.filter((item)=>item.id !== event.id)])
-     navigate(`/events/${event.id}`)
-     return
-   }
-   setLoading(true)
-   load()
- }
- const visible=events.filter((event)=>event.title.toLowerCase().includes(query.toLowerCase())&&(status==='All Statuses'||event.status===status))
- return <Page title="Events" subtitle="Manage church events, registrations, forms, attendance, and reminders" action={<button className="btn primary" onClick={()=>setCreateOpen((open)=>!open)}><Plus size={15}/> Create Event</button>}>{error&&<Card className="empty-message">Events are unavailable right now.</Card>}<Card className="table-card modern-events-card"><div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)}><option>All Statuses</option><option>PUBLISHED</option><option>DRAFT</option><option>CANCELLED</option></select><button className="tool"><CalendarDays size={14}/> Calendar</button></div>{loading?<div className="empty-message">Loading events...</div>:visible.length?<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.imageUrl?<img src={event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={18}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{new Date(event.startsAt).toLocaleString()} <span>•</span>{event.location||'Location to be announced'}</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':event.status==='CANCELLED'?'gray':'draft')}>{event.status}</span><ChevronRight size={16}/></Link>)}</div>:<div className="empty"><CalendarDays size={30}/><h2>No matching events</h2><p>Create or publish an event to see it here.</p></div>}{createOpen&&<AdminCreateEventModal onClose={()=>setCreateOpen(false)} onCreated={created}/>}</Card></Page>
+ useEffect(()=>{load();fetchAdminApi('/api/admin/reference/bus-pickup-points').then(({pickupPoints:points=[]})=>setPickupPoints(points)).catch((requestError)=>setError(requestError.message))},[eventId])
+ const change=(field,value)=>setForm((current)=>({...current,[field]:value}))
+ const choosePickupPoint=(value)=>{const pickupPoint=pickupPoints.find((item)=>item.id===value);setForm((current)=>({...current,busPickupPointId:value,locationName:pickupPoint?.name||current.locationName,addressLandmark:pickupPoint?.address||current.addressLandmark}))}
+ const edit=(item)=>{setEditing(item.id);setForm({busPickupPointId:item.busPickupPointId||'',locationName:item.locationName,addressLandmark:item.addressLandmark,pickupTime:new Date(item.pickupTime).toISOString().slice(0,16),capacity:String(item.capacity),notes:item.notes||'',active:item.active})}
+ const reset=()=>{setEditing('');setForm(blank)}
+ const save=async(event)=>{event.preventDefault();setError('');setSaving(true);try{const body={...form,capacity:Number(form.capacity),pickupTime:new Date(form.pickupTime).toISOString()};if(editing)await fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations/${editing}`,{method:'PUT',body:JSON.stringify(body)});else await fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations`,{method:'POST',body:JSON.stringify(body)});reset();setLoading(true);load()}catch(requestError){setError(requestError.message||'Pickup location could not be saved.')}finally{setSaving(false)}}
+ const remove=async(id)=>{if(!window.confirm('Remove this pickup location? Existing registrations will keep their record but no longer point to it.'))return;try{await fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations/${id}`,{method:'DELETE'});setItems((current)=>current.filter((item)=>item.id!==id))}catch(requestError){setError(requestError.message)}}
+ const toggle=async(item)=>{try{const {pickupLocation}=await fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations/${item.id}`,{method:'PUT',body:JSON.stringify({active:!item.active})});setItems((current)=>current.map((value)=>value.id===item.id?pickupLocation:value))}catch(requestError){setError(requestError.message)}}
+ return <div className="event-admin-section"><div className="section-title-row"><div><h3>Bus pickup locations</h3><p className="muted">Choose a known pickup hub to pre-fill its details, then set the event-specific time, capacity, and status.</p></div></div>{loading?<p className="muted">Loading pickup locations...</p>:items.map((item)=><div className="pickup-admin-row" key={item.id}><div><b>{item.locationName}</b><small>{item.addressLandmark} · {new Date(item.pickupTime).toLocaleString()} · Capacity {item.capacity}</small>{item.busPickupPoint?.managerName&&<small>Manager: {item.busPickupPoint.managerName} · {item.busPickupPoint.managerPhone}</small>}{item.notes&&<small>{item.notes}</small>}</div><span className={'badge '+(item.active?'success':'gray')}>{item.active?'Active':'Inactive'}</span><button className="tool" onClick={()=>toggle(item)}>{item.active?'Deactivate':'Activate'}</button><button className="icon-btn" onClick={()=>edit(item)} aria-label={`Edit ${item.locationName}`}><Edit3 size={15}/></button><button className="icon-btn" onClick={()=>remove(item.id)} aria-label={`Remove ${item.locationName}`}><Trash2 size={15}/></button></div>)}<form className="pickup-editor" onSubmit={save}><h4>{editing?'Edit pickup location':'Add pickup location'}</h4><label className="modern-field full"><span>Known pickup point (optional)</span><select value={form.busPickupPointId} onChange={(event)=>choosePickupPoint(event.target.value)}><option value="">Custom event pickup point</option>{pickupPoints.map((item)=><option key={item.id} value={item.id}>{item.name} · {item.managerName} ({item.managerPhone})</option>)}</select></label><div className="modern-field-grid"><label className="modern-field"><span>Location name</span><input value={form.locationName} onChange={(event)=>change('locationName',event.target.value)} required/></label><label className="modern-field"><span>Pickup time</span><input type="datetime-local" value={form.pickupTime} onChange={(event)=>change('pickupTime',event.target.value)} required/></label></div><div className="modern-field-grid"><label className="modern-field"><span>Address / landmark</span><input value={form.addressLandmark} onChange={(event)=>change('addressLandmark',event.target.value)} required/></label><label className="modern-field"><span>Capacity</span><input type="number" min="1" value={form.capacity} onChange={(event)=>change('capacity',event.target.value)} required/></label></div><label className="modern-field full"><span>Optional notes</span><input value={form.notes} onChange={(event)=>change('notes',event.target.value)}/></label><label className="check"><input type="checkbox" checked={form.active} onChange={(event)=>change('active',event.target.checked)}/> Active and available to members</label><div className="composer-actions"><button type="submit" className="btn primary" disabled={saving}>{saving?'Saving...':editing?'Save pickup':'Add pickup'}</button>{editing&&<button type="button" className="btn secondary" onClick={reset}>Cancel</button>}</div></form>{error&&<p className="event-form-error">{error}</p>}</div>
 }
 
 function PickupLocations({eventId}){
@@ -403,7 +400,7 @@ function PickupLocations({eventId}){
  useEffect(()=>{load();fetchAdminApi('/api/admin/reference/bus-pickup-points').then(({pickupPoints:points=[]})=>setPickupPoints(points)).catch((requestError)=>setError(requestError.message))},[eventId])
  const change=(field,value)=>setForm((current)=>({...current,[field]:value}))
  const choosePickupPoint=(value)=>{const pickupPoint=pickupPoints.find((item)=>item.id===value);setForm((current)=>({...current,busPickupPointId:value,locationName:pickupPoint?.name||current.locationName,addressLandmark:pickupPoint?.address||current.addressLandmark}))}
- const edit=(item)=>setEditing(item.id)||setForm({busPickupPointId:item.busPickupPointId||'',locationName:item.locationName,addressLandmark:item.addressLandmark,pickupTime:new Date(item.pickupTime).toISOString().slice(0,16),capacity:String(item.capacity),notes:item.notes||'',active:item.active})
+ const edit=(item)=>{setEditing(item.id);setForm({busPickupPointId:item.busPickupPointId||'',locationName:item.locationName,addressLandmark:item.addressLandmark,pickupTime:new Date(item.pickupTime).toISOString().slice(0,16),capacity:String(item.capacity),notes:item.notes||'',active:item.active})}
  const reset=()=>{setEditing('');setForm(blank)}
  const save=async(event)=>{event.preventDefault();setError('');setSaving(true);try{const body={...form,capacity:Number(form.capacity),pickupTime:new Date(form.pickupTime).toISOString()};if(editing)await fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations/${editing}`,{method:'PUT',body:JSON.stringify(body)});else await fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations`,{method:'POST',body:JSON.stringify(body)});reset();setLoading(true);load()}catch(requestError){setError(requestError.message||'Pickup location could not be saved.')}finally{setSaving(false)}}
  const remove=async(id)=>{if(!window.confirm('Remove this pickup location? Existing registrations will keep their record but no longer point to it.'))return;try{await fetchAdminApi(`/api/admin/events/${eventId}/pickup-locations/${id}`,{method:'DELETE'});setItems((current)=>current.filter((item)=>item.id!==id))}catch(requestError){setError(requestError.message)}}
@@ -484,7 +481,7 @@ function ModernMemberDetails(){
  const [birthday,setBirthday]=useState('')
  const [profileNotice,setProfileNotice]=useState('')
  const [savingProfile,setSavingProfile]=useState(false)
- const [deleting,setDeletingId]=useState('')
+ const [deletingId,setDeletingId]=useState('')
  const [deleteError,setDeleteError]=useState('')
  useEffect(()=>{let cancelled=false;fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}`).then(({member:record,groups={},ageGroups:options=[]})=>{if(cancelled)return;setMember(record);setGroupMemberships({ministries:groups.ministries||[],cells:groups.fellowships||groups.cells||[],segments:groups.segments||[]});setAgeGroups(options);setAgeGroupId(record.ageGroupId||'');setRelationshipStatus(record.relationshipStatus||'');setBirthday(record.birthday||'')}).catch(()=>{if(!cancelled)setMember(null)});return()=>{cancelled=true}},[id])
  const saveDemographics=async()=>{setSavingProfile(true);setProfileNotice('');try{const {member:updated}=await fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}/profile`,{method:'PATCH',body:JSON.stringify({ageGroupId:ageGroupId||null,relationshipStatus:relationshipStatus||null,birthday})});setMember(updated);setProfileNotice('Personal information updated.')}catch(error){setProfileNotice(error.message||'Profile update failed.')}finally{setSavingProfile(false)}}
@@ -503,8 +500,11 @@ function ModernMemberDetails(){
  }
  if(!member)return <Page title="Member"><Card className="empty-message">Loading live member data...</Card></Page>
  const joined=member.joinedMonth&&member.joinedYear?`${String(member.joinedMonth).padStart(2,'0')}/${member.joinedYear}`:'Not provided'
- return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar modern-detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card className="modern-member-card"><div className="modern-member-head"><div className="modern-member-identity">{member.avatar?<img className="modern-member-avatar" src={member.avatar} alt=""/>:<div className="modern-member-avatar avatar-fallback">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><small>Member since {joined}</small></div></div></div><div className="modern-profile-section"><h3>Personal information</h3><div className="modern-profile-grid"><label className="form-field">Birthday (MM-DD)<input inputMode="numeric" placeholder="MM-DD" value={birthday} onChange={(event)=>setBirthday(event.target.value)}/></label><label className="form-field">Age group<select value={ageGroupId} onChange={(event)=>setAgeGroupId(event.target.value)}><option value="">Not provided</option>{ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}: {item.minAge}–{item.maxAge ?? '+'}</option>)}</select></label><label className="form-field">Relationship status<select value={relationshipStatus} onChange={(event)=>setRelationshipStatus(event.target.value)}><option value="">Not provided</option><option value="Single">Single</option><option value="Married">Married</option></select></label></div>{profileNotice&&<div className="empty-message" role="status">{profileNotice}</div>}<button className="btn primary" onClick={saveDemographics} disabled={savingProfile}>{savingProfile?'Saving...':'Save personal information'}</button></div><div className="modern-profile-section"><h3>Units</h3><div className="tag-list">{groupMemberships.ministries.map((item)=><Link className="tag" key={item.id} to={`/ministries/ministry_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.ministries.length&&<span className="modern-empty-label">No Unit memberships</span>}</div><div className="modern-profile-section"><h3>Fellowships</h3><div className="tag-list">{groupMemberships.cells.map((item)=><Link className="tag" key={item.id} to={`/ministries/cell_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.cells.length&&<span className="modern-empty-label">No Fellowship memberships</span>}</div><div className="modern-profile-section"><h3>Segments</h3><div className="tag-list">{groupMemberships.segments.map((item)=><Link className="tag" key={item.id} to={`/ministries/segment_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.segments.length&&<span className="modern-empty-label">No segment matches</span>}</div>{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}
- <div className="modern-member-actions"><button className="btn secondary" onClick={()=>window.alert('Profile editing will be connected to the member editor next.') }><Edit3 size={14}/> Edit Profile</button><Link className="btn primary" to="/messages/new"><Send size={14}/> Send Message</Link><button className="btn danger" onClick={deleteMember} disabled={deleting}>{deleting?'Deleting...':'Delete Member'}</button></div></Card></Page>
+ const joinedDate=member.joinedMonth&&member.joinedYear?new Date(member.joinedYear,member.joinedMonth-1,1):null
+ const tenureMonths=joinedDate?Math.max(0,(new Date().getFullYear()-joinedDate.getFullYear())*12+new Date().getMonth()-joinedDate.getMonth()):0
+ const tenure=joinedDate?(tenureMonths<1?'Less than a month':`${Math.floor(tenureMonths/12)?`${Math.floor(tenureMonths/12)} year${Math.floor(tenureMonths/12)===1?'':'s'} `:''}${tenureMonths%12?`${tenureMonths%12} month${tenureMonths%12===1?'':'s'}`:''}`.trim()):'Not provided'
+ return <Page title={member.displayName} subtitle={member.center||'Member profile'}><div className="detail-toolbar modern-detail-toolbar"><Link to="/members"><ArrowLeft size={16}/> Back to Members</Link></div><Card className="modern-member-card"><div className="modern-member-head"><div className="modern-member-identity">{member.avatar?<img className="modern-member-avatar" src={member.avatar} alt=""/>:<div className="modern-member-avatar avatar-fallback">{(member.displayName||'?').slice(0,2).toUpperCase()}</div>}<div><h2>{member.displayName}</h2><span className={'badge '+(member.active?'success':'gray')}>{member.active?'Active':'Inactive'}</span><small>Member since {joined} · {tenure}</small></div></div></div><div className="modern-profile-section"><h3>Personal information</h3><div className="modern-profile-grid"><label className="form-field">Birthday (MM-DD)<input inputMode="numeric" placeholder="MM-DD" value={birthday} onChange={(event)=>setBirthday(event.target.value)}/></label><label className="form-field">Age group<select value={ageGroupId} onChange={(event)=>setAgeGroupId(event.target.value)}><option value="">Not provided</option>{ageGroups.map((item)=><option key={item.id} value={item.id}>{item.name}: {item.minAge}–{item.maxAge ?? '+'}</option>)}</select></label><label className="form-field">Relationship status<select value={relationshipStatus} onChange={(event)=>setRelationshipStatus(event.target.value)}><option value="">Not provided</option><option value="Single">Single</option><option value="Married">Married</option></select></label></div>{profileNotice&&<div className="empty-message" role="status">{profileNotice}</div>}<button className="btn primary" onClick={saveDemographics} disabled={savingProfile}>{savingProfile?'Saving...':'Save personal information'}</button></div><div className="modern-profile-section"><h3>Units</h3><div className="tag-list">{groupMemberships.ministries.map((item)=><Link className="tag" key={item.id} to={`/ministries/ministry_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.ministries.length&&<span className="modern-empty-label">No Unit memberships</span>}</div><div className="modern-profile-section"><h3>Fellowships</h3><div className="tag-list">{groupMemberships.cells.map((item)=><Link className="tag" key={item.id} to={`/ministries/cell_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.cells.length&&<span className="modern-empty-label">No Fellowship memberships</span>}</div><div className="modern-profile-section"><h3>Segments</h3><div className="tag-list">{groupMemberships.segments.map((item)=><Link className="tag" key={item.id} to={`/ministries/segment_${item.id}`}>{item.name}</Link>)}</div>{!groupMemberships.segments.length&&<span className="modern-empty-label">No segment matches</span>}</div>{deleteError&&<div className="member-delete-error" role="alert">{deleteError}</div>}
+ <div className="modern-member-actions"><button className="btn secondary" onClick={()=>window.alert('Profile editing will be connected to the member editor next.') }><Edit3 size={14}/> Edit Profile</button><Link className="btn primary" to="/messages/new"><Send size={14}/> Send Message</Link><button className="btn danger" onClick={()=>deleteMember(member)} disabled={deletingId===member.id}>{deletingId===member.id?'Deleting...':'Delete Member'}</button></div></Card></Page>
 }
 
 function EventsUnavailable(){
@@ -637,6 +637,167 @@ function LiveDashboard(){
  return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministries" label="Organizations" value="Manage" change={`${summary.pendingApplications} pending applications`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
 }
 
+function AttendanceOverview(){
+ const [tab,setTab]=useState('Mixlr')
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const [serviceOptions,setServiceOptions]=useState([])
+ const [listenerRows,setListenerRows]=useState([])
+ const [identifiedMemberRows,setIdentifiedMemberRows]=useState([])
+ const [memberListType,setMemberListType]=useState('')
+ const [summary,setSummary]=useState({
+   totalEligible: 0, responded: 0, inPerson: 0, online: 0, notAttending: 0, noResponse: 0, responseRate: 0,
+   total: 0, confirmed: 0, waitlisted: 0, pending: 0, cancelled: 0,
+   totalListeners: 0, totalPlays: 0, totalListeningTimeSeconds: 0, identifiedListeners: 0,
+   rows: [],
+  })
+ const [options,setOptions]=useState({
+   ageGroups: [], genders: [], events: [], recordings: [],
+ })
+ const [filters,setFilters]=useState({
+   occurrenceId: '', eventId: '', recordingId: '', date: '', gender: '', ageGroupId: '',
+ })
+
+ const endpoint = tab === 'Services' ? 'service' : tab === 'Event Registrations' ? 'registrations' : 'mixlr'
+
+ useEffect(()=>{
+  let cancelled = false
+  setLoading(true)
+  setError('')
+
+  const params = new URLSearchParams()
+  if (tab === 'Services') {
+   if (filters.occurrenceId) params.set('occurrenceId', filters.occurrenceId)
+  }
+  if (tab === 'Event Registrations') {
+   if (filters.eventId) params.set('eventId', filters.eventId)
+  }
+  if (tab === 'Mixlr' && filters.recordingId) params.set('recordingId', filters.recordingId)
+  if (filters.gender) params.set('gender', filters.gender)
+  if (filters.ageGroupId) params.set('ageGroupId', filters.ageGroupId)
+
+  fetchAdminApi(`/api/admin/attendance/${endpoint}${params.toString() ? `?${params.toString()}` : ''}`)
+    .then((payload)=>{
+      if (cancelled) return
+      setSummary({
+        ...payload.summary,
+        rows: payload.rows || [],
+      })
+      if (tab === 'Mixlr') {
+       setListenerRows(payload.listeners || [])
+       setIdentifiedMemberRows(payload.identifiedMembers || [])
+      }
+      if (tab === 'Services' && !filters.occurrenceId && !filters.gender && !filters.ageGroupId) {
+       setServiceOptions(payload.rows || [])
+      }
+      setOptions(payload.options || {
+        ageGroups: [], genders: [], events: [], recordings: [],
+      })
+    })
+    .catch((requestError)=>{
+      if (!cancelled) setError(requestError.message)
+    })
+    .finally(()=>{
+      if (!cancelled) setLoading(false)
+    })
+
+  return ()=>{ cancelled = true }
+ }, [tab, ...Object.values(filters)])
+
+ const summaryItems = tab === 'Services'
+   ? [['Responded', summary.responded], ['In person', summary.inPerson], ['Online', summary.online], ['Not attending', summary.notAttending], ['No response', summary.noResponse], ['Response rate', `${summary.responseRate || 0}%`]]
+   : tab === 'Event Registrations'
+     ? [['Total registrations', summary.total ?? 0], ['Confirmed', summary.confirmed ?? summary.responded ?? 0], ['Waitlisted', summary.waitlisted ?? summary.notAttending ?? 0], ['Pending', summary.pending ?? summary.noResponse ?? 0], ...(summary.cancelled > 0 ? [['Cancelled', summary.cancelled]] : [])]
+     : [['Listeners', summary.totalListeners ?? 0], ['Plays', summary.totalPlays ?? 0], ['Listening time', formatListeningTime(summary.totalListeningTimeSeconds)], ['Identified members', summary.identifiedListeners ?? 0]]
+ const summaryIcon = (label) => label === 'Online' || label === 'Plays' ? Globe : label === 'In person' || label === 'Confirmed' || label === 'Responded' || label === 'Identified members' ? CheckCircle2 : label === 'Not attending' || label === 'Waitlisted' || label === 'Listening time' ? Clock3 : label === 'Response rate' ? BarChart3 : ClipboardList
+
+ const filterSets = tab === 'Services'
+   ? [['SERVICE', 'occurrenceId', serviceOptions, 'All services', 'serviceLabel'], ['DATE', 'date', serviceOptions.map((item)=>({id:item.occurrenceId,name:item.eventStartsAt ? new Date(item.eventStartsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : item.serviceLabel})), 'All dates', 'name'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
+   : tab === 'Event Registrations'
+     ? [['EVENT', 'eventId', options.events, 'All events', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
+     : [['RECORDING', 'recordingId', options.recordings, 'All recordings', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
+ const allFilters = filterSets
+ const tableHeaders = tab === 'Services'
+   ? ['Service', 'In person', 'Online', 'Not attending', 'No response', 'Total']
+   : tab === 'Event Registrations'
+     ? ['Event', 'Confirmed', 'Waitlisted', 'Pending', 'Total']
+     : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
+
+ const tableRows = summary.rows || []
+ const emptyMessage = tab === 'Services' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No attendance responses yet') : tab === 'Event Registrations' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No registrations yet') : (filters.recordingId ? 'No listeners recorded for this recording' : 'No Mixlr recordings available')
+
+ return <Page title="Attendance" subtitle="Service attendance, event registrations, and Mixlr listening reports">
+  <Card className="table-card">
+   <div className="tabs big attendance-tabs" style={{marginBottom:'0'}}>
+    {['Services','Event Registrations','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
+   </div>
+  <div className={`attendance-summary infographic-summary ${tab === 'Mixlr' ? 'mixlr-summary' : ''}`}>{summaryItems.map(([label,value], index)=>{const Icon=summaryIcon(label); const drilldown=tab==='Mixlr'&&['Listeners','Identified members'].includes(label); return <div className={`infographic-metric metric-${index % 4}${drilldown?' clickable-metric':''}`} key={label} role={drilldown?'button':undefined} tabIndex={drilldown?0:undefined} aria-haspopup={drilldown?'dialog':undefined} onClick={drilldown?()=>setMemberListType(label):undefined} onKeyDown={drilldown?(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setMemberListType(label)}}:undefined}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
+   <div className="attendance-filters"><div className="attendance-filter-grid">{allFilters.map(([label,key,values,placeholder,valueKey='name'])=><label key={key}><span>{label}</span><select value={filters[key] || ''} onChange={(event)=>setFilters((current)=>({...current,[key]:event.target.value}))}><option value="">{placeholder || `All ${label.toLowerCase()}`}</option>{(values || []).map((item)=><option key={item.id || item.occurrenceId} value={item.id || item.occurrenceId}>{item[valueKey] || item.name || item.serviceLabel || item.title}</option>)}</select></label>)}</div></div>
+
+   {loading && <div className="empty-message">Loading attendance report...</div>}
+   {error && <div className="empty-message">Attendance data is unavailable right now.</div>}
+   {!loading && !error && (
+     <>
+       <div className="table-wrap">
+         <table>
+           <thead>
+             <tr>
+               {tableHeaders.map((header)=><th key={header}>{header}</th>)}
+             </tr>
+           </thead>
+           <tbody>
+             {tableRows.length === 0 ? (
+               <tr><td colSpan={tableHeaders.length}><div className="empty-message">{emptyMessage}</div></td></tr>
+             ) : (
+               tableRows.map((row,index)=>{
+                 if (tab === 'Mixlr') {
+                   return <tr key={`${row.recordingId || 'mixlr'}-${index}`}>
+                     <td><b>{row.recordingTitle || row.recordingId || 'Recording'}</b><small>{row.recordingCreatedAt ? new Date(row.recordingCreatedAt).toLocaleDateString() : 'Recording date unavailable'}</small></td>
+                     <td>{row.listeners ?? 0}</td>
+                     <td>{row.plays ?? 0}</td>
+                     <td>{formatListeningTime(row.listeningTimeSeconds)}</td>
+                     <td>{row.identifiedListeners ?? 0}</td>
+                   </tr>
+                 }
+
+                 if (tab === 'Event Registrations') {
+                   return <tr key={`${row.eventId || row.eventTitle || 'event'}-${index}`}>
+                     <td><b>{row.eventTitle || row.eventId || 'Event'}</b></td>
+                     <td>{row.confirmed || 0}</td>
+                     <td>{row.waitlisted || 0}</td>
+                     <td>{row.pending || 0}</td>
+                     <td>{row.total || 0}</td>
+                   </tr>
+                 }
+
+                 return <tr key={`${row.occurrenceId || row.serviceLabel || 'attendance'}-${index}`}>
+                   <td><b>{row.serviceLabel || row.eventTitle || row.occurrenceId || 'Service'}</b></td>
+                   <td>{row.inPerson || 0}</td>
+                   <td>{row.online || 0}</td>
+                   <td>{row.notAttending || 0}</td>
+                   <td>{row.noResponse || 0}</td>
+                   <td>{row.total || 0}</td>
+                 </tr>
+               })
+             )}
+           </tbody>
+         </table>
+       </div>
+     </>
+   )}
+  </Card>
+  {memberListType&&<div className="event-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="attendance-members-title" onMouseDown={(event)=>{if(event.target===event.currentTarget)setMemberListType('')}}><section className="event-modal attendance-list-modal"><div className="event-modal-header"><div><h2 id="attendance-members-title">{memberListType}</h2><p>{filters.recordingId?options.recordings.find((item)=>item.id===filters.recordingId)?.title:'All recordings'} · Member listening activity</p></div><button type="button" className="event-modal-close" aria-label="Close member list" onClick={()=>setMemberListType('')}><X size={18}/></button></div><div className="table-wrap attendance-list-table"><table><thead><tr><th>Member</th><th>Email</th><th>Phone</th>{memberListType==='Listeners'&&<th>Recording</th>}<th>Plays</th><th>Listening time</th><th>Last listened</th></tr></thead><tbody>{(memberListType==='Listeners'?listenerRows:identifiedMemberRows).length===0?<tr><td colSpan={memberListType==='Listeners'?7:6}><div className="empty-message">No identified member listens match these filters.</div></td></tr>:(memberListType==='Listeners'?listenerRows:identifiedMemberRows).map((item,index)=><tr key={`${item.memberId}-${item.recordingId||'all'}-${index}`}><td><b>{item.memberName||'Member'}</b><small>{item.memberId}</small></td><td>{item.email||'—'}</td><td>{item.phone||'—'}</td>{memberListType==='Listeners'&&<td>{item.recordingTitle}</td>}<td>{item.plays||0}</td><td>{formatListeningTime(item.listeningTimeSeconds)}</td><td>{item.lastListenedAt?new Date(item.lastListenedAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div></section></div>}
+ </Page>
+}
+
+function formatListeningTime(seconds=0){
+ const value=Number(seconds)||0
+ if (!value) return '0m'
+ const hours=Math.floor(value/3600)
+ const minutes=Math.floor((value%3600)/60)
+ return hours ? `${hours}h ${minutes}m` : `${minutes}m`
+}
+
 function AdminLogin(){
  const [email,setEmail]=useState('')
  const [password,setPassword]=useState('')
@@ -677,6 +838,7 @@ export default function App(){
  return <AdminGate><Shell><Routes>
   <Route path="/" element={<LiveDashboard/>}/><Route path="/dashboard" element={<LiveDashboard/>}/>
   <Route path="/members" element={<LiveMembers/>}/><Route path="/members/:id" element={<ModernMemberDetails/>}/>
+  <Route path="/attendance" element={<AttendanceOverview/>}/>
   <Route path="/events" element={<ModernEvents/>}/><Route path="/events/registrations" element={<AdminRegistrations/>}/><Route path="/events/:id" element={<AdminEventDetails/>}/>
   <Route path="/messages" element={<MessagesWithDelete/>}/><Route path="/messages/:id" element={<MessageDetail/>}/><Route path="/messages/new" element={<NotificationMessageComposer/>}/>
   <Route path="/settings" element={<Settings/>}/><Route path="/activity" element={<LiveActivityLog/>}/>

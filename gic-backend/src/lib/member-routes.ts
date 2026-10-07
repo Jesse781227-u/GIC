@@ -17,6 +17,8 @@ const allowedMemberRoutes = [
   /^\/ministries\/[A-Za-z0-9_-]+\/apply$/,
   /^\/profile$/,
   /^\/profile\/edit$/,
+  /^\/mixlr\/[A-Za-z0-9_-]+$/,
+  /^\/attendance\/[A-Za-z0-9_:-]+$/,
 ];
 
 export function isAllowedMemberRoute(route?: string | null): route is string {

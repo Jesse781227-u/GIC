@@ -1,55 +1,75 @@
 import { Hono } from "hono";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { z } from "zod";
+import { authMiddleware } from "../middleware/auth.js";
+import { db } from "../db/index.js";
+import { members, mixlrListenerSessions, mixlrRecordings } from "../db/schema.js";
+import { churchIdForUser } from "../lib/tenant.js";
+import { getCachedLatestMixlrRecording, getCachedMixlrRecording } from "../services/mixlr.service.js";
 
 const app = new Hono();
-const mixlrApi = "https://api.mixlr.com/v3/channels/globalimpactng";
 
 app.get("/latest", async (c) => {
   try {
-    const recordingsResponse = await fetch(
-      `${mixlrApi}/recordings?page%5Bsize%5D=1&page%5Bnumber%5D=1`,
-      { headers: { "User-Agent": "GIC member platform" } }
-    );
-    if (!recordingsResponse.ok) {
-      return c.json({ error: "Mixlr recordings are unavailable" }, 502);
-    }
-
-    const recordingsPayload = (await recordingsResponse.json()) as {
-      data?: Array<{ id: string; attributes?: { title?: string; url?: string; created_at?: string; duration?: number } }>;
-    };
-    const latest = recordingsPayload.data?.[0];
-    if (!latest?.id || !latest.attributes?.url) {
-      return c.json({ error: "No playable Mixlr recordings found" }, 404);
-    }
-
-    const attributes = latest.attributes;
-    const title = attributes.title || "Latest Global Impact Church recording";
-    const cleanTitle = title.split(" | ")[0].replace(/^#\s*/, "").trim();
-    const dateMatch = title.match(/\|\s*(\d{1,2}(?:st|nd|rd|th)?\s+\w+,\s+\d{4})/i);
-    const displayDate = dateMatch?.[1]?.replace(",", "") || (
-      attributes.created_at
-        ? new Date(attributes.created_at).toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "UTC",
-          })
-        : null
-    );
-    return c.json({
-      id: latest.id,
-      title,
-      displayTitle: `# ${cleanTitle}`,
-      displayDate,
-      audioUrl: attributes.url,
-      url: `https://globalimpactng.mixlr.com/recordings/${latest.id}`,
-      duration: attributes.duration || null,
-      source: "Mixlr",
-      fetchedAt: new Date().toISOString(),
-    });
+    const latest = await getCachedLatestMixlrRecording();
+    if (!latest) return c.json({ error: "No cached Mixlr recording is available yet" }, 404);
+    return c.json(latest);
   } catch (error) {
-    console.error("Mixlr latest recording error:", error);
-    return c.json({ error: "Unable to fetch the latest Mixlr recording" }, 502);
+    console.error("Mixlr latest recording cache error:", error);
+    return c.json({ error: "Unable to load the latest Mixlr recording" }, 500);
   }
+});
+
+app.get("/recordings/:id", async (c) => {
+  const recordingId = c.req.param("id");
+  const recording = await getCachedMixlrRecording(recordingId);
+  return recording ? c.json(recording) : c.json({ error: "Mixlr recording not found" }, 404);
+});
+
+app.post("/recordings/:id/listens", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const churchId = churchIdForUser(user);
+  const recordingId = c.req.param("id") || "";
+  const [recording, member] = await Promise.all([
+    db.query.mixlrRecordings.findFirst({ where: eq(mixlrRecordings.id, recordingId) }),
+    db.query.members.findFirst({ where: and(eq(members.id, user.sub), eq(members.churchId, churchId), eq(members.active, true)) }),
+  ]);
+  if (!recording) return c.json({ error: "Mixlr recording not found" }, 404);
+  if (!member) return c.json({ error: "Member account not found" }, 404);
+  const resumeCutoff = new Date(Date.now() - 120_000);
+  const [recentSession] = await db.select({ id: mixlrListenerSessions.id })
+    .from(mixlrListenerSessions)
+    .where(and(
+      eq(mixlrListenerSessions.recordingId, recordingId),
+      eq(mixlrListenerSessions.memberId, member.id),
+      gte(mixlrListenerSessions.startedAt, resumeCutoff),
+    ))
+    .orderBy(desc(mixlrListenerSessions.startedAt))
+    .limit(1);
+  if (recentSession) {
+    await db.update(mixlrListenerSessions).set({ endedAt: null }).where(eq(mixlrListenerSessions.id, recentSession.id));
+    return c.json({ sessionId: recentSession.id, resumed: true });
+  }
+  const [session] = await db.insert(mixlrListenerSessions).values({ recordingId, memberId: member.id }).returning({ id: mixlrListenerSessions.id });
+  return c.json({ sessionId: session.id }, 201);
+});
+
+app.patch("/listens/:id", authMiddleware, async (c) => {
+  const parsed = z.object({
+    durationSeconds: z.number().int().min(0).max(30).default(0),
+    ended: z.boolean().default(false),
+  }).safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: "Invalid listen session update" }, 400);
+
+  const sessionId = c.req.param("id") || "";
+  const values = {
+    durationSeconds: sql`COALESCE(${mixlrListenerSessions.durationSeconds}, 0) + ${parsed.data.durationSeconds}`,
+    ...(parsed.data.ended ? { endedAt: new Date() } : {}),
+  };
+  const [session] = await db.update(mixlrListenerSessions).set(values)
+    .where(and(eq(mixlrListenerSessions.id, sessionId), eq(mixlrListenerSessions.memberId, c.get("user").sub)))
+    .returning({ id: mixlrListenerSessions.id });
+  return session ? c.json({ success: true }) : c.json({ error: "Listen session not found" }, 404);
 });
 
 export default app;

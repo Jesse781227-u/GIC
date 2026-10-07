@@ -1,11 +1,235 @@
-section.birthday-page-card {
+.birthday-page-card {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 18px 18px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(21, 11, 42, 0.98) 0%, rgba(38, 19, 76, 0.96) 100%);
+  color: #f6f1ff;
+  box-shadow: 0 16px 40px rgba(33, 12, 68, 0.28);
   isolation: isolate;
   animation: birthday-card-in 650ms cubic-bezier(.22, 1, .36, 1) both;
 }
 
-.birthday-page-card > :not(.birthday-celebration) {
+.birthday-template-grace { --birthday-accent: #f7d783; }
+.birthday-template-purpose { --birthday-accent: #d9b6ff; }
+.birthday-template-strength { --birthday-accent: #79d7c2; }
+.birthday-template-gratitude { --birthday-accent: #f9b3c7; }
+.birthday-template-favor { --birthday-accent: #8ec5ff; }
+
+.birthday-page-card > * { position: relative; z-index: 1; }
+
+.birthday-topline,
+.birthday-header-block,
+.birthday-personal-card,
+.birthday-prayer-block,
+.birthday-scripture,
+.birthday-seal {
+  animation: birthday-copy-in 520ms cubic-bezier(.22, 1, .36, 1) 220ms both;
+}
+
+.birthday-brandmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--birthday-accent);
+}
+
+.birthday-brandmark::before {
+  content: "✦";
+  display: inline-block;
+  font-size: 12px;
+}
+
+.birthday-header-block {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.eyebrow {
+  display: inline-block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 1.7px;
+  text-transform: uppercase;
+  color: #f3dca0;
+}
+
+.birthday-page-card h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 7vw, 3.25rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+  color: #fffaf0;
+}
+
+.birthday-page-card h1::after {
+  content: "";
+  display: block;
+  width: 84px;
+  height: 4px;
+  margin: 10px auto 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent 0%, var(--birthday-accent) 50%, transparent 100%);
+}
+
+.birthday-photo-wrap {
+  margin: 18px auto 12px;
+  width: min(100%, 190px);
+  aspect-ratio: 0.86;
+  padding: 4px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.02));
+  box-shadow: 0 14px 28px rgba(10, 8, 18, 0.25);
+}
+
+.birthday-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 20px;
+  border: 2px solid rgba(255,255,255,0.32);
+  animation: birthday-avatar-in 700ms cubic-bezier(.22, 1, .36, 1) 100ms both;
+}
+
+.birthday-no-photo-art {
   position: relative;
-  z-index: 1;
+  width: min(100%, 190px);
+  height: 190px;
+  margin: 18px auto 12px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(247, 215, 131, 0.16), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255,255,255,0.08);
+  display: grid;
+  place-items: center;
+}
+
+.birthday-no-photo-mark {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(247, 215, 131, 0.9) 0%, rgba(247, 215, 131, 0.34) 28%, rgba(255,255,255,0.02) 55%);
+  box-shadow: inset 0 0 0 10px rgba(247, 215, 131, 0.18), 0 0 22px rgba(247, 215, 131, 0.14);
+}
+
+.birthday-no-photo-ring {
+  position: absolute;
+  inset: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.birthday-personal-card {
+  margin: 0 auto 16px;
+  width: fit-content;
+  max-width: 100%;
+  text-align: center;
+}
+
+.birthday-personal-card small {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.birthday-personal-card h2 {
+  margin: 6px 0 0;
+  font-size: clamp(1.35rem, 6vw, 2rem);
+  line-height: 1.1;
+  color: #fff;
+}
+
+.birthday-prayer-block {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.birthday-section-label {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--birthday-accent);
+}
+
+.birthday-prayer-block p {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: rgba(250, 246, 255, 0.9);
+}
+
+.birthday-blessing {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff4cc !important;
+}
+
+.birthday-blessing span {
+  color: var(--birthday-accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+}
+
+.birthday-scripture {
+  margin-top: 18px;
+  padding: 18px 14px 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+  text-align: center;
+}
+
+.birthday-scripture-label {
+  display: inline-flex;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--birthday-accent);
+}
+
+.birthday-verse {
+  margin: 12px 0 8px;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #fff6df;
+}
+
+.birthday-scripture small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.birthday-seal {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.75);
 }
 
 .birthday-celebration {
@@ -18,23 +242,23 @@ section.birthday-page-card {
 
 .birthday-glow {
   position: absolute;
-  top: -128px;
+  top: -120px;
   left: 50%;
-  width: 260px;
-  height: 260px;
+  width: 270px;
+  height: 270px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 231, 147, .38), rgba(255, 231, 147, 0) 68%);
+  background: radial-gradient(circle, rgba(255, 231, 147, 0.32), rgba(255, 231, 147, 0) 70%);
   transform: translateX(-50%);
   animation: birthday-glow-breathe 2.8s ease-out both;
 }
 
 .birthday-orbit {
   position: absolute;
-  top: 42px;
+  top: 36px;
   left: 50%;
-  width: 124px;
-  height: 54px;
-  border: 1px solid rgba(255, 244, 200, .4);
+  width: 130px;
+  height: 58px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-left-color: transparent;
   border-right-color: transparent;
   border-radius: 50%;
@@ -72,41 +296,6 @@ section.birthday-page-card {
 .birthday-confetti i:nth-child(11) { --birthday-x: 68%; --birthday-color: #f7a9c4; --birthday-rotate: 52deg; --birthday-delay: 590ms; }
 .birthday-confetti i:nth-child(12) { --birthday-x: 94%; --birthday-color: #a9e4ce; --birthday-rotate: -12deg; --birthday-delay: 410ms; }
 
-.birthday-avatar {
-  animation: birthday-avatar-in 700ms cubic-bezier(.22, 1, .36, 1) 100ms both;
-}
-
-.birthday-page-card .eyebrow,
-.birthday-page-card h1,
-.birthday-message,
-.birthday-blessing,
-.birthday-seal {
-  animation: birthday-copy-in 520ms cubic-bezier(.22, 1, .36, 1) 260ms both;
-}
-
-.birthday-page-card h1 { animation-delay: 330ms; }
-.birthday-message { animation-delay: 400ms; }
-.birthday-blessing { animation-delay: 470ms; }
-.birthday-seal { animation-delay: 540ms; }
-
-.birthday-blessing {
-  display: grid;
-  gap: 5px;
-  padding: 13px 14px;
-  border: 1px solid rgba(255, 244, 200, .25);
-  border-radius: 16px;
-  background: rgba(35, 12, 72, .2);
-  color: #fff4c8 !important;
-}
-
-.birthday-blessing span {
-  color: #f7d978;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .8px;
-  text-transform: uppercase;
-}
-
 @keyframes birthday-card-in {
   from { opacity: 0; transform: translateY(18px) scale(.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -138,6 +327,12 @@ section.birthday-page-card {
 @keyframes birthday-copy-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@media (min-width: 540px) {
+  .birthday-page-card {
+    padding: 22px 24px 20px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

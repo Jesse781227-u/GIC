@@ -11,6 +11,8 @@ import {
 import { audienceService } from "./audience.service.js";
 import { pushService } from "./push.service.js";
 import { eq, and, count, sql, inArray } from "drizzle-orm";
+import { events } from "../../db/schema.js";
+import { formatServiceReminderOffset, SERVICE_TIME_ZONE } from "../event-occurrences.js";
 
 const defaultPreferenceFlags = {
   pushEnabled: true,
@@ -86,22 +88,32 @@ export class NotificationService {
     const devices = await db.query.pushDevices.findMany({
       where: and(eq(pushDevices.churchId, member.churchId), eq(pushDevices.memberId, reminder.memberId), eq(pushDevices.active, true)),
     });
-    const title = reminder.serviceType === "midweek-service" ? "GIC Midweek Service" : "GIC Sunday Service";
     const offset = Number(reminder.offsetMinutes);
-    const body = `${title} starts in ${offset === 60 ? "1 hour" : "30 minutes"}.`;
+    const defaultTitle = reminder.serviceType === "midweek-service" ? "GIC Midweek Service" : "GIC Sunday Service";
+    const eventId = reminder.occurrenceKey.split(":")[0];
+    const event = await db.query.events.findFirst({ where: eq(events.id, eventId) });
+    const title = event?.title || defaultTitle;
+    const occurrenceDate = new Intl.DateTimeFormat("en-US", {
+      timeZone: SERVICE_TIME_ZONE,
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    }).format(reminder.serviceStartsAt);
+    const body = `${title} starts in ${formatServiceReminderOffset(offset)} on ${occurrenceDate}.`;
+    const destinationUrl = event ? `/events/${event.id}` : "/events";
     const [inboxItem] = await db.insert(notifications).values({
       churchId: member.churchId,
       memberId: reminder.memberId,
       title,
       body,
       type: "EVENT_REMINDER",
-      destinationUrl: "/events",
+      destinationUrl,
     }).returning();
     if (devices.length) {
       const deliveries = await db.insert(notificationDeliveries).values(devices.map((device) => ({
         notificationId: inboxItem.id, memberId: reminder.memberId, deviceId: device.id, status: "pending" as const,
       }))).returning({ id: notificationDeliveries.id });
-      await pushService.processDeliveries(deliveries.map(({ id }) => id), title, body, "/events");
+      await pushService.processDeliveries(deliveries.map(({ id }) => id), title, body, destinationUrl);
     }
   }
 
@@ -158,7 +170,7 @@ export class NotificationService {
     }
 
     // Mark as PROCESSING first to prevent duplicate sends (scheduler idempotency)
-    await db
+    const [claimed] = await db
       .update(adminNotifications)
       .set({ status: "PROCESSING" })
       .where(
@@ -167,7 +179,9 @@ export class NotificationService {
           // Only transition from safe states
           sql`${adminNotifications.status} IN ('DRAFT', 'SCHEDULED')`
         )
-      );
+      )
+      .returning({ id: adminNotifications.id });
+    if (!claimed) return;
 
     try {
       const recipients = await audienceService.resolve({

@@ -118,14 +118,14 @@ function getNextEvent() {
   return getUpcomingEvents()[0]
 }
 
-function formatServiceLabel(serviceDate, eventId) {
+function formatServiceLabel(serviceDate) {
   return formatServiceOccurrenceLabel(serviceDate)
 }
 
 function getServiceDisplay(event) {
   const { center } = getSelectedService()
   const serviceDate = getServiceOccurrence(event.id)
-  const label = formatServiceLabel(serviceDate, event.id)
+  const label = formatServiceLabel(serviceDate)
   const sundayTime = getSelectedService().time.replace(/^Sunday Services?:\s*/i, '')
   return event.id === 'sunday-service'
     ? { ...event, date: label, time: sundayTime, location: center, startAt: serviceDate }
@@ -299,6 +299,7 @@ function NotificationProvider({ children }) {
 function AudioPlayerProvider({ children }) {
   const audioRef = useRef(null)
   const [streamUrl, setStreamUrl] = useState('https://globalimpactng.mixlr.com')
+  const [recordingId, setRecordingId] = useState(null)
   const [title, setTitle] = useState('Global Impact Church')
   const [recordingDate, setRecordingDate] = useState(DEFAULT_RECORDING_DATE)
   const [playing, setPlaying] = useState(false)
@@ -319,6 +320,7 @@ function AudioPlayerProvider({ children }) {
   const setStream = useCallback((nextUrl, nextTitle, options = {}) => {
     const safeUrl = nextUrl || streamUrl
     setStreamUrl(safeUrl)
+    setRecordingId(options.recordingId || null)
     setTitle(nextTitle || title)
     setRecordingDate(options.recordingDate ?? DEFAULT_RECORDING_DATE)
     setLoading(Boolean(options.loading) || Boolean(nextUrl))
@@ -329,6 +331,47 @@ function AudioPlayerProvider({ children }) {
       audio.src = safeUrl
     }
   }, [ensureAudio, streamUrl, title])
+
+  useEffect(() => {
+    if (!playing || !recordingId) return undefined
+    let active = true
+    let sessionId = null
+    let heartbeatId = null
+    let lastReportedAt = Date.now()
+
+    const reportListening = async (ended = false) => {
+      if (!sessionId) return
+      const durationSeconds = Math.min(30, Math.max(0, Math.floor((Date.now() - lastReportedAt) / 1000)))
+      lastReportedAt = Date.now()
+      try {
+        await fetchMemberApi(`/api/mixlr/listens/${encodeURIComponent(sessionId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ durationSeconds, ended }),
+          keepalive: ended,
+        })
+      } catch {
+        // Playback continues even if analytics are temporarily unavailable.
+      }
+    }
+
+    fetchMemberApi(`/api/mixlr/recordings/${encodeURIComponent(recordingId)}/listens`, { method: 'POST' })
+      .then(({ sessionId: nextSessionId }) => {
+        sessionId = nextSessionId
+        lastReportedAt = Date.now()
+        if (!active) {
+          void reportListening(true)
+          return
+        }
+        heartbeatId = window.setInterval(() => { void reportListening() }, 15000)
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+      if (heartbeatId) window.clearInterval(heartbeatId)
+      void reportListening(true)
+    }
+  }, [playing, recordingId])
 
   const pause = useCallback(() => {
     const audio = ensureAudio()
@@ -410,6 +453,10 @@ function AudioPlayerProvider({ children }) {
     const handlePause = () => {
       setPlaying(false)
     }
+    const handleEnded = () => {
+      setPlaying(false)
+      setElapsedSeconds(0)
+    }
     const handleError = () => {
       setError('Mixlr is unavailable right now. Please try again in a moment.')
       setPlaying(false)
@@ -421,6 +468,7 @@ function AudioPlayerProvider({ children }) {
     audio.addEventListener('timeupdate', handleTimeUpdate)
     audio.addEventListener('play', handlePlay)
     audio.addEventListener('pause', handlePause)
+    audio.addEventListener('ended', handleEnded)
     audio.addEventListener('error', handleError)
     return () => {
       audio.removeEventListener('loadeddata', handleLoadedData)
@@ -429,6 +477,7 @@ function AudioPlayerProvider({ children }) {
       audio.removeEventListener('timeupdate', handleTimeUpdate)
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('pause', handlePause)
+      audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('error', handleError)
     }
   }, [ensureAudio, streamUrl, volume])
@@ -823,6 +872,7 @@ function BottomNav({ active = 'home' }) {
 const ACCOUNT_COMPLETION_PATHS = ['/', '/recover', '/onboarding', '/profile/edit']
 const AUTHENTICATED_CONSOLE_PATHS = [
   '/home',
+  '/mixlr',
   '/announcements',
   '/events',
   '/my-registrations',
@@ -1254,6 +1304,7 @@ function LegacyHomePage() {
         setStream(streamUrl, mixlrData?.displayTitle || mixlrData?.title || 'Global Impact Church', {
           loading: true,
           recordingDate: formatRecordingDate(mixlrData?.displayDate),
+          recordingId: mixlrData?.id,
         })
       } catch {
         if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', {
@@ -1325,6 +1376,7 @@ function HomePage() {
         setStream(mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com', mixlrData?.displayTitle || mixlrData?.title || 'Global Impact Church', {
           loading: true,
           recordingDate: formatRecordingDate(mixlrData?.displayDate),
+          recordingId: mixlrData?.id,
         })
       })
       .catch(() => {
@@ -1419,6 +1471,62 @@ function Announcements() {
   </MemberShell>
 }
 
+function BirthdayPhoto({ birthday }) {
+  if (!birthday?.profileImage && !birthday?.avatar) return null
+  const image = birthday.profileImage || birthday.avatar
+  return <div className="birthday-photo-wrap"><img className="birthday-avatar" src={image} alt={`${birthday.fullName || birthday.name || 'Member'} portrait`} /></div>
+}
+
+function BirthdayScripture({ scripture }) {
+  if (!scripture) return null
+  return <div className="birthday-scripture">
+    <span className="birthday-scripture-label">Scripture</span>
+    <p className="birthday-verse">“{scripture.text}”</p>
+    <small>{scripture.reference}</small>
+  </div>
+}
+
+function BirthdayPrayer({ message, blessing }) {
+  return <div className="birthday-prayer-block">
+    <span className="birthday-section-label">A prayer for you</span>
+    <p>{message}</p>
+    <p className="birthday-blessing"><span>Our prayer for you</span>{blessing}</p>
+  </div>
+}
+
+function BirthdayTemplate({ birthday }) {
+  const templateId = birthday?.template || 'grace'
+  const hasImage = Boolean(birthday?.profileImage || birthday?.avatar)
+  return <section className={`birthday-page-card birthday-template-${templateId} ${hasImage ? 'birthday-has-photo' : 'birthday-no-photo'}`}>
+    <div className="birthday-celebration" aria-hidden="true">
+      <span className="birthday-glow" />
+      <span className="birthday-orbit birthday-orbit-one" />
+      <span className="birthday-orbit birthday-orbit-two" />
+      <div className="birthday-confetti">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
+    </div>
+
+    <div className="birthday-topline">
+      <span className="birthday-brandmark">Global Impact Church</span>
+    </div>
+
+    <div className="birthday-header-block">
+      <span className="eyebrow">Happy birthday</span>
+      <h1>{birthday?.title || 'Happy Birthday!'}</h1>
+    </div>
+
+    {hasImage ? <BirthdayPhoto birthday={birthday} /> : <div className="birthday-no-photo-art" aria-hidden="true"><div className="birthday-no-photo-mark" /><div className="birthday-no-photo-ring" /></div>}
+
+    <div className="birthday-personal-card">
+      <small>Celebrating</small>
+      <h2>{birthday?.fullName || birthday?.name || 'Friend'}</h2>
+    </div>
+
+    <BirthdayPrayer message={birthday?.message} blessing={birthday?.blessing} />
+    <BirthdayScripture scripture={birthday?.scripture} />
+    <div className="birthday-seal">With love from the GIC family</div>
+  </section>
+}
+
 function BirthdayPage() {
   const [birthday, setBirthday] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -1430,20 +1538,7 @@ function BirthdayPage() {
   }, [])
   return <MemberShell active="home" title="Your Birthday" backTo="/announcements">
     {loading && <p className="center muted">Preparing your birthday message...</p>}
-    {!loading && birthday && <section className="birthday-page-card">
-      <div className="birthday-celebration" aria-hidden="true">
-        <span className="birthday-glow" />
-        <span className="birthday-orbit birthday-orbit-one" />
-        <span className="birthday-orbit birthday-orbit-two" />
-        <div className="birthday-confetti">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>
-      </div>
-      {birthday.avatar ? <img className="birthday-avatar" src={birthday.avatar} alt="" /> : <div className="birthday-avatar birthday-avatar-fallback">{birthday.name.charAt(0)}</div>}
-      <span className="eyebrow">A message just for you</span>
-      <h1>{birthday.title}</h1>
-      <p className="birthday-message">{birthday.message}</p>
-      <p className="birthday-blessing"><span>Our prayer for you</span>{birthday.blessing}</p>
-      <div className="birthday-seal">With love from the GIC family</div>
-    </section>}
+    {!loading && birthday && <BirthdayTemplate birthday={birthday} />}
     {!loading && !birthday && <div className="empty"><h2>This birthday message is private</h2><p>There is no birthday celebration available today.</p><Link className="btn primary wide" to="/announcements">Back to Announcements</Link></div>}
   </MemberShell>
 }
@@ -1700,6 +1795,41 @@ function ServiceModalLegacy({ event, onClose }) {
   }
 
   return <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true"><div className="service-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose} aria-label="Close service details">×</button><div className="service-modal-header"><span className="eyebrow">Service</span><h2>{serviceEvent.title}</h2></div><div className="detail-meta"><span><CalendarDays size={15} />{new Intl.DateTimeFormat('en-US', { timeZone: 'Africa/Lagos', weekday: 'long', month: 'short', day: 'numeric' }).format(startDate)}</span><span><Clock3 size={15} />{serviceEvent.time}</span><span><MapPin size={15} />{serviceEvent.location}</span></div><p>{event.id === 'midweek-service' ? 'Join us for a vibrant midweek gathering of worship, prayer, and the Word.' : 'Join us for worship, the Word, and fellowship at Global Impact Church.'}</p><div className="reminder-panel"><b>Remind me</b><label className="check"><input type="checkbox" checked={activeReminders.includes(60)} onChange={() => toggleReminder(60)} /> 1 hour before</label><label className="check"><input type="checkbox" checked={activeReminders.includes(30)} onChange={() => toggleReminder(30)} /> 30 minutes before</label><button type="button" className="btn primary wide" onClick={saveReminders}>Remind Me</button></div><div className="service-modal-actions"><button type="button" className="btn white wide" onClick={addToCalendar}>Add to Calendar</button><button type="button" className="btn white wide" onClick={onClose}>Close</button></div>{calendarMessage && <p className="center muted">{calendarMessage}</p>}</div></div>
+}
+
+function MixlrRecordingPage() {
+  const { recordingId } = useParams()
+  const { setStream, resume } = useAudioPlayer()
+  const [recording, setRecording] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API_BASE}/api/mixlr/recordings/${encodeURIComponent(recordingId)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('This recording is unavailable.')
+        return response.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        setRecording(data)
+        setStream(data.audioUrl, data.displayTitle || data.title, { recordingDate: formatRecordingDate(data.displayDate), recordingId: data.id || recordingId })
+      })
+      .catch((requestError) => { if (!cancelled) setError(requestError.message || 'This recording is unavailable.') })
+    return () => { cancelled = true }
+  }, [recordingId])
+
+  return <MemberShell active="home" title="Service Recording" backTo="/home">
+    <section className="section mixlr-recording-page">
+      <div className="section-head"><span>GIC Mixlr Recording</span></div>
+      {error ? <p className="center muted" role="alert">{error}</p> : !recording ? <p className="center muted">Loading recording...</p> : <>
+        <h1>{recording.displayTitle || recording.title}</h1>
+        <p className="muted">{recording.displayDate || 'Global Impact Church'}</p>
+        <button type="button" className="btn primary wide" onClick={() => resume()}><Play size={16}/> Play recording</button>
+        <p className="muted">Recording provided by Mixlr.</p>
+      </>}
+    </section>
+  </MemberShell>
 }
 
 function EventDetails() {
@@ -2431,7 +2561,7 @@ export default function App() {
       icon: GIC_LOGO,
       badge: GIC_LOGO,
       data: { notificationId: payload?.data?.notificationId || '' },
-      tag: payload?.data?.notificationId || 'gic-fcm-foreground',
+      tag: payload?.data?.tag || payload?.data?.notificationId || 'gic-fcm-foreground',
     })).catch(() => {})
   }), [])
   return <NotificationProvider>
@@ -2451,6 +2581,7 @@ export default function App() {
         <Route path="/events/:id/register" element={<ProtectedRoute><EventRegistration /></ProtectedRoute>} />
         <Route path="/events/:id/registration" element={<ProtectedRoute><EventRegistrationAlias /></ProtectedRoute>} />
         <Route path="/events/:id/success" element={<ProtectedRoute><RegistrationSuccess /></ProtectedRoute>} />
+        <Route path="/mixlr/:recordingId" element={<ProtectedRoute><MixlrRecordingPage /></ProtectedRoute>} />
         <Route path="/my-registrations" element={<ProtectedRoute><MyRegistrations /></ProtectedRoute>} />
         <Route path="/registrations" element={<Navigate to="/my-registrations" replace />} />
         <Route path="/messages" element={<Navigate to="/announcements" replace />} />

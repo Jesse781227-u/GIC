@@ -19,6 +19,8 @@ const allowedRoutes = [
   /^\/messages$/,
   /^\/registrations$/,
   /^\/events\/[A-Za-z0-9_-]+\/registration$/,
+  /^\/mixlr\/[A-Za-z0-9_-]+$/,
+  /^\/attendance\/[A-Za-z0-9_:-]+$/,
 ]
 
 export function isNotificationDestinationRoute(pathname) {
