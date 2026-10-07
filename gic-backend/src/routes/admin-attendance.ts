@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, exists, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
@@ -12,6 +12,12 @@ import {
   mixlrRecordingStats,
   mixlrRecordings,
   serviceAttendance,
+  ministries,
+  cells,
+  segments,
+  ministryMemberships,
+  cellMemberships,
+  segmentMemberships,
 } from "../db/schema.js";
 import { churchIdForUser } from "../lib/tenant.js";
 import { formatServiceOccurrenceLabel } from "../services/service-attendance.js";
@@ -22,11 +28,54 @@ app.use("*", authMiddleware, adminMiddleware);
 
 async function getDynamicDimensionOptions(churchId: string) {
   const ageGroups = await db.query.ageGroupDefinitions.findMany({ where: and(eq(ageGroupDefinitions.churchId, churchId), eq(ageGroupDefinitions.active, true)), orderBy: [ageGroupDefinitions.minAge] });
+  const [organizationRows, cellRows, segmentRows, eventRows, recordingRows, relationshipRows] = await Promise.all([
+    db.select({ id: ministries.id, name: ministries.name, organizationType: ministries.organizationType }).from(ministries).where(and(eq(ministries.churchId, churchId), eq(ministries.active, true))).orderBy(asc(ministries.name)),
+    db.select({ id: cells.id, name: cells.name, organizationType: cells.organizationType }).from(cells).where(and(eq(cells.churchId, churchId), eq(cells.active, true))).orderBy(asc(cells.name)),
+    db.select({ id: segments.id, name: segments.name }).from(segments).where(and(eq(segments.churchId, churchId), eq(segments.active, true))).orderBy(asc(segments.name)),
+    db.select({ id: events.id, title: events.title, startsAt: events.startsAt }).from(events).where(eq(events.churchId, churchId)).orderBy(asc(events.startsAt)),
+    db.select({ id: mixlrRecordings.id, title: mixlrRecordings.title, recordingCreatedAt: mixlrRecordings.recordingCreatedAt }).from(mixlrRecordings).orderBy(asc(mixlrRecordings.recordingCreatedAt)),
+    db.selectDistinct({ value: members.relationshipStatus }).from(members).where(and(eq(members.churchId, churchId), sql`${members.relationshipStatus} IS NOT NULL`)).orderBy(asc(members.relationshipStatus)),
+  ]);
 
   return {
     ageGroups: ageGroups.map((item) => ({ id: item.id, name: item.name, minAge: item.minAge, maxAge: item.maxAge })),
     genders: ["male", "female"],
+    ministries: organizationRows.filter((item) => item.organizationType === "ministry"),
+    units: organizationRows.filter((item) => item.organizationType === "unit"),
+    fellowships: organizationRows.filter((item) => item.organizationType === "fellowship"),
+    cells: cellRows.filter((item) => item.organizationType === "cell" || item.organizationType === "fellowship"),
+    groups: cellRows.filter((item) => item.organizationType === "group"),
+    segments: segmentRows,
+    relationshipStatuses: relationshipRows.filter((item) => item.value).map((item) => ({ id: item.value, name: item.value })),
+    events: eventRows,
+    recordings: recordingRows,
   };
+}
+
+function addMemberDimensionFilters(conditions: any[], churchId: string, filters: Record<string, string | undefined>) {
+  if (filters.ministryId || filters.unitId || filters.fellowshipId) {
+    const organizationId = filters.ministryId || filters.unitId || filters.fellowshipId;
+    conditions.push(exists(db.select({ id: ministryMemberships.id }).from(ministryMemberships).where(and(
+      eq(ministryMemberships.churchId, churchId),
+      eq(ministryMemberships.memberId, members.id),
+      eq(ministryMemberships.ministryId, organizationId!),
+    ))));
+  }
+  if (filters.cellId || filters.groupId) {
+    const cellId = filters.cellId || filters.groupId;
+    conditions.push(exists(db.select({ id: cellMemberships.id }).from(cellMemberships).where(and(
+      eq(cellMemberships.churchId, churchId),
+      eq(cellMemberships.memberId, members.id),
+      eq(cellMemberships.cellId, cellId!),
+    ))));
+  }
+  if (filters.segmentId) {
+    conditions.push(exists(db.select({ id: segmentMemberships.id }).from(segmentMemberships).where(and(
+      eq(segmentMemberships.churchId, churchId),
+      eq(segmentMemberships.memberId, members.id),
+      eq(segmentMemberships.segmentId, filters.segmentId),
+    ))));
+  }
 }
 
 async function listServiceRows(churchId: string, filters: Record<string, string | undefined>) {
@@ -34,6 +83,8 @@ async function listServiceRows(churchId: string, filters: Record<string, string 
   if (filters.occurrenceId) conditions.push(eq(serviceAttendance.occurrenceId, filters.occurrenceId));
   if (filters.gender) conditions.push(eq(members.gender, filters.gender));
   if (filters.ageGroupId) conditions.push(eq(members.ageGroupId, filters.ageGroupId));
+  if (filters.relationshipStatus) conditions.push(eq(members.relationshipStatus, filters.relationshipStatus));
+  addMemberDimensionFilters(conditions, churchId, filters);
 
   const rows = await db.select({
     occurrenceId: serviceAttendance.occurrenceId,
@@ -62,6 +113,8 @@ async function listRegistrationRows(churchId: string, filters: Record<string, st
   if (filters.status) conditions.push(eq(eventRegistrations.status, filters.status));
   if (filters.gender) conditions.push(eq(members.gender, filters.gender));
   if (filters.ageGroupId) conditions.push(eq(members.ageGroupId, filters.ageGroupId));
+  if (filters.relationshipStatus) conditions.push(eq(members.relationshipStatus, filters.relationshipStatus));
+  addMemberDimensionFilters(conditions, churchId, filters);
 
   return db.select({
     eventId: events.id,
@@ -89,6 +142,13 @@ app.get("/service", async (c) => {
     occurrenceId: z.string().optional(),
     gender: z.string().optional(),
     ageGroupId: z.string().optional(),
+    relationshipStatus: z.string().optional(),
+    ministryId: z.string().optional(),
+    unitId: z.string().optional(),
+    fellowshipId: z.string().optional(),
+    cellId: z.string().optional(),
+    groupId: z.string().optional(),
+    segmentId: z.string().optional(),
   }).safeParse(c.req.query());
 
   if (!parsed.success) return c.json({ error: "Invalid service attendance filters" }, 400);
@@ -124,6 +184,13 @@ app.get("/registrations", async (c) => {
     gender: z.string().optional(),
     ageGroupId: z.string().optional(),
     status: z.string().optional(),
+    relationshipStatus: z.string().optional(),
+    ministryId: z.string().optional(),
+    unitId: z.string().optional(),
+    fellowshipId: z.string().optional(),
+    cellId: z.string().optional(),
+    groupId: z.string().optional(),
+    segmentId: z.string().optional(),
   }).safeParse(c.req.query());
 
   if (!parsed.success) return c.json({ error: "Invalid registration filters" }, 400);
@@ -133,9 +200,11 @@ app.get("/registrations", async (c) => {
   const confirmed = rows.reduce((sum, row) => sum + Number(row.confirmed || 0), 0);
   const waitlisted = rows.reduce((sum, row) => sum + Number(row.waitlisted || 0), 0);
   const pending = rows.reduce((sum, row) => sum + Number(row.pending || 0), 0);
+  const cancelled = await db.select({ total: count() }).from(eventRegistrations)
+    .where(and(eq(eventRegistrations.churchId, churchId), eq(eventRegistrations.status, "CANCELLED")));
 
   return c.json({
-    summary: { total, responded: confirmed, notAttending: waitlisted, noResponse: pending, confirmed, waitlisted, pending },
+    summary: { total, responded: confirmed, notAttending: waitlisted, noResponse: pending, confirmed, waitlisted, pending, cancelled: Number(cancelled[0]?.total || 0) },
     rows,
     options: await getDynamicDimensionOptions(churchId),
   });
@@ -147,6 +216,8 @@ app.get("/mixlr", async (c) => {
 
   const statsRows = await db
     .select({
+      recordingId: mixlrRecordings.id,
+      recordingTitle: mixlrRecordings.title,
       listeners: mixlrRecordingStats.listeners,
       plays: mixlrRecordingStats.plays,
       listeningTimeSeconds: mixlrRecordingStats.listeningTimeSeconds,
@@ -168,7 +239,7 @@ app.get("/mixlr", async (c) => {
       identifiedListeners: identifiedListenerCount.length,
       source: "aggregate",
     },
-    rows: [],
+    rows: statsRows.map((row) => ({ ...row, identifiedListeners: 0 })),
     options: await getDynamicDimensionOptions(churchId),
   });
 });
