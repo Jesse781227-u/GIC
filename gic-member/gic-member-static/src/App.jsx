@@ -2501,6 +2501,7 @@ function EditProfile() {
 }
 
 function MyRegistrations() {
+  const navigate = useNavigate()
   const [now, setNow] = useState(Date.now())
   const [remoteRegistrations, setRemoteRegistrations] = useState([])
   const [remoteInterests, setRemoteInterests] = useState([])
@@ -2577,11 +2578,20 @@ function MyRegistrations() {
       const hours = Math.floor((remaining % 86400000) / 3600000)
       const minutes = Math.floor((remaining % 3600000) / 60000)
       const seconds = Math.floor((remaining % 60000) / 1000)
-      return <article className="registered-event-card" key={event.id}>
-        <Link className={`registered-event-cover ${event.flyerMediaType === 'video' ? 'has-video' : ''}`} to={`/events/${event.id}`} style={event.flyerMediaType === 'video' ? undefined : { backgroundImage: `url(${event.image || event.imageUrl || GIC_LOGO})` }} aria-label={`Open ${event.title}`}>
+      const flyerUrl = event.flyerMediaUrl || event.image || event.imageUrl || GIC_LOGO
+      return <article className="registered-event-card" key={event.id} role="link" tabIndex={0} aria-label={`Open ${event.title} details`} onClick={(clickEvent) => {
+        if (!clickEvent.target.closest('a, button')) navigate(`/events/${event.id}`)
+      }} onKeyDown={(keyEvent) => {
+        if (keyEvent.target !== keyEvent.currentTarget) return
+        if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+          keyEvent.preventDefault()
+          navigate(`/events/${event.id}`)
+        }
+      }}>
+        <div className={`registered-event-cover ${event.flyerMediaType === 'video' && event.flyerMediaUrl ? 'has-video' : ''}`} style={event.flyerMediaType === 'video' && event.flyerMediaUrl ? undefined : { backgroundImage: `url(${flyerUrl})` }}>
           {event.flyerMediaType === 'video' && event.flyerMediaUrl && <><video src={event.flyerMediaUrl} muted playsInline preload="metadata"/><span className="registered-video-play"><Play size={15}/> Play video</span></>}
           <span className="status">{event.registered ? event.status === 'WAITLISTED' ? 'Waitlisted' : 'Registered' : event.interested ? 'Interested' : 'Added to My Events'}</span>
-        </Link>
+        </div>
          <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':event.registered?'Event starts in':'Added to calendar · Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
       </article>
     }) : <div className="events-empty-state">

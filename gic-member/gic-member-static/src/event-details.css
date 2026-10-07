@@ -2,6 +2,8 @@
 .event-flyer-expand .detail-image{display:block;width:100%;height:auto;max-height:320px;object-fit:contain;margin:0 0 16px;border-radius:12px;background:#f4f2f8}
 .event-flyer-expand video.detail-image{aspect-ratio:16/9;object-fit:contain}
 .event-row-video{width:86px;height:84px;flex:none;object-fit:cover;border-radius:12px;background:#17131f}
+.registered-event-card[role="link"]{cursor:pointer}
+.registered-event-card[role="link"]:focus-visible{outline:3px solid #5b2c8a;outline-offset:3px}
 .registered-event-cover.has-video{position:relative;display:block;overflow:hidden;background:#17131f}
 .registered-event-cover.has-video>video{width:100%;height:100%;object-fit:cover}
 .registered-video-play{position:absolute;left:50%;top:50%;display:flex;align-items:center;gap:6px;transform:translate(-50%,-50%);padding:8px 10px;border-radius:7px;background:rgba(15,12,20,.76);color:#fff;font-size:10px;white-space:nowrap}
