@@ -151,34 +151,48 @@ app.get("/registrations", async (c) => {
 
 app.get("/mixlr", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
-  const recordingId = c.req.query("recordingId");
+  const parsed = z.object({
+    recordingId: z.string().optional(),
+    gender: z.string().optional(),
+    ageGroupId: z.string().optional(),
+  }).safeParse(c.req.query());
+  if (!parsed.success) return c.json({ error: "Invalid Mixlr report filters" }, 400);
+  const { recordingId, gender, ageGroupId } = parsed.data;
+  const conditions = [];
+  if (recordingId) conditions.push(eq(mixlrRecordings.id, recordingId));
+  if (gender) conditions.push(eq(members.gender, gender));
+  if (ageGroupId) conditions.push(eq(members.ageGroupId, ageGroupId));
 
-  const statsRows = await db
+  const rows = await db
     .select({
       recordingId: mixlrRecordings.id,
       recordingTitle: mixlrRecordings.title,
-      listeners: mixlrRecordingStats.listeners,
-      plays: mixlrRecordingStats.plays,
-      listeningTimeSeconds: mixlrRecordingStats.listeningTimeSeconds,
+      recordingCreatedAt: mixlrRecordings.recordingCreatedAt,
+      listeners: sql<number>`count(DISTINCT ${members.id})::int`,
+      plays: sql<number>`count(${mixlrListenerSessions.id})::int`,
+      listeningTimeSeconds: sql<number>`COALESCE(sum(${mixlrListenerSessions.durationSeconds}), 0)::int`,
+      identifiedListeners: sql<number>`count(DISTINCT ${members.id})::int`,
     })
-    .from(mixlrRecordingStats)
-    .innerJoin(mixlrRecordings, eq(mixlrRecordingStats.recordingId, mixlrRecordings.id))
-    .where(recordingId ? eq(mixlrRecordings.id, recordingId) : undefined);
-
-  const identifiedListenerCount = await db
-    .selectDistinct({ memberId: mixlrListenerSessions.memberId })
+    .from(mixlrRecordings)
+    .leftJoin(mixlrListenerSessions, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
+    .leftJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(mixlrRecordings.id, mixlrRecordings.title, mixlrRecordings.recordingCreatedAt)
+    .orderBy(asc(mixlrRecordings.recordingCreatedAt));
+  const identifiedMembers = await db.selectDistinct({ memberId: mixlrListenerSessions.memberId })
     .from(mixlrListenerSessions)
-    .where(sql`${mixlrListenerSessions.memberId} IS NOT NULL`);
+    .innerJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
+    .innerJoin(mixlrRecordings, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
+    .where(conditions.length ? and(...conditions) : undefined);
 
   return c.json({
     summary: {
-      totalListeners: statsRows.reduce((count, row) => count + Number(row.listeners || 0), 0),
-      totalPlays: statsRows.reduce((count, row) => count + Number(row.plays || 0), 0),
-      totalListeningTimeSeconds: statsRows.reduce((count, row) => count + Number(row.listeningTimeSeconds || 0), 0),
-      identifiedListeners: identifiedListenerCount.length,
-      source: "aggregate",
+      totalListeners: rows.reduce((total, row) => total + Number(row.listeners || 0), 0),
+      totalPlays: rows.reduce((total, row) => total + Number(row.plays || 0), 0),
+      totalListeningTimeSeconds: rows.reduce((total, row) => total + Number(row.listeningTimeSeconds || 0), 0),
+      identifiedListeners: identifiedMembers.length,
     },
-    rows: statsRows.map((row) => ({ ...row, identifiedListeners: 0 })),
+    rows,
     options: await getDynamicDimensionOptions(churchId),
   });
 });

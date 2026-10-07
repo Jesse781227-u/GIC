@@ -299,6 +299,7 @@ function NotificationProvider({ children }) {
 function AudioPlayerProvider({ children }) {
   const audioRef = useRef(null)
   const [streamUrl, setStreamUrl] = useState('https://globalimpactng.mixlr.com')
+  const [recordingId, setRecordingId] = useState(null)
   const [title, setTitle] = useState('Global Impact Church')
   const [recordingDate, setRecordingDate] = useState(DEFAULT_RECORDING_DATE)
   const [playing, setPlaying] = useState(false)
@@ -319,6 +320,7 @@ function AudioPlayerProvider({ children }) {
   const setStream = useCallback((nextUrl, nextTitle, options = {}) => {
     const safeUrl = nextUrl || streamUrl
     setStreamUrl(safeUrl)
+    setRecordingId(options.recordingId || null)
     setTitle(nextTitle || title)
     setRecordingDate(options.recordingDate ?? DEFAULT_RECORDING_DATE)
     setLoading(Boolean(options.loading) || Boolean(nextUrl))
@@ -329,6 +331,47 @@ function AudioPlayerProvider({ children }) {
       audio.src = safeUrl
     }
   }, [ensureAudio, streamUrl, title])
+
+  useEffect(() => {
+    if (!playing || !recordingId) return undefined
+    let active = true
+    let sessionId = null
+    let heartbeatId = null
+    let lastReportedAt = Date.now()
+
+    const reportListening = async (ended = false) => {
+      if (!sessionId) return
+      const durationSeconds = Math.min(30, Math.max(0, Math.floor((Date.now() - lastReportedAt) / 1000)))
+      lastReportedAt = Date.now()
+      try {
+        await fetchMemberApi(`/api/mixlr/listens/${encodeURIComponent(sessionId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ durationSeconds, ended }),
+          keepalive: ended,
+        })
+      } catch {
+        // Playback continues even if analytics are temporarily unavailable.
+      }
+    }
+
+    fetchMemberApi(`/api/mixlr/recordings/${encodeURIComponent(recordingId)}/listens`, { method: 'POST' })
+      .then(({ sessionId: nextSessionId }) => {
+        sessionId = nextSessionId
+        lastReportedAt = Date.now()
+        if (!active) {
+          void reportListening(true)
+          return
+        }
+        heartbeatId = window.setInterval(() => { void reportListening() }, 15000)
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+      if (heartbeatId) window.clearInterval(heartbeatId)
+      void reportListening(true)
+    }
+  }, [playing, recordingId])
 
   const pause = useCallback(() => {
     const audio = ensureAudio()
@@ -410,6 +453,10 @@ function AudioPlayerProvider({ children }) {
     const handlePause = () => {
       setPlaying(false)
     }
+    const handleEnded = () => {
+      setPlaying(false)
+      setElapsedSeconds(0)
+    }
     const handleError = () => {
       setError('Mixlr is unavailable right now. Please try again in a moment.')
       setPlaying(false)
@@ -421,6 +468,7 @@ function AudioPlayerProvider({ children }) {
     audio.addEventListener('timeupdate', handleTimeUpdate)
     audio.addEventListener('play', handlePlay)
     audio.addEventListener('pause', handlePause)
+    audio.addEventListener('ended', handleEnded)
     audio.addEventListener('error', handleError)
     return () => {
       audio.removeEventListener('loadeddata', handleLoadedData)
@@ -429,6 +477,7 @@ function AudioPlayerProvider({ children }) {
       audio.removeEventListener('timeupdate', handleTimeUpdate)
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('pause', handlePause)
+      audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('error', handleError)
     }
   }, [ensureAudio, streamUrl, volume])
@@ -1255,6 +1304,7 @@ function LegacyHomePage() {
         setStream(streamUrl, mixlrData?.displayTitle || mixlrData?.title || 'Global Impact Church', {
           loading: true,
           recordingDate: formatRecordingDate(mixlrData?.displayDate),
+          recordingId: mixlrData?.id,
         })
       } catch {
         if (!cancelled) setStream('https://globalimpactng.mixlr.com', 'Global Impact Church', {
@@ -1326,6 +1376,7 @@ function HomePage() {
         setStream(mixlrData?.audioUrl || mixlrData?.streamUrl || 'https://globalimpactng.mixlr.com', mixlrData?.displayTitle || mixlrData?.title || 'Global Impact Church', {
           loading: true,
           recordingDate: formatRecordingDate(mixlrData?.displayDate),
+          recordingId: mixlrData?.id,
         })
       })
       .catch(() => {
@@ -1762,7 +1813,7 @@ function MixlrRecordingPage() {
       .then((data) => {
         if (cancelled) return
         setRecording(data)
-        setStream(data.audioUrl, data.displayTitle || data.title, { recordingDate: formatRecordingDate(data.displayDate) })
+        setStream(data.audioUrl, data.displayTitle || data.title, { recordingDate: formatRecordingDate(data.displayDate), recordingId: data.id || recordingId })
       })
       .catch((requestError) => { if (!cancelled) setError(requestError.message || 'This recording is unavailable.') })
     return () => { cancelled = true }

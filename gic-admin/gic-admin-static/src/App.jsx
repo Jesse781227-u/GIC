@@ -638,7 +638,7 @@ function LiveDashboard(){
 }
 
 function AttendanceOverview(){
- const [tab,setTab]=useState('Services')
+ const [tab,setTab]=useState('Mixlr')
  const [loading,setLoading]=useState(true)
  const [error,setError]=useState('')
  const [serviceOptions,setServiceOptions]=useState([])
@@ -745,10 +745,10 @@ function AttendanceOverview(){
                tableRows.map((row,index)=>{
                  if (tab === 'Mixlr') {
                    return <tr key={`${row.recordingId || 'mixlr'}-${index}`}>
-                     <td><b>{row.recordingTitle || row.recordingId || 'Recording'}</b></td>
+                     <td><b>{row.recordingTitle || row.recordingId || 'Recording'}</b><small>{row.recordingCreatedAt ? new Date(row.recordingCreatedAt).toLocaleDateString() : 'Recording date unavailable'}</small></td>
                      <td>{row.listeners ?? 0}</td>
                      <td>{row.plays ?? 0}</td>
-                     <td>{row.listeningTimeSeconds ? `${Math.round(row.listeningTimeSeconds / 60)} min` : '0 min'}</td>
+                     <td>{formatListeningTime(row.listeningTimeSeconds)}</td>
                      <td>{row.identifiedListeners ?? 0}</td>
                    </tr>
                  }
