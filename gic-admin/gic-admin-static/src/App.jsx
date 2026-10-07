@@ -642,6 +642,9 @@ function AttendanceOverview(){
  const [loading,setLoading]=useState(true)
  const [error,setError]=useState('')
  const [serviceOptions,setServiceOptions]=useState([])
+ const [listenerRows,setListenerRows]=useState([])
+ const [identifiedMemberRows,setIdentifiedMemberRows]=useState([])
+ const [memberListType,setMemberListType]=useState('')
  const [summary,setSummary]=useState({
    totalEligible: 0, responded: 0, inPerson: 0, online: 0, notAttending: 0, noResponse: 0, responseRate: 0,
    total: 0, confirmed: 0, waitlisted: 0, pending: 0, cancelled: 0,
@@ -680,6 +683,10 @@ function AttendanceOverview(){
         ...payload.summary,
         rows: payload.rows || [],
       })
+      if (tab === 'Mixlr') {
+       setListenerRows(payload.listeners || [])
+       setIdentifiedMemberRows(payload.identifiedMembers || [])
+      }
       if (tab === 'Services' && !filters.occurrenceId && !filters.gender && !filters.ageGroupId) {
        setServiceOptions(payload.rows || [])
       }
@@ -724,7 +731,7 @@ function AttendanceOverview(){
    <div className="tabs big attendance-tabs" style={{marginBottom:'0'}}>
     {['Services','Event Registrations','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
    </div>
-   <div className={`attendance-summary infographic-summary ${tab === 'Mixlr' ? 'mixlr-summary' : ''}`}>{summaryItems.map(([label,value], index)=>{const Icon=summaryIcon(label); return <div className={`infographic-metric metric-${index % 4}`} key={label}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
+  <div className={`attendance-summary infographic-summary ${tab === 'Mixlr' ? 'mixlr-summary' : ''}`}>{summaryItems.map(([label,value], index)=>{const Icon=summaryIcon(label); const drilldown=tab==='Mixlr'&&['Listeners','Identified members'].includes(label); return <div className={`infographic-metric metric-${index % 4}${drilldown?' clickable-metric':''}`} key={label} role={drilldown?'button':undefined} tabIndex={drilldown?0:undefined} aria-haspopup={drilldown?'dialog':undefined} onClick={drilldown?()=>setMemberListType(label):undefined} onKeyDown={drilldown?(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setMemberListType(label)}}:undefined}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
    <div className="attendance-filters"><div className="attendance-filter-grid">{allFilters.map(([label,key,values,placeholder,valueKey='name'])=><label key={key}><span>{label}</span><select value={filters[key] || ''} onChange={(event)=>setFilters((current)=>({...current,[key]:event.target.value}))}><option value="">{placeholder || `All ${label.toLowerCase()}`}</option>{(values || []).map((item)=><option key={item.id || item.occurrenceId} value={item.id || item.occurrenceId}>{item[valueKey] || item.name || item.serviceLabel || item.title}</option>)}</select></label>)}</div></div>
 
    {loading && <div className="empty-message">Loading attendance report...</div>}
@@ -779,6 +786,7 @@ function AttendanceOverview(){
      </>
    )}
   </Card>
+  {memberListType&&<div className="event-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="attendance-members-title" onMouseDown={(event)=>{if(event.target===event.currentTarget)setMemberListType('')}}><section className="event-modal attendance-list-modal"><div className="event-modal-header"><div><h2 id="attendance-members-title">{memberListType}</h2><p>{filters.recordingId?options.recordings.find((item)=>item.id===filters.recordingId)?.title:'All recordings'} · Member listening activity</p></div><button type="button" className="event-modal-close" aria-label="Close member list" onClick={()=>setMemberListType('')}><X size={18}/></button></div><div className="table-wrap attendance-list-table"><table><thead><tr><th>Member</th><th>Email</th><th>Phone</th>{memberListType==='Listeners'&&<th>Recording</th>}<th>Plays</th><th>Listening time</th><th>Last listened</th></tr></thead><tbody>{(memberListType==='Listeners'?listenerRows:identifiedMemberRows).length===0?<tr><td colSpan={memberListType==='Listeners'?7:6}><div className="empty-message">No identified member listens match these filters.</div></td></tr>:(memberListType==='Listeners'?listenerRows:identifiedMemberRows).map((item,index)=><tr key={`${item.memberId}-${item.recordingId||'all'}-${index}`}><td><b>{item.memberName||'Member'}</b><small>{item.memberId}</small></td><td>{item.email||'—'}</td><td>{item.phone||'—'}</td>{memberListType==='Listeners'&&<td>{item.recordingTitle}</td>}<td>{item.plays||0}</td><td>{formatListeningTime(item.listeningTimeSeconds)}</td><td>{item.lastListenedAt?new Date(item.lastListenedAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div></section></div>}
  </Page>
 }
 

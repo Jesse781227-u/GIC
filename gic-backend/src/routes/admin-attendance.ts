@@ -184,6 +184,37 @@ app.get("/mixlr", async (c) => {
     .innerJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
     .innerJoin(mixlrRecordings, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
     .where(conditions.length ? and(...conditions) : undefined);
+  const listeners = await db.select({
+    memberId: members.id,
+    memberName: members.displayName,
+    email: members.email,
+    phone: members.phone,
+    recordingId: mixlrRecordings.id,
+    recordingTitle: mixlrRecordings.title,
+    plays: count(mixlrListenerSessions.id),
+    listeningTimeSeconds: sql<number>`COALESCE(sum(${mixlrListenerSessions.durationSeconds}), 0)::int`,
+    lastListenedAt: sql<Date | null>`max(${mixlrListenerSessions.startedAt})`,
+  }).from(mixlrListenerSessions)
+    .innerJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
+    .innerJoin(mixlrRecordings, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(members.id, mixlrRecordings.id)
+    .orderBy(asc(members.displayName), asc(mixlrRecordings.title));
+  const identifiedMemberDetails = await db.select({
+    memberId: members.id,
+    memberName: members.displayName,
+    email: members.email,
+    phone: members.phone,
+    recordings: sql<number>`count(DISTINCT ${mixlrRecordings.id})::int`,
+    plays: count(mixlrListenerSessions.id),
+    listeningTimeSeconds: sql<number>`COALESCE(sum(${mixlrListenerSessions.durationSeconds}), 0)::int`,
+    lastListenedAt: sql<Date | null>`max(${mixlrListenerSessions.startedAt})`,
+  }).from(mixlrListenerSessions)
+    .innerJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
+    .innerJoin(mixlrRecordings, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(members.id)
+    .orderBy(asc(members.displayName));
 
   return c.json({
     summary: {
@@ -193,6 +224,8 @@ app.get("/mixlr", async (c) => {
       identifiedListeners: identifiedMembers.length,
     },
     rows,
+    listeners,
+    identifiedMembers: identifiedMemberDetails,
     options: await getDynamicDimensionOptions(churchId),
   });
 });

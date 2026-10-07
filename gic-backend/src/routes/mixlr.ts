@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
@@ -36,6 +36,20 @@ app.post("/recordings/:id/listens", authMiddleware, async (c) => {
   ]);
   if (!recording) return c.json({ error: "Mixlr recording not found" }, 404);
   if (!member) return c.json({ error: "Member account not found" }, 404);
+  const resumeCutoff = new Date(Date.now() - 120_000);
+  const [recentSession] = await db.select({ id: mixlrListenerSessions.id })
+    .from(mixlrListenerSessions)
+    .where(and(
+      eq(mixlrListenerSessions.recordingId, recordingId),
+      eq(mixlrListenerSessions.memberId, member.id),
+      gte(mixlrListenerSessions.startedAt, resumeCutoff),
+    ))
+    .orderBy(desc(mixlrListenerSessions.startedAt))
+    .limit(1);
+  if (recentSession) {
+    await db.update(mixlrListenerSessions).set({ endedAt: null }).where(eq(mixlrListenerSessions.id, recentSession.id));
+    return c.json({ sessionId: recentSession.id, resumed: true });
+  }
   const [session] = await db.insert(mixlrListenerSessions).values({ recordingId, memberId: member.id }).returning({ id: mixlrListenerSessions.id });
   return c.json({ sessionId: session.id }, 201);
 });
