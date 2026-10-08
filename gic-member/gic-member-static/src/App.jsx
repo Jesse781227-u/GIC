@@ -18,7 +18,7 @@ import { validateMemberRoute } from './notificationDestination'
 import { createCalendarFile, getEventStartTimestamp, getMemberEventStorageKey, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
 import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime, updateMemberProfileCache } from './queryCache'
-import { canAccessMemberApp, canFinishOnboarding, getPostAuthDestination } from './onboardingPolicy'
+import { canFinishOnboarding, getPostAuthDestination } from './onboardingPolicy'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -1037,10 +1037,6 @@ function ProtectedRoute({ children }) {
       return
     }
     storeMemberProfile(profile)
-    if (!canAccessMemberApp(profile)) {
-      if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
-      return
-    }
     if (!isStandalonePwa() && location.pathname !== '/onboarding') {
       navigate(getPostAuthDestination(false), { replace: true })
       return

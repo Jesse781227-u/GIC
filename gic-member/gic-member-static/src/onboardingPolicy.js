@@ -6,6 +6,3 @@ export function canFinishOnboarding(isStandalone) {
   return Boolean(isStandalone)
 }
 
-export function canAccessMemberApp(profile) {
-  return Boolean(profile?.active)
-}
