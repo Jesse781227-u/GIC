@@ -4,7 +4,9 @@ export type GroupCondition = { field: string; operator: string; value?: unknown;
 export type GroupRules = { logic?: "and" | "or"; conditions?: GroupCondition[] };
 export type GroupMember = typeof members.$inferSelect;
 
-function memberAge(member: GroupMember, now: Date) {
+type ProfileFields = Partial<Pick<GroupMember, "gender" | "ageGroupId" | "relationshipStatus" | "center" | "membershipStatus" | "joinedMonth" | "joinedYear" | "birthday">>;
+
+function memberAge(member: Pick<ProfileFields, "birthday">, now: Date) {
   const birthday = member.birthday || "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) return null;
   const date = new Date(`${birthday}T00:00:00Z`);
@@ -14,7 +16,7 @@ function memberAge(member: GroupMember, now: Date) {
   return age >= 0 ? age : null;
 }
 
-export function matchesProfileCondition(member: GroupMember, condition: GroupCondition, now = new Date()) {
+export function matchesProfileCondition(member: ProfileFields, condition: GroupCondition, now = new Date()) {
   switch (condition.field) {
     case "gender": return condition.operator === "equals" && member.gender === condition.value;
     case "age_group_id": return condition.operator === "equals" && member.ageGroupId === condition.value;

@@ -23,6 +23,7 @@
     { "idx": 18, "version": "7", "when": 1791075600000, "tag": "0019_mixlr_automation", "breakpoints": true },
     { "idx": 19, "version": "7", "when": 1791331200000, "tag": "0020_attendance_analytics", "breakpoints": true },
     { "idx": 20, "version": "7", "when": 1791331200001, "tag": "0021_event_reminder_tenant", "breakpoints": true },
-    { "idx": 21, "version": "7", "when": 1791331200002, "tag": "0022_event_interests", "breakpoints": true }
+    { "idx": 21, "version": "7", "when": 1791331200002, "tag": "0022_event_interests", "breakpoints": true },
+    { "idx": 22, "version": "7", "when": 1791460800000, "tag": "0023_member_page_index", "breakpoints": true }
   ]
 }

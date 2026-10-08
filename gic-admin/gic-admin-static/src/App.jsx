@@ -16,23 +16,13 @@ import AdminOrganizations from './AdminOrganizations'
 import AdminEventOrganizationSetting from './AdminEventOrganizationSetting'
 import AdminCreateEventModal from './AdminCreateEventModal'
 import {onAuthStateChanged, signInWithEmailAndPassword, signOut} from 'firebase/auth'
+import { useQuery } from '@tanstack/react-query'
+import { adminApiQueryKey, adminStaleTime } from './queryCache'
+import { adminApiScope, fetchAdminApi, requestAdminApi } from './adminApi'
 import './member-filters.css'
 import './admin-event-media.css'
 
 const purple='#4b20b5'
-const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
-
-async function fetchAdminApi(path, options = {}) {
- const user = adminAuth.currentUser
- if (!user) throw new Error('Admin session is unavailable')
- const token = await user.getIdToken()
- const response = await fetch(`${API_BASE}${path}`, {
-  ...options,
-  headers: {'Content-Type':'application/json', Authorization:`Bearer ${token}`, ...(options.headers || {})},
- })
- if (!response.ok) throw new Error(await response.text().catch(()=>'Request failed'))
- return response.json()
-}
 
 const onboardingGrowthData=[{d:'Mon',v:220},{d:'Tue',v:410},{d:'Wed',v:430},{d:'Thu',v:700},{d:'Fri',v:780},{d:'Sat',v:1050},{d:'Sun',v:1580}]
 const members=[
@@ -529,9 +519,13 @@ function AdminRegistrations(){
 function ModernMemberDetails(){
  const {id}=useParams()
  const navigate=useNavigate()
- const [member,setMember]=useState(null)
- const [groupMemberships,setGroupMemberships]=useState({ministries:[],cells:[],segments:[]})
- const [ageGroups,setAgeGroups]=useState([])
+ const memberPath=`/api/admin/members/${encodeURIComponent(id)}`
+ const [scope,setScope]=useState('')
+ useEffect(()=>{const user=adminAuth.currentUser;if(user)adminApiScope(user).then(setScope).catch(()=>setScope(''))},[])
+ const memberQuery=useQuery({queryKey:adminApiQueryKey(scope,memberPath),queryFn:()=>requestAdminApi(memberPath),enabled:Boolean(scope),staleTime:adminStaleTime(memberPath)})
+ const member=memberQuery.data?.member||null
+ const groupMemberships=memberQuery.data?.groups||{ministries:[],cells:[],segments:[]}
+ const ageGroups=memberQuery.data?.ageGroups||[]
  const [ageGroupId,setAgeGroupId]=useState('')
  const [relationshipStatus,setRelationshipStatus]=useState('')
  const [page,setPage]=useState(1)
@@ -542,8 +536,8 @@ function ModernMemberDetails(){
  const [savingProfile,setSavingProfile]=useState(false)
  const [deletingId,setDeletingId]=useState('')
  const [deleteError,setDeleteError]=useState('')
- useEffect(()=>{let cancelled=false;fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}`).then(({member:record,groups={},ageGroups:options=[]})=>{if(cancelled)return;setMember(record);setGroupMemberships({ministries:groups.ministries||[],cells:groups.fellowships||groups.cells||[],segments:groups.segments||[]});setAgeGroups(options);setAgeGroupId(record.ageGroupId||'');setRelationshipStatus(record.relationshipStatus||'');setBirthday(record.birthday||'')}).catch(()=>{if(!cancelled)setMember(null)});return()=>{cancelled=true}},[id])
- const saveDemographics=async()=>{setSavingProfile(true);setProfileNotice('');try{const {member:updated}=await fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}/profile`,{method:'PATCH',body:JSON.stringify({ageGroupId:ageGroupId||null,relationshipStatus:relationshipStatus||null,birthday})});setMember(updated);setProfileNotice('Personal information updated.')}catch(error){setProfileNotice(error.message||'Profile update failed.')}finally{setSavingProfile(false)}}
+ useEffect(()=>{const record=memberQuery.data?.member;if(!record)return;setAgeGroupId(record.ageGroupId||'');setRelationshipStatus(record.relationshipStatus||'');setBirthday(record.birthday||'')},[memberQuery.data?.member])
+ const saveDemographics=async()=>{setSavingProfile(true);setProfileNotice('');try{const {member:updated}=await fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}/profile`,{method:'PATCH',body:JSON.stringify({ageGroupId:ageGroupId||null,relationshipStatus:relationshipStatus||null,birthday})});setProfileNotice('Personal information updated.');void updated}catch(error){setProfileNotice(error.message||'Profile update failed.')}finally{setSavingProfile(false)}}
  const deleteMember=async(member)=>{
   if(!window.confirm(`Delete ${member.displayName||'this member'}? This permanently removes the member profile, devices, notifications, reminders, and ministry applications.`))return
   setDeleteError('')
@@ -613,40 +607,32 @@ function LiveMembers(){
  const [statusFilters,setStatusFilters]=useState([])
  const [page,setPage]=useState(1)
  const [pageSize]=useState(50)
- const [total,setTotal]=useState(0)
  const [unitIds,setUnitIds]=useState([])
  const [fellowshipIds,setFellowshipIds]=useState([])
  const [segmentIds,setSegmentIds]=useState([])
  const [ageGroupIds,setAgeGroupIds]=useState([])
  const [relationshipStatuses,setRelationshipStatuses]=useState([])
- const [filterOptions,setFilterOptions]=useState({units:[],fellowships:[],segments:[],ageGroups:[]})
- const [records,setRecords]=useState([])
- const [loading,setLoading]=useState(true)
- const [error,setError]=useState('')
  const [deleteError,setDeleteError]=useState('')
  const [deletingId,setDeletingId]=useState('')
- useEffect(()=>{
-  let cancelled=false
-  const params=new URLSearchParams()
-  if(query.trim())params.set('search',query.trim())
-  statusFilters.forEach((value)=>params.append('status',value))
-  unitIds.forEach((value)=>params.append('unitId',value))
-  fellowshipIds.forEach((value)=>params.append('fellowshipId',value))
-  segmentIds.forEach((value)=>params.append('segmentId',value))
-  ageGroupIds.forEach((value)=>params.append('ageGroupId',value))
-  relationshipStatuses.forEach((value)=>params.append('relationshipStatus',value))
-  params.set('page',String(page))
-  params.set('pageSize',String(pageSize))
-  setLoading(true)
-  setError('')
-  fetchAdminApi(`/api/admin/members?${params.toString()}`).then(({members=[],filters={},total:count=0})=>{
-   if(cancelled)return
-   setRecords(members)
-  setTotal(count)
-  setFilterOptions({units:filters.units||[],fellowships:filters.fellowships||[],segments:filters.segments||[],ageGroups:filters.ageGroups||[]})
-  }).catch((requestError)=>{if(!cancelled)setError(requestError.message)}).finally(()=>{if(!cancelled)setLoading(false)})
-  return ()=>{cancelled=true}
- },[query,statusFilters,unitIds,fellowshipIds,segmentIds,ageGroupIds,relationshipStatuses,page,pageSize])
+ const params=new URLSearchParams()
+ if(query.trim())params.set('search',query.trim())
+ statusFilters.forEach((value)=>params.append('status',value))
+ unitIds.forEach((value)=>params.append('unitId',value))
+ fellowshipIds.forEach((value)=>params.append('fellowshipId',value))
+ segmentIds.forEach((value)=>params.append('segmentId',value))
+ ageGroupIds.forEach((value)=>params.append('ageGroupId',value))
+ relationshipStatuses.forEach((value)=>params.append('relationshipStatus',value))
+ params.set('page',String(page))
+ params.set('pageSize',String(pageSize))
+ const path=`/api/admin/members?${params.toString()}`
+ const [scope,setScope]=useState('')
+ useEffect(()=>{const user=adminAuth.currentUser;if(user)adminApiScope(user).then(setScope).catch(()=>setScope(''))},[])
+ const membersQuery=useQuery({queryKey:adminApiQueryKey(scope,path),queryFn:()=>requestAdminApi(path),enabled:Boolean(scope),staleTime:adminStaleTime(path),placeholderData:(previousData)=>previousData})
+ const records=membersQuery.data?.members||[]
+ const total=membersQuery.data?.total||0
+ const filterOptions={units:membersQuery.data?.filters?.units||[],fellowships:membersQuery.data?.filters?.fellowships||[],segments:membersQuery.data?.filters?.segments||[],ageGroups:membersQuery.data?.filters?.ageGroups||[]}
+ const loading=membersQuery.isPending
+ const error=membersQuery.isError&&!membersQuery.data?membersQuery.error?.message:''
  useEffect(()=>{setPage(1)},[query,statusFilters,unitIds,fellowshipIds,segmentIds,ageGroupIds,relationshipStatuses])
  const visible=records
  const displayName=(member)=>String(member.displayName||member.name||'Unnamed member').trim()||'Unnamed member'
@@ -656,7 +642,6 @@ function LiveMembers(){
   setDeletingId(member.id)
   try{
    await fetchAdminApi(`/api/admin/ministry-applications/members/${encodeURIComponent(member.id)}`,{method:'DELETE'})
-   setRecords((items)=>items.filter((item)=>item.id!==member.id))
   }catch(requestError){
    setDeleteError(requestError.message||'Member could not be deleted.')
   }finally{
@@ -690,10 +675,12 @@ function LiveMemberDetails(){
 }
 
 function LiveDashboard(){
- const [summary,setSummary]=useState({members:0,applications:0,messages:0,sentMessages:0,upcomingEvents:0,pendingApplications:0})
- const [error,setError]=useState('')
- useEffect(()=>{Promise.all([fetchAdminApi('/api/admin/ministry-applications/members'),fetchAdminApi('/api/admin/ministry-applications'),fetchAdminApi('/api/admin/notifications'),fetchAdminApi('/api/admin/events/summary')]).then(([memberData,applicationData,messageData,eventData])=>setSummary({members:memberData.members?.length||0,applications:applicationData.applications?.length||0,messages:messageData.items?.length||0,sentMessages:(messageData.items||[]).filter((item)=>['SENT','PARTIALLY_FAILED','FAILED'].includes(item.status)).length,upcomingEvents:eventData.upcomingEvents||0,pendingApplications:(applicationData.applications||[]).filter((item)=>item.status==='PENDING').length})).catch((requestError)=>setError(requestError.message))},[])
- return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministries" label="Organizations" value="Manage" change={`${summary.pendingApplications} pending applications`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
+ const [scope,setScope]=useState('')
+ useEffect(()=>{const user=adminAuth.currentUser;if(user)adminApiScope(user).then(setScope).catch(()=>setScope(''))},[])
+ const path='/api/admin/dashboard'
+ const dashboard=useQuery({queryKey:adminApiQueryKey(scope,path),queryFn:()=>requestAdminApi(path),enabled:Boolean(scope),staleTime:adminStaleTime(path)})
+ const summary=dashboard.data||{members:0,applications:0,messages:0,sentMessages:0,upcomingEvents:0,pendingApplications:0}
+ return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministries" label="Organizations" value="Manage" change={`${summary.pendingApplications} pending applications`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{dashboard.isError&&<Card className="empty-message">{dashboard.data?'Showing saved dashboard data; refresh failed.':'Live dashboard data is unavailable right now.'}</Card>}</Page>
 }
 
 function AttendanceOverview(){

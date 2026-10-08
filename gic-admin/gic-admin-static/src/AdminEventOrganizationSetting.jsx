@@ -1,17 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { adminAuth } from './firebase'
-
-const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
-
-async function api(path, options = {}) {
-  const user = adminAuth.currentUser
-  if (!user) throw new Error('Admin session is unavailable')
-  const token = await user.getIdToken()
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${token}` } })
-  if (!response.ok) throw new Error(await response.text().catch(() => 'Request failed'))
-  return response.json()
-}
+import { fetchAdminApi as api } from './adminApi'
 
 export default function AdminEventOrganizationSetting({ event, onSaved }) {
   const [organizations, setOrganizations] = useState([])

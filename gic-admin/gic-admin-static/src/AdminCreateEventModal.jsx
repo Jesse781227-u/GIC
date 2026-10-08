@@ -4,6 +4,7 @@ import { CalendarDays, X, Plus, Trash2, Upload, Image as ImageIcon, Video } from
 import { adminAuth } from './firebase'
 import { activateAllPickupPoints, activePickupPoints, applyPickupTimeToActive, clearPickupPoints, mapPickupPoints, setPickupActive } from './pickupSelection'
 import { getGicServiceRecurrence } from './eventSchedule'
+import { fetchAdminApi as adminApi } from './adminApi'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
 const EVENT_TYPES = ['Service', 'Conference', 'Wedding', 'Children', 'Outreach', 'Meeting', 'Retreat', 'Convention', 'Fellowship', 'Training', 'Special Event', 'Other']
@@ -19,18 +20,6 @@ const FORM_FIELD_TYPES = [
   ['text', 'Short text'], ['textarea', 'Long text'], ['number', 'Number'], ['phone', 'Phone'],
   ['email', 'Email'], ['date', 'Date'], ['select', 'Dropdown'], ['radio', 'Radio'], ['checkbox', 'Checkbox'],
 ]
-
-async function adminApi(path, options = {}) {
-  const user = adminAuth.currentUser
-  if (!user) throw new Error('Admin session is unavailable')
-  const token = await user.getIdToken()
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${token}` } })
-  if (!response.ok) {
-    const body = await response.text().catch(() => 'Request failed')
-    try { throw new Error(JSON.parse(body).error || body) } catch (error) { if (error instanceof SyntaxError) throw new Error(body); throw error }
-  }
-  return response.json()
-}
 
 async function uploadEventFlyer(file) {
   const user = adminAuth.currentUser

@@ -20,6 +20,7 @@ import adminGroupsApp from "./routes/admin-groups.js";
 import adminOrganizationsApp from "./routes/admin-organizations.js";
 import adminMembersApp from "./routes/admin-members.js";
 import adminAttendanceApp from "./routes/admin-attendance.js";
+import adminDashboardApp from "./routes/admin-dashboard.js";
 
 const app = new Hono();
 
@@ -51,6 +52,7 @@ app.route("/api/admin/organizations", adminOrganizationsApp);
 app.route("/api/admin/members", adminMembersApp);
 app.route("/api/admin/activity", adminActivityApp);
 app.route("/api/admin/attendance", adminAttendanceApp);
+app.route("/api/admin/dashboard", adminDashboardApp);
 app.route("/api/service-reminders", serviceRemindersApp);
 app.route("/api/events", eventsApp);
 

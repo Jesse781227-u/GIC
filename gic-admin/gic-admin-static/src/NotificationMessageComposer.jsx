@@ -1,31 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Send } from 'lucide-react'
-import { adminAuth } from './firebase'
+import { fetchAdminApi as requestAdminApi } from './adminApi'
 import './notification-destination.css'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
 const routeOptions = [
   ['Home', '/home'], ['Announcements', '/announcements'], ['Events', '/events'],
   ['Event details', '/events/'], ['Registrations', '/registrations'], ['Messages', '/messages'],
   ['Forms', '/forms'], ['Units', '/ministries'], ['Profile', '/profile'],
 ]
-
-async function requestAdminApi(path, options = {}) {
-  const user = adminAuth.currentUser
-  if (!user) throw new Error('Admin session is unavailable')
-  const token = await user.getIdToken()
-  const multipart = options.body instanceof FormData
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { ...(!multipart ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${token}`, ...(options.headers || {}) },
-  })
-  if (!response.ok) {
-    const message = await response.text().catch(() => 'Request failed')
-    try { throw new Error(JSON.parse(message).error || message) } catch (error) { if (error instanceof SyntaxError) throw new Error(message); throw error }
-  }
-  return response.json()
-}
 
 export default function NotificationMessageComposer() {
   const navigate = useNavigate()
