@@ -714,6 +714,11 @@ function isStandalonePwa() {
   return window.matchMedia('(display-mode: standalone)').matches || Boolean(window.navigator.standalone)
 }
 
+function postAuthDestination() {
+  const installed = isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true'
+  return installed ? '/home' : '/onboarding?stage=install'
+}
+
 function setLocalState(key, value) {
   localStorage.setItem(key, value)
 }
@@ -1079,7 +1084,7 @@ function Welcome() {
         }
       } else profile = (await performDeviceAuth()).member
       window.dispatchEvent(new Event('gic:notifications-updated'))
-      navigate('/home', { replace: true })
+      navigate(postAuthDestination(), { replace: true })
     } catch {
       setError('We could not sign you in. Please recover your account with your phone number.')
     } finally {
@@ -1145,7 +1150,7 @@ function Recovery() {
       if (!response.ok) throw new Error(data.error || 'Account recovery failed.')
       storeMemberSession(data)
       localStorage.setItem('gic_profile_completed', data.member.profileComplete ? 'true' : 'false')
-      navigate('/home', { replace: true })
+      navigate(postAuthDestination(), { replace: true })
     } catch (recoveryError) {
       setError(recoveryError.message || 'The verification code was not accepted.')
     } finally {
