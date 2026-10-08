@@ -1,16 +1,25 @@
 export const CALENDAR_EVENTS_KEY = 'gic_member_calendar_events'
 
-export function readCalendarEvents(storage = globalThis.localStorage) {
+export function getMemberEventStorageKey(prefix, eventId, storage = globalThis.localStorage, memberId = storage.getItem('gic_account_id')) {
+  return memberId ? `${prefix}:${memberId}:${eventId}` : `${prefix}_${eventId}`
+}
+
+function calendarEventsKey(storage, memberId) {
+  const activeMemberId = memberId || storage.getItem('gic_account_id')
+  return activeMemberId ? `${CALENDAR_EVENTS_KEY}:${activeMemberId}` : CALENDAR_EVENTS_KEY
+}
+
+export function readCalendarEvents(storage = globalThis.localStorage, memberId) {
   try {
-    const records = JSON.parse(storage.getItem(CALENDAR_EVENTS_KEY) || '[]')
+    const records = JSON.parse(storage.getItem(calendarEventsKey(storage, memberId)) || '[]')
     return Array.isArray(records) ? records : []
   } catch {
     return []
   }
 }
 
-export function isCalendarEventSaved(eventId, storage = globalThis.localStorage) {
-  return readCalendarEvents(storage).some((event) => event.id === eventId)
+export function isCalendarEventSaved(eventId, storage = globalThis.localStorage, memberId) {
+  return readCalendarEvents(storage, memberId).some((event) => event.id === eventId)
 }
 
 export function getEventStartTimestamp(event) {
@@ -22,8 +31,9 @@ export function getEventStartTimestamp(event) {
   return Number.isFinite(fallback) ? fallback : null
 }
 
-export function saveCalendarEvent(event, storage = globalThis.localStorage) {
-  const current = readCalendarEvents(storage).filter((item) => item.id !== event.id)
+export function saveCalendarEvent(event, storage = globalThis.localStorage, memberId) {
+  const key = calendarEventsKey(storage, memberId)
+  const current = readCalendarEvents(storage, memberId).filter((item) => item.id !== event.id)
   const startsAt = event.startsAt || event.startAt
   const savedEvent = {
     id: event.id,
@@ -39,7 +49,7 @@ export function saveCalendarEvent(event, storage = globalThis.localStorage) {
     status: 'CALENDAR_ADDED',
     addedAt: new Date().toISOString(),
   }
-  storage.setItem(CALENDAR_EVENTS_KEY, JSON.stringify([...current, savedEvent]))
+  storage.setItem(key, JSON.stringify([...current, savedEvent]))
   return savedEvent
 }
 

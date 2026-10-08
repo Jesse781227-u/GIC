@@ -15,7 +15,7 @@ import { useQuery } from '@tanstack/react-query'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
 import { validateMemberRoute } from './notificationDestination'
-import { createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
+import { createCalendarFile, getEventStartTimestamp, getMemberEventStorageKey, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
 import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime, updateMemberProfileCache } from './queryCache'
 import { canFinishOnboarding, getPostAuthDestination } from './onboardingPolicy'
@@ -1935,11 +1935,11 @@ function EventDetails() {
   }, [id, staticEvent])
   if (loading) return <MemberShell active="events" title="Event" backTo="/events"><p className="center muted">Loading event...</p></MemberShell>
   const e = remoteEvent || staticEvent || events[0]
-  const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
+  const isRegistered = Boolean(registration || localStorage.getItem(getMemberEventStorageKey('gic_registration', e.id)))
   const addToCalendar = async (calendarEvent = e) => {
     try {
       const invite = createCalendarFile(calendarEvent)
-      saveCalendarEvent(calendarEvent)
+      saveCalendarEvent(calendarEvent, localStorage)
       if (!calendarEvent.registrationRequired && !staticEvent && !interested) {
         await fetchMemberApi(`/api/events/${encodeURIComponent(calendarEvent.id)}/interest`, { method: 'POST' })
         setInterested(true)
@@ -2034,7 +2034,7 @@ function EventRegistration() {
       }
       setSaving(false)
     }
-    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image, flyerMediaUrl: event.flyerMediaUrl, flyerMediaType: event.flyerMediaType, startsAt: event.startsAt, endsAt: event.endsAt, description: event.description } }))
+    localStorage.setItem(getMemberEventStorageKey('gic_registration', event.id), JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image, flyerMediaUrl: event.flyerMediaUrl, flyerMediaType: event.flyerMediaType, startsAt: event.startsAt, endsAt: event.endsAt, description: event.description } }))
     navigate(`/events/${event.id}/success`)
   }
 
@@ -2058,14 +2058,14 @@ function EventRegistration() {
 function RegistrationSuccess() {
   const { id } = useParams()
   const [storedEvent] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(`gic_registration_${id}`) || 'null')?.event || null } catch { return null }
+    try { return JSON.parse(localStorage.getItem(getMemberEventStorageKey('gic_registration', id)) || 'null')?.event || null } catch { return null }
   })
   const event = events.find((item) => item.id === id) || storedEvent || events[0]
   const [calendarAdded, setCalendarAdded] = useState(false)
   const handleAddToCalendar = () => {
     try {
       const invite = createCalendarFile(event)
-      saveCalendarEvent(event)
+      saveCalendarEvent(event, localStorage)
       const blob = new Blob([invite], { type: 'text/calendar;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -2569,14 +2569,14 @@ function EditProfile() {
 function MyRegistrations() {
   const navigate = useNavigate()
   const [now, setNow] = useState(Date.now())
-  const [calendarEvents] = useState(() => readCalendarEvents())
+  const [calendarEvents] = useState(() => readCalendarEvents(localStorage))
   const registrationsQuery = useMemberQuery('/api/events/registrations', true)
   const interestsQuery = useMemberQuery('/api/events/interests', true)
   const remoteRegistrations = registrationsQuery.data?.registrations || []
   const remoteInterests = interestsQuery.data?.interests || []
   const localRegistrations = events.filter((event) => {
     try {
-      return Boolean(localStorage.getItem(`gic_registration_${event.id}`))
+      return Boolean(localStorage.getItem(getMemberEventStorageKey('gic_registration', event.id)))
     } catch {
       return false
     }
@@ -2604,7 +2604,7 @@ function MyRegistrations() {
   const remoteEventIds = new Set(remoteRegistrations.map((registration) => registration.eventId))
   const localEvents = localRegistrations.filter((event) => !remoteEventIds.has(event.id)).map((event) => {
     try {
-      const stored = JSON.parse(localStorage.getItem(`gic_registration_${event.id}`) || 'null')
+      const stored = JSON.parse(localStorage.getItem(getMemberEventStorageKey('gic_registration', event.id)) || 'null')
       return { ...event, ...(stored?.event || {}), status: 'CONFIRMED', registered: true }
     } catch {
       return { ...event, status: 'CONFIRMED', registered: true }
