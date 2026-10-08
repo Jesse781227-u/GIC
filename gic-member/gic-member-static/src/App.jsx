@@ -17,7 +17,7 @@ import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
 import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
 import { createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
-import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime } from './queryCache'
+import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime, updateMemberProfileCache } from './queryCache'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -671,7 +671,11 @@ async function fetchMemberApi(path, options = {}) {
     const result = await requestMemberApi(path, options)
     const scope = memberScopeFromToken(token)
     const resource = memberResourceForPath(path)
-    await invalidateMemberResource(scope, resource)
+    if (path.split('?')[0] === '/api/auth/profile' && method === 'PATCH' && result.profile) {
+      updateMemberProfileCache(scope, result.profile)
+    } else {
+      await invalidateMemberResource(scope, resource)
+    }
     if (resource === 'events') invalidateEventApiCache(token, localStorage)
     return result
   }
