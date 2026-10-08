@@ -825,10 +825,15 @@ function formatListeningTime(seconds=0){
  return hours ? `${hours}h ${minutes}m` : `${minutes}m`
 }
 
-function AdminLogin(){
+function hasAdminClaim(claims={}){
+ const role=String(claims.role||'').toUpperCase()
+ return claims.admin===true||claims.isAdmin===true||role==='ADMIN'
+}
+
+function AdminLogin({initialError=''}){
  const [email,setEmail]=useState('')
  const [password,setPassword]=useState('')
- const [error,setError]=useState('')
+ const [error,setError]=useState(initialError)
  const [loading,setLoading]=useState(false)
  const submit=async(event)=>{
   event.preventDefault()
@@ -837,11 +842,9 @@ function AdminLogin(){
   try{
    const credential=await signInWithEmailAndPassword(adminAuth,email,password)
    const tokenResult=await credential.user.getIdTokenResult(true)
-   const role=String(tokenResult.claims.role||'').toUpperCase()
-   const isAdmin=tokenResult.claims.admin===true||tokenResult.claims.isAdmin===true||role==='ADMIN'
-   if(!isAdmin){
+  if(!hasAdminClaim(tokenResult.claims)){
     await signOut(adminAuth)
-    throw new Error('This account is not authorized for the admin dashboard.')
+   throw new Error('Firebase sign-in succeeded, but this account has no admin role. Assign the admin custom claim, then sign in again.')
    }
   }catch(loginError){
    setError(loginError.message||'Unable to sign in')
@@ -855,9 +858,35 @@ function AdminLogin(){
 function AdminGate({children}){
  const [user,setUser]=useState(null)
  const [checking,setChecking]=useState(true)
- useEffect(()=>onAuthStateChanged(adminAuth,(nextUser)=>{setUser(nextUser);setChecking(false)}),[])
+ const [authError,setAuthError]=useState('')
+ useEffect(()=>{
+  let active=true
+  const unsubscribe=onAuthStateChanged(adminAuth,async(nextUser)=>{
+   if(!active)return
+   if(!nextUser){setUser(null);setChecking(false);return}
+   setChecking(true)
+   try{
+    const tokenResult=await nextUser.getIdTokenResult(true)
+    if(!active)return
+    if(!hasAdminClaim(tokenResult.claims)){
+     setUser(null)
+     setAuthError('This Firebase account is signed in but is not authorized for the admin dashboard. Assign the admin custom claim to its Firebase UID, then sign in again.')
+     void signOut(adminAuth).catch(()=>{})
+    }else{
+     setAuthError('')
+     setUser(nextUser)
+    }
+   }catch{
+    if(active){setUser(null);setAuthError('Could not verify administrator access. Check your connection and sign in again.')}
+    void signOut(adminAuth).catch(()=>{})
+   }finally{
+    if(active)setChecking(false)
+   }
+  })
+  return()=>{active=false;unsubscribe()}
+ },[])
  if(checking)return <main className="auth-screen"><div className="auth-loading">Checking admin session...</div></main>
- if(!user)return <AdminLogin/>
+ if(!user)return <AdminLogin key={authError} initialError={authError}/>
  return children
 }
 
