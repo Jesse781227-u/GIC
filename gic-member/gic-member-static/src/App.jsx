@@ -14,7 +14,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } fr
 import { useQuery } from '@tanstack/react-query'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
-import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
+import { validateMemberRoute } from './notificationDestination'
 import { createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
 import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime, updateMemberProfileCache } from './queryCache'
@@ -980,10 +980,26 @@ function MemberShell({ children, active = 'home', title, backTo, lockProfile = f
       {title ? <strong>{title}</strong> : <Logo />}
       {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className={`bell-btn ${notificationPulse ? 'notification-pulse' : ''}`} title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
+    <ProfileProgressBar />
     <main className="mobile-main">{children}</main>
     {showPersistentConsole && <PersistentAudioPlayer />}
     {!lockProfile && <BottomNav active={active} />}
   </div>
+}
+
+function ProfileProgressBar() {
+  const profileQuery = useMemberQuery('/api/auth/profile')
+  const profile = profileQuery.data?.profile
+  if (!profile || profileQuery.isError) return null
+
+  const percent = Math.max(0, Math.min(100, Number(profile.profileCompletionPercent ?? 25)))
+  if (percent >= 100) return null
+
+  return <Link className="profile-progress" to="/profile/edit" aria-label={`Complete your profile: ${percent}% complete`}>
+    <div className="profile-progress-heading"><strong>Complete your profile</strong><b>{percent}%</b></div>
+    <div className="profile-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div>
+    <small>{percent === 25 ? "You're already off to a great start." : 'Add a little more information to personalize your GIC experience.'}</small>
+  </Link>
 }
 
 function hasCompleteLocalProfile() {
@@ -1020,17 +1036,9 @@ function ProtectedRoute({ children }) {
       return
     }
     storeMemberProfile(profile)
-    if (!profile.active || !profile.profileComplete) {
+    if (!profile.active) {
       if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
       return
-    }
-    const isNotificationDestination = isNotificationDestinationRoute(location.pathname)
-    if (!isStandalonePwa() && location.pathname !== '/onboarding' && !isNotificationDestination) {
-      navigate('/onboarding?stage=install', { replace: true })
-      return
-    }
-    if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding' && !isNotificationDestination) {
-      navigate('/onboarding?stage=notifications', { replace: true })
     }
   }, [token, profileQuery.data, profileQuery.error, profileQuery.isError, location.pathname, navigate])
 
@@ -1071,7 +1079,7 @@ function Welcome() {
         }
       } else profile = (await performDeviceAuth()).member
       window.dispatchEvent(new Event('gic:notifications-updated'))
-      navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
+      navigate('/home', { replace: true })
     } catch {
       setError('We could not sign you in. Please recover your account with your phone number.')
     } finally {
@@ -1137,8 +1145,7 @@ function Recovery() {
       if (!response.ok) throw new Error(data.error || 'Account recovery failed.')
       storeMemberSession(data)
       localStorage.setItem('gic_profile_completed', data.member.profileComplete ? 'true' : 'false')
-      localStorage.setItem('gic_onboarding_profile', 'true')
-      navigate('/onboarding', { replace: true })
+      navigate('/home', { replace: true })
     } catch (recoveryError) {
       setError(recoveryError.message || 'The verification code was not accepted.')
     } finally {
@@ -1168,7 +1175,7 @@ function OnboardingFlow() {
   const [busy, setBusy] = useState(false)
   const [permissionState, setPermissionState] = useState('default')
   const [installPrompt, setInstallPrompt] = useState(null)
-  const [stage, setStage] = useState('profile')
+  const [stage, setStage] = useState(() => isStandalonePwa() ? 'notification' : 'pwa')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
   const [installBrowser, setInstallBrowser] = useState(() => getBrowserName())
@@ -1182,21 +1189,18 @@ function OnboardingFlow() {
     }
 
     const notificationsAllowed = !('Notification' in window) || Notification.permission !== 'default'
-    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile() && isStandalonePwa() && notificationsAllowed) {
+    if (localStorage.getItem('gic_onboarding_completed') === 'true' && isStandalonePwa() && notificationsAllowed) {
       navigate('/home', { replace: true })
       return
     }
 
-    const profileCompleted = localStorage.getItem('gic_profile_completed') === 'true'
     const requestedStage = new URLSearchParams(window.location.search).get('stage')
     const savedPermission = localStorage.getItem('gic_notification_permission')
     if (savedPermission) {
       setPermissionState(savedPermission)
     }
 
-    if (!profileCompleted) {
-      setStage('profile')
-    } else if (requestedStage === 'install' && !isStandalonePwa()) {
+    if (requestedStage === 'install' && !isStandalonePwa()) {
       setStage('pwa')
     } else if (requestedStage === 'notifications' && isStandalonePwa()) {
       setStage('notification')
@@ -1351,13 +1355,7 @@ function OnboardingFlow() {
 
   return <div className="onboarding-page"><div className="onboarding-card">
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
-    {stage === 'profile' ? <>
-      <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Complete your profile</h1>
-      <p className="sub" style={{ textAlign: 'center' }}>Tell us a little about yourself so your GIC member experience is personalized.</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '18px' }}>
-        <button className="btn primary wide" onClick={() => navigate('/profile/edit')}>Complete Profile</button>
-      </div>
-    </> : stage === 'notification' ? <>
+    {stage === 'notification' ? <>
       <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Stay connected with GIC</h1>
       <p className="sub" style={{ textAlign: 'center' }}>Get important church updates, event reminders, registration updates, announcements and other notifications directly on your device.</p>
       <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
