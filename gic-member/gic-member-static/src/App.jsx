@@ -18,6 +18,7 @@ import { validateMemberRoute } from './notificationDestination'
 import { createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
 import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime, updateMemberProfileCache } from './queryCache'
+import { canFinishOnboarding, getPostAuthDestination } from './onboardingPolicy'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -714,11 +715,6 @@ function isStandalonePwa() {
   return window.matchMedia('(display-mode: standalone)').matches || Boolean(window.navigator.standalone)
 }
 
-function postAuthDestination() {
-  const installed = isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true'
-  return installed ? '/home' : '/onboarding?stage=install'
-}
-
 function setLocalState(key, value) {
   localStorage.setItem(key, value)
 }
@@ -1045,6 +1041,14 @@ function ProtectedRoute({ children }) {
       if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
       return
     }
+    if (!profile.profileComplete) {
+      if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
+      return
+    }
+    if (!isStandalonePwa() && location.pathname !== '/onboarding') {
+      navigate(getPostAuthDestination(false), { replace: true })
+      return
+    }
   }, [token, profileQuery.data, profileQuery.error, profileQuery.isError, location.pathname, navigate])
 
   useEffect(() => {
@@ -1084,7 +1088,7 @@ function Welcome() {
         }
       } else profile = (await performDeviceAuth()).member
       window.dispatchEvent(new Event('gic:notifications-updated'))
-      navigate(postAuthDestination(), { replace: true })
+      navigate(getPostAuthDestination(isStandalonePwa()), { replace: true })
     } catch {
       setError('We could not sign you in. Please recover your account with your phone number.')
     } finally {
@@ -1150,7 +1154,7 @@ function Recovery() {
       if (!response.ok) throw new Error(data.error || 'Account recovery failed.')
       storeMemberSession(data)
       localStorage.setItem('gic_profile_completed', data.member.profileComplete ? 'true' : 'false')
-      navigate(postAuthDestination(), { replace: true })
+      navigate(getPostAuthDestination(isStandalonePwa()), { replace: true })
     } catch (recoveryError) {
       setError(recoveryError.message || 'The verification code was not accepted.')
     } finally {
@@ -1184,7 +1188,7 @@ function OnboardingFlow() {
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
   const [installBrowser, setInstallBrowser] = useState(() => getBrowserName())
-  const [installedApp, setInstalledApp] = useState(() => isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
+  const [installedApp, setInstalledApp] = useState(() => isStandalonePwa())
 
   useEffect(() => {
     const token = localStorage.getItem('gic_auth_token')
@@ -1224,12 +1228,11 @@ function OnboardingFlow() {
     }
 
     const handleInstalled = () => {
-      setInstalledApp(true)
-      setLocalState('gic_pwa_installed', 'true')
+      setInstalledApp(isStandalonePwa())
       setDismissedNotice('GIC is installed. Open GIC from your home screen to continue.')
     }
 
-    const refreshDisplayMode = () => setInstalledApp(isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
+    const refreshDisplayMode = () => setInstalledApp(isStandalonePwa())
 
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
     window.addEventListener('appinstalled', handleInstalled)
@@ -1247,6 +1250,11 @@ function OnboardingFlow() {
   }, [navigate])
 
   const finishOnboarding = () => {
+    if (!canFinishOnboarding(isStandalonePwa())) {
+      setStage('pwa')
+      setDismissedNotice('Install GIC, then open it from your home screen to continue.')
+      return
+    }
     setLocalState('gic_onboarding_completed', 'true')
     localStorage.removeItem('gic_onboarding_profile')
     navigate('/home', { replace: true })
@@ -1315,7 +1323,7 @@ function OnboardingFlow() {
 
   const handleInstall = async () => {
     if (installedApp) {
-      setDismissedNotice('GIC is already installed. Open it from your home screen to continue.')
+      setStage('notification')
       return
     }
 
@@ -1323,7 +1331,6 @@ function OnboardingFlow() {
       await installPrompt.prompt()
       const choice = await installPrompt.userChoice
       if (choice.outcome === 'accepted') {
-        setLocalState('gic_pwa_installed', 'true')
         setDismissedNotice('GIC has been added. Open it from your home screen to continue.')
       }
       return
@@ -1352,7 +1359,10 @@ function OnboardingFlow() {
         {installSteps.map((step, index) => <div key={step} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>{index + 1}</span><span>{step}</span></div>)}
       </div>
       <div style={{ display: 'flex', gap: '10px', marginTop: '26px' }}>
-        <button className="btn gold wide" onClick={() => setDismissedNotice('Open GIC from your home screen to continue.')}>I installed GIC</button>
+        <button className="btn gold wide" onClick={() => {
+          if (isStandalonePwa()) setStage('notification')
+          else setDismissedNotice('Open GIC from your home screen to continue.')
+        }}>I installed GIC</button>
       </div>
       {dismissedNotice && <p className="sub" style={{ marginTop: '16px', textAlign: 'center', color: '#a61e1e' }}>{dismissedNotice}</p>}
     </div></div>
