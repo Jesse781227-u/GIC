@@ -1,5 +1,6 @@
 export const MIXLR_CHANNEL_KEY = "globalimpactng";
 export const MIXLR_LOOKUP_INTERVAL_MS = 60 * 60 * 1000;
+export const MIXLR_MIN_PLAY_SECONDS = 120;
 export const MIXLR_RECORDING_ROUTE = (id: string) => `/mixlr/${encodeURIComponent(id)}`;
 
 export type MixlrRecording = {

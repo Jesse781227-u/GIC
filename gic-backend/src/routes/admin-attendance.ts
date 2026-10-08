@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
@@ -15,6 +15,7 @@ import {
 } from "../db/schema.js";
 import { churchIdForUser } from "../lib/tenant.js";
 import { formatServiceOccurrenceLabel } from "../services/service-attendance.js";
+import { MIXLR_MIN_PLAY_SECONDS } from "../services/mixlr-domain.js";
 
 const app = new Hono();
 
@@ -168,10 +169,10 @@ app.get("/mixlr", async (c) => {
       recordingId: mixlrRecordings.id,
       recordingTitle: mixlrRecordings.title,
       recordingCreatedAt: mixlrRecordings.recordingCreatedAt,
-      listeners: sql<number>`count(DISTINCT ${members.id})::int`,
-      plays: sql<number>`count(${mixlrListenerSessions.id})::int`,
-      listeningTimeSeconds: sql<number>`COALESCE(sum(${mixlrListenerSessions.durationSeconds}), 0)::int`,
-      identifiedListeners: sql<number>`count(DISTINCT ${members.id})::int`,
+      listeners: sql<number>`count(DISTINCT ${members.id}) FILTER (WHERE ${mixlrListenerSessions.durationSeconds} >= ${MIXLR_MIN_PLAY_SECONDS})::int`,
+      plays: sql<number>`count(${mixlrListenerSessions.id}) FILTER (WHERE ${mixlrListenerSessions.durationSeconds} >= ${MIXLR_MIN_PLAY_SECONDS})::int`,
+      listeningTimeSeconds: sql<number>`COALESCE(sum(${mixlrListenerSessions.durationSeconds}) FILTER (WHERE ${mixlrListenerSessions.durationSeconds} >= ${MIXLR_MIN_PLAY_SECONDS}), 0)::int`,
+      identifiedListeners: sql<number>`count(DISTINCT ${members.id}) FILTER (WHERE ${mixlrListenerSessions.durationSeconds} >= ${MIXLR_MIN_PLAY_SECONDS})::int`,
     })
     .from(mixlrRecordings)
     .leftJoin(mixlrListenerSessions, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
@@ -183,23 +184,22 @@ app.get("/mixlr", async (c) => {
     .from(mixlrListenerSessions)
     .innerJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
     .innerJoin(mixlrRecordings, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
-    .where(conditions.length ? and(...conditions) : undefined);
+    .where(and(...conditions, gte(mixlrListenerSessions.durationSeconds, MIXLR_MIN_PLAY_SECONDS)));
   const listeners = await db.select({
     memberId: members.id,
     memberName: members.displayName,
     email: members.email,
     phone: members.phone,
-    recordingId: mixlrRecordings.id,
-    recordingTitle: mixlrRecordings.title,
+    recordingTitle: sql<string>`string_agg(DISTINCT ${mixlrRecordings.title}, ', ')`,
     plays: count(mixlrListenerSessions.id),
     listeningTimeSeconds: sql<number>`COALESCE(sum(${mixlrListenerSessions.durationSeconds}), 0)::int`,
     lastListenedAt: sql<Date | null>`max(${mixlrListenerSessions.startedAt})`,
   }).from(mixlrListenerSessions)
     .innerJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
     .innerJoin(mixlrRecordings, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .groupBy(members.id, mixlrRecordings.id)
-    .orderBy(asc(members.displayName), asc(mixlrRecordings.title));
+    .where(and(...conditions, gte(mixlrListenerSessions.durationSeconds, MIXLR_MIN_PLAY_SECONDS)))
+    .groupBy(members.id)
+    .orderBy(asc(members.displayName));
   const identifiedMemberDetails = await db.select({
     memberId: members.id,
     memberName: members.displayName,
@@ -212,13 +212,13 @@ app.get("/mixlr", async (c) => {
   }).from(mixlrListenerSessions)
     .innerJoin(members, and(eq(mixlrListenerSessions.memberId, members.id), eq(members.churchId, churchId)))
     .innerJoin(mixlrRecordings, eq(mixlrListenerSessions.recordingId, mixlrRecordings.id))
-    .where(conditions.length ? and(...conditions) : undefined)
+    .where(and(...conditions, gte(mixlrListenerSessions.durationSeconds, MIXLR_MIN_PLAY_SECONDS)))
     .groupBy(members.id)
     .orderBy(asc(members.displayName));
 
   return c.json({
     summary: {
-      totalListeners: rows.reduce((total, row) => total + Number(row.listeners || 0), 0),
+      totalListeners: identifiedMembers.length,
       totalPlays: rows.reduce((total, row) => total + Number(row.plays || 0), 0),
       totalListeningTimeSeconds: rows.reduce((total, row) => total + Number(row.listeningTimeSeconds || 0), 0),
       identifiedListeners: identifiedMembers.length,

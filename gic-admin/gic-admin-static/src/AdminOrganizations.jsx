@@ -1,23 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Search, Users, CalendarDays, ShieldCheck, Building2 } from 'lucide-react'
-import { adminAuth } from './firebase'
+import { fetchAdminApi as organizationApi } from './adminApi'
 import './admin-organizations.css'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
 const typeLabels = { unit: 'Unit', fellowship: 'Fellowship' }
-
-async function organizationApi(path, options = {}) {
-  const user = adminAuth.currentUser
-  if (!user) throw new Error('Admin session is unavailable')
-  const token = await user.getIdToken()
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${token}` } })
-  if (!response.ok) {
-    const body = await response.text().catch(() => 'Request failed')
-    try { throw new Error(JSON.parse(body).error || body) } catch (error) { if (error instanceof SyntaxError) throw new Error(body); throw error }
-  }
-  return response.json()
-}
 
 function OrganizationDirectory() {
   const navigate = useNavigate()

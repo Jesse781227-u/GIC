@@ -2,17 +2,22 @@ import React, { useState, useEffect, useMemo, useRef, useContext, useCallback, c
 import { createPortal } from 'react-dom'
 import './bugfix.css'
 import './birthday.css'
+import './event-details.css'
 import { createPhoneAuth, createPhoneRecaptcha, getFcmToken, listenForForegroundMessages, signInWithPhoneNumber } from './firebase'
 import {
   ArrowLeft, ArrowRight, Bell, CalendarDays, Camera, Check, ChevronRight,
   Clock3, ChevronDown, Home, Lock, Mail, MapPin, Pencil, Phone, Plus, RefreshCw,
   Search, Settings, ShieldCheck, Smartphone, Ticket, User, Users, Heart, Trash2, Volume2, VolumeX,
-  Play, Pause, CheckCircle2, X
+  Play, Pause, CheckCircle2, Expand, Share2, Video, X
 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
 import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
+import { createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
+import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
+import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime } from './queryCache'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -21,6 +26,7 @@ const DEFAULT_RECORDING_DATE = 'Recording date unavailable'
 
 const notificationCountContext = createContext(null)
 const audioPlayerContext = createContext(null)
+const registeredPushScopes = new Set()
 
 const events = [
   { id: 'sunday-service', title: 'Sunday Service', date: 'Sun, 4 Oct 2026', time: 'Multiple services', location: 'Global Impact Church', image: 'https://i.ibb.co/zTcjGhTp/Screenshot-2026-09-08-134018.png', tag: 'Service', isService: true },
@@ -170,16 +176,19 @@ function getMixlrCache() {
   }
 }
 
-let mixlrRequestPromise = null
-
 async function getMixlrData(forceRefresh = false) {
   const cached = getMixlrCache()
-  const cacheFresh = Boolean(cached && cached.fetchedAt && Date.now() - cached.fetchedAt < MIXLR_CACHE_TTL)
-  if (!forceRefresh && cacheFresh) return cached.data
-  if (!forceRefresh && mixlrRequestPromise) return mixlrRequestPromise
-
-  mixlrRequestPromise = fetch(`${API_BASE}/api/mixlr/latest`)
-    .then(async (response) => {
+  const token = localStorage.getItem('gic_auth_token') || ''
+  const scope = memberScopeFromToken(token)
+  const path = '/api/mixlr/latest'
+  const queryKey = memberApiQueryKey(scope, path)
+  if (cached?.data && memberQueryClient.getQueryData(queryKey) === undefined) {
+    memberQueryClient.setQueryData(queryKey, cached.data, { updatedAt: cached.fetchedAt || 0 })
+  }
+  const state = memberQueryClient.getQueryState(queryKey)
+  const load = async () => {
+    try {
+      const response = await fetch(`${API_BASE}${path}`)
       if (!response.ok) {
         if (cached?.data) return cached.data
         throw new Error('Mixlr unavailable')
@@ -192,16 +201,20 @@ async function getMixlrData(forceRefresh = false) {
       }
       localStorage.setItem(MIXLR_CACHE_KEY, JSON.stringify(nextCache))
       return payload
-    })
-    .catch((error) => {
+    } catch (error) {
       if (cached?.data) return cached.data
       throw error
-    })
-    .finally(() => {
-      mixlrRequestPromise = null
-    })
+    }
+  }
 
-  return mixlrRequestPromise
+  if (!forceRefresh && state?.data !== undefined) {
+    if (state.isInvalidated || Date.now() - state.dataUpdatedAt >= memberStaleTime(path)) {
+      void memberQueryClient.fetchQuery({ queryKey, queryFn: load, staleTime: 0 }).catch(() => {})
+    }
+    return state.data
+  }
+  if (!forceRefresh && cached?.data && Date.now() - (cached.fetchedAt || 0) < memberStaleTime(path)) return cached.data
+  return memberQueryClient.fetchQuery({ queryKey, queryFn: load, staleTime: forceRefresh ? 0 : memberStaleTime(path) })
 }
 
 function formatRecordingDate(value) {
@@ -257,13 +270,21 @@ function useAudioPlayer() {
 }
 
 function NotificationProvider({ children }) {
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadCount, setUnreadCount] = useState(() => Number(localStorage.getItem('gic_notification_unread_count') || 0))
   const [notificationPulse, setNotificationPulse] = useState(false)
   const previousUnreadCount = useRef(0)
 
-  const refreshUnreadCount = useCallback(async () => {
+  const refreshUnreadCount = useCallback(async (force = false) => {
     try {
-      const { count = 0 } = await fetchMemberApi('/api/notifications/unread-count')
+      const path = '/api/notifications/unread-count'
+      const token = localStorage.getItem('gic_auth_token') || ''
+      if (!token) return unreadCount
+      const scope = memberScopeFromToken(token)
+      const { count = 0 } = await memberQueryClient.fetchQuery({
+        queryKey: memberApiQueryKey(scope, path),
+        queryFn: () => requestMemberApi(path),
+        staleTime: force ? 0 : memberStaleTime(path),
+      })
       const nextValue = Number(count || 0)
       if (previousUnreadCount.current === 0 && nextValue > 0) {
         setNotificationPulse(true)
@@ -283,7 +304,12 @@ function NotificationProvider({ children }) {
     const interval = window.setInterval(() => {
       refreshUnreadCount()
     }, 60000)
-    return () => window.clearInterval(interval)
+    const onPushUpdate = () => { void refreshUnreadCount(true) }
+    window.addEventListener('gic:notifications-updated', onPushUpdate)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('gic:notifications-updated', onPushUpdate)
+    }
   }, [refreshUnreadCount])
 
   const value = useMemo(() => ({
@@ -590,8 +616,14 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
-async function fetchMemberApi(path, options = {}) {
+async function requestMemberApi(path, options = {}, bypassPersistentCache = false) {
   const token = localStorage.getItem('gic_auth_token')
+  const method = (options.method || 'GET').toUpperCase()
+  const cacheable = method === 'GET' && shouldCacheEventApiRequest(path)
+  if (cacheable && !bypassPersistentCache) {
+    const cached = readEventApiCache(path, token || '', localStorage)
+    if (cached.found) return cached.data
+  }
   const request = () => fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -600,7 +632,7 @@ async function fetchMemberApi(path, options = {}) {
       ...(options.headers || {}),
     },
   })
-  const retryable = !options.method || options.method.toUpperCase() === 'GET'
+  const retryable = method === 'GET'
   let response
   for (let attempt = 0; attempt < (retryable ? 2 : 1); attempt += 1) {
     try {
@@ -626,7 +658,48 @@ async function fetchMemberApi(path, options = {}) {
     throw error
   }
 
-  return response.json()
+  const data = await response.json()
+  if (cacheable) writeEventApiCache(path, token || '', data, localStorage)
+  if (method !== 'GET' && path.startsWith('/api/events/')) invalidateEventApiCache(token || '', localStorage)
+  return data
+}
+
+async function fetchMemberApi(path, options = {}) {
+  const token = localStorage.getItem('gic_auth_token') || ''
+  const method = (options.method || 'GET').toUpperCase()
+  if (method !== 'GET') {
+    const result = await requestMemberApi(path, options)
+    const scope = memberScopeFromToken(token)
+    const resource = memberResourceForPath(path)
+    await invalidateMemberResource(scope, resource)
+    if (resource === 'events') invalidateEventApiCache(token, localStorage)
+    return result
+  }
+
+  const scope = memberScopeFromToken(token)
+  const queryKey = memberApiQueryKey(scope, path)
+  const staleTime = memberStaleTime(path)
+  if (memberQueryClient.getQueryData(queryKey) === undefined && shouldCacheEventApiRequest(path)) {
+    const persisted = readEventApiCache(path, token, localStorage)
+    if (persisted.found) {
+      memberQueryClient.setQueryData(queryKey, persisted.data)
+    }
+  }
+  const bypassPersistentCache = shouldCacheEventApiRequest(path)
+  return cachedMemberQuery(queryKey, () => requestMemberApi(path, options, bypassPersistentCache), staleTime)
+}
+
+function useMemberQuery(path, persistentEvents = false) {
+  const token = localStorage.getItem('gic_auth_token') || ''
+  const scope = memberScopeFromToken(token)
+  const cached = persistentEvents && shouldCacheEventApiRequest(path) ? readEventApiCache(path, token, localStorage) : { found: false }
+  return useQuery({
+    queryKey: memberApiQueryKey(scope, path),
+    queryFn: () => requestMemberApi(path, {}, persistentEvents),
+    enabled: Boolean(token),
+    staleTime: memberStaleTime(path),
+    ...(cached.found ? { initialData: cached.data, initialDataUpdatedAt: 0 } : {}),
+  })
 }
 
 function getSecureMode() {
@@ -918,48 +991,60 @@ function hasCompleteLocalProfile() {
 function ProtectedRoute({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const [checking, setChecking] = useState(true)
+  const token = localStorage.getItem('gic_auth_token') || ''
+  const scope = memberScopeFromToken(token)
+  const profilePath = '/api/auth/profile'
+  const profileQuery = useQuery({
+    queryKey: memberApiQueryKey(scope, profilePath),
+    queryFn: () => requestMemberApi(profilePath),
+    enabled: Boolean(token),
+    staleTime: memberStaleTime(profilePath),
+    retry: false,
+  })
 
   useEffect(() => {
-    let cancelled = false
-    const checkProfile = async () => {
-      if (!localStorage.getItem('gic_auth_token')) {
-        navigate('/', { replace: true })
-        return
-      }
-      try {
-        const { profile } = await fetchMemberApi('/api/auth/profile')
-        if (cancelled) return
-        storeMemberProfile(profile)
-        if (!profile.active || !profile.profileComplete) {
-          if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
-          return
-        }
-        const isNotificationDestination = isNotificationDestinationRoute(location.pathname)
-        if (!isStandalonePwa() && location.pathname !== '/onboarding' && !isNotificationDestination) {
-          navigate('/onboarding?stage=install', { replace: true })
-          return
-        }
-        if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding' && !isNotificationDestination) {
-          navigate('/onboarding?stage=notifications', { replace: true })
-          return
-        }
-        if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
-          await navigator.serviceWorker.register('/sw.js').catch(() => null)
-          const token = await getFcmToken()
-          if (token) await registerPushTokenWithBackend(token)
-        }
-        setChecking(false)
-      } catch (error) {
-        if (error?.status === 401 || error?.status === 403) clearStaleMemberSession()
-        navigate('/', { replace: true })
-      }
+    if (!token) {
+      navigate('/', { replace: true })
+      return
     }
-    checkProfile()
-    return () => { cancelled = true }
-  }, [location.pathname, navigate])
+    const profile = profileQuery.data?.profile
+    if (!profile) {
+      if (profileQuery.isError) {
+        if (profileQuery.error?.status === 401 || profileQuery.error?.status === 403) clearStaleMemberSession()
+        navigate('/', { replace: true })
+      }
+      return
+    }
+    storeMemberProfile(profile)
+    if (!profile.active || !profile.profileComplete) {
+      if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
+      return
+    }
+    const isNotificationDestination = isNotificationDestinationRoute(location.pathname)
+    if (!isStandalonePwa() && location.pathname !== '/onboarding' && !isNotificationDestination) {
+      navigate('/onboarding?stage=install', { replace: true })
+      return
+    }
+    if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding' && !isNotificationDestination) {
+      navigate('/onboarding?stage=notifications', { replace: true })
+    }
+  }, [token, profileQuery.data, profileQuery.error, profileQuery.isError, location.pathname, navigate])
 
-  if (checking && location.pathname !== '/profile/edit') return <div className="app-loading-state"><span className="loading-spinner" aria-hidden="true" /><span>Loading your account…</span></div>
+  useEffect(() => {
+    const profile = profileQuery.data?.profile
+    if (!profile || !('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return
+    const registrationKey = `${scope}:${profile.id}`
+    if (registeredPushScopes.has(registrationKey)) return
+    registeredPushScopes.add(registrationKey)
+    void navigator.serviceWorker.register('/sw.js')
+      .then(async () => {
+        const pushToken = await getFcmToken()
+        if (pushToken) await registerPushTokenWithBackend(pushToken)
+      })
+      .catch(() => registeredPushScopes.delete(registrationKey))
+  }, [scope, profileQuery.data?.profile?.id])
+
+  if (profileQuery.isPending && location.pathname !== '/profile/edit') return <div className="app-loading-state"><span className="loading-spinner" aria-hidden="true" /><span>Loading your account…</span></div>
   return children
 }
 
@@ -981,6 +1066,7 @@ function Welcome() {
           profile = (await performDeviceAuth()).member
         }
       } else profile = (await performDeviceAuth()).member
+      window.dispatchEvent(new Event('gic:notifications-updated'))
       navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
     } catch {
       setError('We could not sign you in. Please recover your account with your phone number.')
@@ -1418,7 +1504,7 @@ function HomePage() {
 
 function EventRow({ event, onOpenService }) {
   const displayEvent = event.isService ? getServiceDisplay(event) : event
-  const content = <><img src={displayEvent.image || displayEvent.imageUrl || GIC_LOGO} alt="" /><div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleDateString() : '')} · {displayEvent.time || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')}</small><small className="event-location"><MapPin size={13} />{displayEvent.location || displayEvent.venueName || (displayEvent.isOnline ? 'Online' : 'Location to be announced')}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
+  const content = <>{displayEvent.flyerMediaType === 'video' && displayEvent.flyerMediaUrl ? <video className="event-row-video" src={displayEvent.flyerMediaUrl} muted playsInline preload="metadata" /> : <img src={displayEvent.flyerMediaUrl || displayEvent.image || displayEvent.imageUrl || GIC_LOGO} alt="" />}<div><b>{displayEvent.title}</b><small className="event-meta"><CalendarDays size={13} />{displayEvent.date || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleDateString() : '')} · {displayEvent.time || (displayEvent.startsAt ? new Date(displayEvent.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')}</small><small className="event-location"><MapPin size={13} />{displayEvent.location || displayEvent.venueName || (displayEvent.isOnline ? 'Online' : 'Location to be announced')}</small></div>{!displayEvent.isService && <ChevronRight className="event-chevron" size={19} />}</>
   if (displayEvent.isService) {
     return <button type="button" className="event-row service-row" onClick={() => onOpenService?.(event)}>{content}</button>
   }
@@ -1427,10 +1513,20 @@ function EventRow({ event, onOpenService }) {
 
 function Announcements() {
   const [category, setCategory] = useState('All')
-  const [items, setItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [birthday, setBirthday] = useState(null)
+  const notificationsQuery = useMemberQuery('/api/notifications')
+  const birthdayQuery = useMemberQuery('/api/notifications/birthday')
+  const items = (notificationsQuery.data?.items || []).map((notification) => ({
+    id: notification.id,
+    category: notification.type === 'MINISTRY_UPDATE' ? 'Units' : 'General',
+    title: notification.title,
+    summary: notification.body,
+    date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
+    body: [notification.body],
+    image: '',
+  }))
+  const loading = notificationsQuery.isPending && !notificationsQuery.data
+  const error = notificationsQuery.isError && !notificationsQuery.data
+  const birthday = birthdayQuery.data?.celebration || null
   const categories = ['All', 'General', 'Units', 'Notices']
   const { setUnreadCount, refreshUnreadCount } = useNotificationCount()
   const sundayServiceCopy = getSundayServiceCopy()
@@ -1440,23 +1536,6 @@ function Announcements() {
     localStorage.setItem('gic_notification_unread_count', '0')
     await refreshUnreadCount()
   }
-  useEffect(() => {
-    fetchMemberApi('/api/notifications')
-      .then(({ items: notifications = [] }) => setItems(notifications.map((notification) => ({
-        id: notification.id,
-        category: notification.type === 'MINISTRY_UPDATE' ? 'Units' : 'General',
-        title: notification.title,
-        summary: notification.body,
-        date: notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : '',
-        body: [notification.body],
-        image: '',
-      }))))
-      .catch((requestError) => setError(requestError.message))
-      .finally(() => setLoading(false))
-    fetchMemberApi('/api/notifications/birthday')
-      .then(({ celebration }) => setBirthday(celebration || null))
-      .catch(() => setBirthday(null))
-  }, [])
   const visibleAnnouncements = category === 'All'
     ? items
     : items.filter((announcement) => announcement.category === category)
@@ -1465,6 +1544,7 @@ function Announcements() {
     <div className="announcement-toolbar"><div className="tabs">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><button type="button" className="mark-read-button" onClick={markAllAsRead}>Mark all as read</button></div>
     {loading && <p className="center muted">Loading announcements...</p>}
     {error && <p className="center muted">Announcements are unavailable right now.</p>}
+    {notificationsQuery.isError && notificationsQuery.data && <p className="center muted">Showing saved announcements; refresh failed.</p>}
     {birthday && <Link className="birthday-banner" to="/announcements/birthday"><div className="birthday-sparkle">✦</div><div><small>Just for you</small><b>{birthday.title}</b><span>Open your birthday message from the GIC family</span></div><ChevronRight size={18} /></Link>}
     {!loading && !error && <div className="announcement-list">{visibleAnnouncements.map((announcement) => <Link className="list-card" key={announcement.id} to={`/announcements/${announcement.id}`}><div><b>{announcement.title}</b><small>{announcement.summary}</small><time>{announcement.date}</time></div><ChevronRight size={18} /></Link>)}</div>}
     {!loading && !error && !visibleAnnouncements.length && <p className="center muted">No announcements yet.</p>}
@@ -1528,14 +1608,9 @@ function BirthdayTemplate({ birthday }) {
 }
 
 function BirthdayPage() {
-  const [birthday, setBirthday] = useState(null)
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    fetchMemberApi('/api/notifications/birthday')
-      .then(({ celebration }) => setBirthday(celebration || null))
-      .catch(() => setBirthday(null))
-      .finally(() => setLoading(false))
-  }, [])
+  const birthdayQuery = useMemberQuery('/api/notifications/birthday')
+  const birthday = birthdayQuery.data?.celebration || null
+  const loading = birthdayQuery.isPending && !birthdayQuery.data
   return <MemberShell active="home" title="Your Birthday" backTo="/announcements">
     {loading && <p className="center muted">Preparing your birthday message...</p>}
     {!loading && birthday && <BirthdayTemplate birthday={birthday} />}
@@ -1606,24 +1681,20 @@ function AnnouncementDetails() {
 
 function EventsPage() {
   const [selectedServiceEvent, setSelectedServiceEvent] = useState(null)
-  const [remoteEvents, setRemoteEvents] = useState([])
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    fetchMemberApi('/api/events')
-      .then(({ events: records = [] }) => setRemoteEvents(records.map((event) => ({
-        ...event,
-        date: new Date(event.startsAt).toLocaleDateString(),
-        time: new Date(event.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-        image: event.imageUrl || GIC_LOGO,
-      }))))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+  const eventsQuery = useMemberQuery('/api/events', true)
+  const remoteEvents = (eventsQuery.data?.events || []).map((event) => ({
+    ...event,
+    date: new Date(event.startsAt).toLocaleDateString(),
+    time: new Date(event.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    image: event.imageUrl || GIC_LOGO,
+  }))
+  const loading = eventsQuery.isPending && !eventsQuery.data
   const listedEvents = [...getUpcomingEvents(), ...remoteEvents]
   return <>
     <MemberShell active="events" title="Events" backTo="/home">
       <div className="segmented"><button className="active">Upcoming</button><Link to="/my-registrations">My Events</Link></div>
       {loading && <p className="center muted">Loading events...</p>}
+      {eventsQuery.isError && eventsQuery.data && <p className="center muted">Showing saved events; refresh failed.</p>}
       {!loading && !listedEvents.length && <p className="center muted">No upcoming events.</p>}
       {listedEvents.map((event) => <EventRow key={event.id} event={event} onOpenService={setSelectedServiceEvent} />)}
     </MemberShell>
@@ -1800,24 +1871,14 @@ function ServiceModalLegacy({ event, onClose }) {
 function MixlrRecordingPage() {
   const { recordingId } = useParams()
   const { setStream, resume } = useAudioPlayer()
-  const [recording, setRecording] = useState(null)
-  const [error, setError] = useState('')
+  const recordingQuery = useMemberQuery(`/api/mixlr/recordings/${encodeURIComponent(recordingId)}`)
+  const recording = recordingQuery.data
+  const error = recordingQuery.isError && !recording ? 'This recording is unavailable.' : ''
 
   useEffect(() => {
-    let cancelled = false
-    fetch(`${API_BASE}/api/mixlr/recordings/${encodeURIComponent(recordingId)}`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error('This recording is unavailable.')
-        return response.json()
-      })
-      .then((data) => {
-        if (cancelled) return
-        setRecording(data)
-        setStream(data.audioUrl, data.displayTitle || data.title, { recordingDate: formatRecordingDate(data.displayDate), recordingId: data.id || recordingId })
-      })
-      .catch((requestError) => { if (!cancelled) setError(requestError.message || 'This recording is unavailable.') })
-    return () => { cancelled = true }
-  }, [recordingId])
+    if (!recording) return
+    setStream(recording.audioUrl, recording.displayTitle || recording.title, { recordingDate: formatRecordingDate(recording.displayDate), recordingId: recording.id || recordingId })
+  }, [recording, recordingId, setStream])
 
   return <MemberShell active="home" title="Service Recording" backTo="/home">
     <section className="section mixlr-recording-page">
@@ -1834,30 +1895,86 @@ function MixlrRecordingPage() {
 
 function EventDetails() {
   const { id } = useParams()
+  const [flyerExpanded, setFlyerExpanded] = useState(false)
+  const [shareMessage, setShareMessage] = useState('')
+  const [calendarAdded, setCalendarAdded] = useState(() => isCalendarEventSaved(id))
+  const [interested, setInterested] = useState(false)
   const staticEvent = events.find(x => x.id === id)
   const [remoteEvent, setRemoteEvent] = useState(null)
   const [registration, setRegistration] = useState(null)
   const [loading, setLoading] = useState(!staticEvent)
   useEffect(() => {
     if (staticEvent) return
-    fetchMemberApi(`/api/events/${id}`).then(({ event: record, registration: currentRegistration }) => {
+    fetchMemberApi(`/api/events/${id}`).then(({ event: record, registration: currentRegistration, interested: currentInterest }) => {
       setRegistration(currentRegistration)
+      setInterested(Boolean(currentInterest))
       setRemoteEvent({
       ...record,
       date: new Date(record.startsAt).toLocaleDateString(),
       time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      image: record.imageUrl || GIC_LOGO,
+      image: record.imageUrl || record.flyerMediaUrl || GIC_LOGO,
       })
     }).catch(() => {}).finally(() => setLoading(false))
   }, [id, staticEvent])
   if (loading) return <MemberShell active="events" title="Event" backTo="/events"><p className="center muted">Loading event...</p></MemberShell>
   const e = remoteEvent || staticEvent || events[0]
+  const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
+  const addToCalendar = async (calendarEvent = e) => {
+    try {
+      const invite = createCalendarFile(calendarEvent)
+      saveCalendarEvent(calendarEvent)
+      if (!calendarEvent.registrationRequired && !staticEvent && !interested) {
+        await fetchMemberApi(`/api/events/${encodeURIComponent(calendarEvent.id)}/interest`, { method: 'POST' })
+        setInterested(true)
+      }
+      const blob = new Blob([invite], { type: 'text/calendar;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${calendarEvent.id}.ics`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setCalendarAdded(true)
+    } catch {
+      setShareMessage(calendarEvent.startsAt || calendarEvent.startAt ? 'The event was added on this device, but your interest could not be synced.' : 'This event is missing its start time and cannot be added yet.')
+    }
+  }
+  const shareEvent = async () => {
+    const shareUrl = `${window.location.origin}/events/${encodeURIComponent(e.id)}`
+    const shareData = { title: e.title, text: e.description || `Join us for ${e.title}.`, url: shareUrl }
+    try {
+      if (navigator.share) await navigator.share(shareData)
+      else {
+        await navigator.clipboard.writeText(`${shareData.text} ${shareUrl}`)
+        setShareMessage('Event link copied.')
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') setShareMessage('Sharing is unavailable on this device.')
+    }
+  }
+  const description = e.description || e.builderData?.fullDescription || e.builderData?.shortDescription
+  const flyerVideoUrl = e.flyerMediaType === 'video' ? e.flyerMediaUrl : ''
   if (e.isService) {
     const service = getServiceDisplay(e)
-    return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p></div></MemberShell>
+    const serviceEvent = { ...service, id: e.id, title: service.title, startsAt: service.startAt }
+    return <MemberShell active="events" backTo="/events" title={service.title}><div className="detail-body"><h1>{service.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{service.date}</span><span><Clock3 size={15} />{service.time}</span><span><MapPin size={15} />{service.location}</span></div><p>Join us for worship, the Word, and fellowship at Global Impact Church.</p><button type="button" className="btn primary wide" onClick={() => addToCalendar(serviceEvent)}><CalendarDays size={16}/>{calendarAdded ? 'Added to My Events' : 'Add to Calendar'}</button></div></MemberShell>
   }
-  const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
-  return <MemberShell active="events" backTo="/events" title=""><div className="detail-image" style={{ backgroundImage: `url(${e.image})` }} /><div className="detail-body"><h1>{e.title}</h1><div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />Free</span></div><p>An exciting time of worship, word, workshops and encounters. Don't miss it!</p><h3>What to Expect</h3><ul className="check-list"><li>Powerful Worship</li><li>Inspiring Sessions</li><li>Networking</li><li>And more</li></ul>{!e.registrationRequired ? <p className="muted">Registration is not required for this event.</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}</div></MemberShell>
+  return <MemberShell active="events" backTo="/events" title="">
+    <button type="button" className="event-flyer-expand" onClick={() => setFlyerExpanded(true)} aria-label={`Expand flyer for ${e.title}`}>
+      {flyerVideoUrl ? <video className="detail-image" src={flyerVideoUrl} muted playsInline preload="metadata" /> : <img className="detail-image" src={e.flyerMediaUrl || e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} />}
+      <span>{flyerVideoUrl ? <Video size={16}/> : <Expand size={16}/>} {flyerVideoUrl ? 'Play event video' : 'View flyer'}</span>
+    </button>
+    <div className="detail-body">
+      <div className="event-detail-heading"><h1>{e.title}</h1><div className="event-detail-actions"><button type="button" className="btn secondary event-share-button" onClick={shareEvent}><Share2 size={16}/> Share</button><button type="button" className="btn secondary event-share-button" onClick={() => addToCalendar()}><CalendarDays size={16}/>{calendarAdded ? 'Added' : 'Add to My Events'}</button></div></div>
+      <div className="detail-meta"><span><CalendarDays size={15} />{e.date}</span><span><Clock3 size={15} />{e.time}</span><span><MapPin size={15} />{e.location}</span><span><Ticket size={15} />{e.isPaid ? 'Paid' : 'Free'}</span></div>
+      {description && <p className="event-description">{description}</p>}
+      {shareMessage && <p className="muted" role="status">{shareMessage}</p>}
+      {!e.registrationRequired ? <p className="muted">{interested ? 'You are marked as interested.' : 'Registration is not required for this event.'}</p> : isRegistered ? <Link className="btn primary wide registered-event-button" to="/my-registrations"><Check size={17} /> Registered - View My Events</Link> : <Link className="btn primary wide" to={`/events/${e.id}/register`}>Register Now</Link>}
+    </div>
+    {flyerExpanded && createPortal(<div className="event-flyer-viewer" role="dialog" aria-modal="true" aria-label={`${e.title} ${flyerVideoUrl ? 'video' : 'flyer'}`} onClick={() => setFlyerExpanded(false)}><button type="button" className="event-flyer-viewer-close" onClick={() => setFlyerExpanded(false)} aria-label="Close flyer"><X size={22}/></button>{flyerVideoUrl ? <video src={flyerVideoUrl} controls autoPlay playsInline onClick={(event) => event.stopPropagation()} /> : <img src={e.flyerMediaUrl || e.image || e.imageUrl || GIC_LOGO} alt={`${e.title} flyer`} onClick={(event) => event.stopPropagation()} />}</div>, document.body)}
+  </MemberShell>
 }
 
 function EventRegistration() {
@@ -1876,7 +1993,7 @@ function EventRegistration() {
     ]).then(([eventResponse, profileResponse]) => {
       if (!staticEvent) {
         const record = eventResponse.event
-        setEvent({ ...record, date: new Date(record.startsAt).toLocaleDateString(), time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), image: record.imageUrl || GIC_LOGO })
+        setEvent({ ...record, date: new Date(record.startsAt).toLocaleDateString(), time: new Date(record.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), image: record.imageUrl || record.flyerMediaUrl || GIC_LOGO })
       }
       setProfile(profileResponse.profile)
     }).catch((requestError) => setError(requestError.message || 'Event registration is unavailable.'))
@@ -1900,7 +2017,7 @@ function EventRegistration() {
       }
       setSaving(false)
     }
-    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image } }))
+    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image, flyerMediaUrl: event.flyerMediaUrl, flyerMediaType: event.flyerMediaType, startsAt: event.startsAt, endsAt: event.endsAt, description: event.description } }))
     navigate(`/events/${event.id}/success`)
   }
 
@@ -1929,31 +2046,22 @@ function RegistrationSuccess() {
   const event = events.find((item) => item.id === id) || storedEvent || events[0]
   const [calendarAdded, setCalendarAdded] = useState(false)
   const handleAddToCalendar = () => {
-    const calendarEvent = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Global Impact Church//Events//EN',
-      'BEGIN:VEVENT',
-      `UID:${event.id}@gic.org`,
-      'DTSTAMP:20260905T000000Z',
-      'DTSTART:20261024T100000',
-      'DTEND:20261024T130000',
-      `SUMMARY:${event.title}`,
-      `LOCATION:${event.location.replace(',', '\\,')}`,
-      'DESCRIPTION:An exciting time of worship, word, workshops and encounters.',
-      'END:VEVENT',
-      'END:VCALENDAR'
-    ].join('\\r\\n')
-    const blob = new Blob([calendarEvent], { type: 'text/calendar;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${event.id}.ics`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
-    setCalendarAdded(true)
+    try {
+      const invite = createCalendarFile(event)
+      saveCalendarEvent(event)
+      const blob = new Blob([invite], { type: 'text/calendar;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${event.id}.ics`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setCalendarAdded(true)
+    } catch {
+      setCalendarAdded(false)
+    }
   }
 
   return <div className="success-page"><div className="success-card"><div className="success-icon green"><Check size={34} /></div><h1>You're Registered!</h1><p>You have successfully registered for<br /><b>{event.title}</b></p><button className="btn white wide" onClick={handleAddToCalendar}><CalendarDays size={16} /> {calendarAdded ? 'Calendar Invite Downloaded' : 'Add to Calendar'}</button><Link className="btn outline wide" to="/events">Back to Events</Link></div></div>
@@ -2442,13 +2550,13 @@ function EditProfile() {
 }
 
 function MyRegistrations() {
+  const navigate = useNavigate()
   const [now, setNow] = useState(Date.now())
-  const [remoteRegistrations, setRemoteRegistrations] = useState([])
-  useEffect(() => {
-    fetchMemberApi('/api/events/registrations')
-      .then(({ registrations = [] }) => setRemoteRegistrations(registrations))
-      .catch(() => {})
-  }, [])
+  const [calendarEvents] = useState(() => readCalendarEvents())
+  const registrationsQuery = useMemberQuery('/api/events/registrations', true)
+  const interestsQuery = useMemberQuery('/api/events/interests', true)
+  const remoteRegistrations = registrationsQuery.data?.registrations || []
+  const remoteInterests = interestsQuery.data?.interests || []
   const localRegistrations = events.filter((event) => {
     try {
       return Boolean(localStorage.getItem(`gic_registration_${event.id}`))
@@ -2456,35 +2564,79 @@ function MyRegistrations() {
       return false
     }
   })
-  const registrations = [...remoteRegistrations.map((registration) => ({
+  const registeredEvents = remoteRegistrations.filter((registration) => registration.status !== 'CANCELLED').map((registration) => ({
     id: registration.eventId,
     title: registration.eventTitle,
     date: new Date(registration.startsAt).toLocaleDateString(),
     time: new Date(registration.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
     location: registration.location || 'Location to be announced',
     startAt: registration.startsAt,
+    endAt: registration.endsAt,
     pickupLocationName: registration.pickupLocationName,
     pickupLocationAddress: registration.pickupLocationAddress,
     pickupLocationTime: registration.pickupLocationTime,
     pickupManagerName: registration.pickupManagerName,
     pickupManagerPhone: registration.pickupManagerPhone,
     status: registration.status,
-    image: GIC_LOGO,
-  })), ...localRegistrations.filter((event) => !remoteRegistrations.some((registration) => registration.eventId === event.id))]
+    image: registration.imageUrl || registration.flyerMediaUrl || GIC_LOGO,
+    flyerMediaUrl: registration.flyerMediaUrl,
+    flyerMediaType: registration.flyerMediaType,
+    registered: true,
+  }))
+  const registrationIds = new Set(registeredEvents.map((event) => event.id))
+  const remoteEventIds = new Set(remoteRegistrations.map((registration) => registration.eventId))
+  const localEvents = localRegistrations.filter((event) => !remoteEventIds.has(event.id)).map((event) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(`gic_registration_${event.id}`) || 'null')
+      return { ...event, ...(stored?.event || {}), status: 'CONFIRMED', registered: true }
+    } catch {
+      return { ...event, status: 'CONFIRMED', registered: true }
+    }
+  })
+  const interestedEvents = remoteInterests.filter((interest) => !registrationIds.has(interest.eventId)).map((interest) => ({
+    id: interest.eventId,
+    title: interest.eventTitle,
+    date: new Date(interest.startsAt).toLocaleDateString(),
+    time: new Date(interest.startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    location: interest.location || 'Location to be announced',
+    startAt: interest.startsAt,
+    endAt: interest.endsAt,
+    image: interest.imageUrl || interest.flyerMediaUrl || GIC_LOGO,
+    flyerMediaUrl: interest.flyerMediaUrl,
+    flyerMediaType: interest.flyerMediaType,
+    status: 'INTERESTED',
+    registered: false,
+    interested: true,
+  }))
+  const listedIds = new Set([...registrationIds, ...localEvents.map((event) => event.id), ...interestedEvents.map((event) => event.id)])
+  const registrations = [...registeredEvents, ...localEvents, ...interestedEvents, ...calendarEvents.filter((event) => !listedIds.has(event.id)).map((event) => ({ ...event, registered: false }))]
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
   return <MemberShell active="events" title="My Events" backTo="/events">
     {registrations.length ? registrations.map((event) => {
-       const remaining = Math.max(0, new Date(event.startAt || `${event.date.replace(/^\w+, /, '')} ${event.time}`).getTime() - now)
-      const days = Math.floor(remaining / 86400000)
-      const hours = Math.floor((remaining % 86400000) / 3600000)
-      const minutes = Math.floor((remaining % 3600000) / 60000)
-      const seconds = Math.floor((remaining % 60000) / 1000)
-      return <article className="registered-event-card" key={event.id}>
-        <div className="registered-event-cover" style={{ backgroundImage: `url(${event.image})` }}><span className="status">Registered</span></div>
-         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{event.status==='WAITLISTED'?'Waitlisted · Event starts in':'Event starts in'}</small><div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div></div></div>
+      const eventStartTimestamp = getEventStartTimestamp(event)
+      const remaining = eventStartTimestamp === null ? null : Math.max(0, eventStartTimestamp - now)
+      const days = remaining === null ? 0 : Math.floor(remaining / 86400000)
+      const hours = remaining === null ? 0 : Math.floor((remaining % 86400000) / 3600000)
+      const minutes = remaining === null ? 0 : Math.floor((remaining % 3600000) / 60000)
+      const seconds = remaining === null ? 0 : Math.floor((remaining % 60000) / 1000)
+      const flyerUrl = event.flyerMediaUrl || event.image || event.imageUrl || GIC_LOGO
+      return <article className="registered-event-card" key={event.id} role="link" tabIndex={0} aria-label={`Open ${event.title} details`} onClick={(clickEvent) => {
+        if (!clickEvent.target.closest('a, button')) navigate(`/events/${event.id}`)
+      }} onKeyDown={(keyEvent) => {
+        if (keyEvent.target !== keyEvent.currentTarget) return
+        if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+          keyEvent.preventDefault()
+          navigate(`/events/${event.id}`)
+        }
+      }}>
+        <div className={`registered-event-cover ${event.flyerMediaType === 'video' && event.flyerMediaUrl ? 'has-video' : ''}`} style={event.flyerMediaType === 'video' && event.flyerMediaUrl ? undefined : { backgroundImage: `url(${flyerUrl})` }}>
+          {event.flyerMediaType === 'video' && event.flyerMediaUrl && <><video src={event.flyerMediaUrl} muted playsInline preload="metadata"/><span className="registered-video-play"><Play size={15}/> Play video</span></>}
+          <span className="status">{event.registered ? event.status === 'WAITLISTED' ? 'Waitlisted' : 'Registered' : event.interested ? 'Interested' : 'Added to My Events'}</span>
+        </div>
+         <div className="registered-event-body"><div className="registered-event-heading"><div><b>{event.title}</b><small>{event.date} · {event.time}</small></div><Ticket size={20} /></div><small className="registered-location"><MapPin size={14} /> {event.location}</small>{event.pickupLocationName&&<div className="registered-pickup"><b>Bus pickup: {event.pickupLocationName}</b>{event.pickupLocationAddress&&<small>{event.pickupLocationAddress}</small>}{event.pickupLocationTime&&<small>Pickup time: {new Date(event.pickupLocationTime).toLocaleString()}</small>}{event.pickupManagerName&&<small>Manager: {event.pickupManagerName} · <a href={`tel:${event.pickupManagerPhone}`}>{event.pickupManagerPhone}</a></small>}</div>}<div className="countdown"><small>{remaining===null?'Event time unavailable':event.status==='WAITLISTED'?'Waitlisted · Event starts in':event.registered?'Event starts in':'Added to calendar · Event starts in'}</small>{remaining!==null&&<div><span><b>{String(days).padStart(2, '0')}</b><em>Days</em></span><span><b>{String(hours).padStart(2, '0')}</b><em>Hrs</em></span><span><b>{String(minutes).padStart(2, '0')}</b><em>Min</em></span><span><b>{String(seconds).padStart(2, '0')}</b><em>Sec</em></span></div>}</div></div>
       </article>
     }) : <div className="events-empty-state">
       <div className="events-empty-illustration" aria-hidden="true">
@@ -2555,6 +2707,14 @@ function EventRegistrationAlias() {
 
 export default function App() {
   useEffect(() => listenForForegroundMessages((payload) => {
+    const token = localStorage.getItem('gic_auth_token') || ''
+    const scope = memberScopeFromToken(token)
+    const messageType = String(payload?.data?.type || payload?.data?.eventType || '').toLowerCase()
+    void invalidateMemberResource(scope, 'notifications')
+    window.dispatchEvent(new Event('gic:notifications-updated'))
+    if (payload?.data?.eventId || messageType.includes('event')) void invalidateMemberResource(scope, 'events')
+    if (messageType.includes('mixlr') || payload?.data?.recordingId) void invalidateMemberResource(scope, 'mixlr')
+    if (messageType.includes('attendance') || messageType.includes('pulse')) void invalidateMemberResource(scope, 'attendance')
     if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return
     navigator.serviceWorker.ready.then((registration) => registration.showNotification(payload?.notification?.title || 'Global Impact Church', {
       body: payload?.notification?.body || 'You have a new update.',

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { announceMixlrRecordingOnce, fetchLatestMixlrRecording, isNewMixlrRecording, mixlrAnnouncement, mixlrNotificationTag, MIXLR_LOOKUP_INTERVAL_MS, shouldCheckMixlr } from "./mixlr-domain.js";
+import { announceMixlrRecordingOnce, fetchLatestMixlrRecording, isNewMixlrRecording, mixlrAnnouncement, mixlrNotificationTag, MIXLR_LOOKUP_INTERVAL_MS, MIXLR_MIN_PLAY_SECONDS, shouldCheckMixlr } from "./mixlr-domain.js";
+
+test("Mixlr plays must meet the two-minute minimum", () => {
+  assert.equal(MIXLR_MIN_PLAY_SECONDS, 120);
+});
 
 test("Mixlr lookup follows the one-hour cache interval", () => {
   const checkedAt = new Date("2026-10-04T10:00:00.000Z");

@@ -16,22 +16,13 @@ import AdminOrganizations from './AdminOrganizations'
 import AdminEventOrganizationSetting from './AdminEventOrganizationSetting'
 import AdminCreateEventModal from './AdminCreateEventModal'
 import {onAuthStateChanged, signInWithEmailAndPassword, signOut} from 'firebase/auth'
+import { useQuery } from '@tanstack/react-query'
+import { adminApiQueryKey, adminStaleTime } from './queryCache'
+import { adminApiScope, fetchAdminApi, requestAdminApi } from './adminApi'
 import './member-filters.css'
+import './admin-event-media.css'
 
 const purple='#4b20b5'
-const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
-
-async function fetchAdminApi(path, options = {}) {
- const user = adminAuth.currentUser
- if (!user) throw new Error('Admin session is unavailable')
- const token = await user.getIdToken()
- const response = await fetch(`${API_BASE}${path}`, {
-  ...options,
-  headers: {'Content-Type':'application/json', Authorization:`Bearer ${token}`, ...(options.headers || {})},
- })
- if (!response.ok) throw new Error(await response.text().catch(()=>'Request failed'))
- return response.json()
-}
 
 const onboardingGrowthData=[{d:'Mon',v:220},{d:'Tue',v:410},{d:'Wed',v:430},{d:'Thu',v:700},{d:'Fri',v:780},{d:'Sat',v:1050},{d:'Sun',v:1580}]
 const members=[
@@ -79,8 +70,8 @@ const eventOperations={
 
 function Logo(){
  return <div className="brand" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-   <img src="https://i.ibb.co/sJVFXvpS/RPap-R-removebg-preview.png" alt="Global Impact Church" style={{ height: '36px', width: 'auto', objectFit: 'contain' }} />
-   <span style={{ fontSize: '7px', letterSpacing: '1px', fontWeight: 700, color: '#f5c238' }}>GLOBAL IMPACT CHURCH</span>
+  <img src="https://i.ibb.co/BKyxgwTC/KINGDOM-COMMS.png" alt="Kingdom Comms" style={{ height: '36px', width: 'auto', objectFit: 'contain' }} />
+  <span style={{ fontSize: '7px', letterSpacing: '1px', fontWeight: 700, color: '#f5c238' }}>KINGDOM COMMS</span>
  </div>
 }
 function Sidebar({mobileOpen=false,collapsed=false,onToggle}){
@@ -347,7 +338,7 @@ function Settings(){
     <div className="card-head"><div><b>{section}</b><small>Operational controls for the GIC platform</small></div></div>
     {section==='General'&&<div className="settings-choice-list"><div><b>Platform preferences</b><small>Default date, time, and member-management behavior.</small></div><div><span>Default date format</span><select defaultValue="September 5, 2026"><option>September 5, 2026</option></select></div><div><span>Default member centre terminology</span><b>Centre</b></div><div><span>Units and fellowships</span><b>Managed in one organization directory</b></div></div>}
     {section==='Church Information'&&<div className="form-grid"><label>Church name<input defaultValue="GLOBAL IMPACT CHURCH"/></label><label>Short name<input defaultValue="GIC"/></label><label>Website<input defaultValue="https://globalimpactng.org"/></label><label>Phone<input defaultValue="+234 801 234 5678"/></label><label>Address<input defaultValue="Lagos, Nigeria"/></label><label>Timezone<select defaultValue="Africa/Lagos"><option>Africa/Lagos</option></select></label><label>Default language<select defaultValue="English"><option>English</option></select></label></div>}
-    {section==='Branding'&&<div className="form-grid"><label>Application name<input defaultValue="GLOBAL IMPACT CHURCH"/></label><label>Short name<input defaultValue="GIC"/></label><label>Theme color<input type="color" defaultValue="#4b20b5"/></label><label>Background color<input type="color" defaultValue="#f6f7fb"/></label><div className="branding-preview"><Logo/><b>GLOBAL IMPACT CHURCH</b><span>Add to Home Screen</span></div></div>}
+    {section==='Branding'&&<div className="form-grid"><label>Application name<input defaultValue="Kingdom Comms"/></label><label>Short name<input defaultValue="Kingdom Comms"/></label><label>Theme color<input type="color" defaultValue="#4b20b5"/></label><label>Background color<input type="color" defaultValue="#f6f7fb"/></label><div className="branding-preview"><Logo/><b>Kingdom Comms</b><span>Add to Home Screen</span></div></div>}
     {section==='Permissions'&&<div className="permission-table"><div className="permission-row permission-head"><b>Area</b><b>View</b><b>Create</b><b>Edit</b><b>Delete</b></div>{['Members','Units & Fellowships','Events','Registrations','Forms','Attendance','Messages','Settings','Activity Logs'].map((area)=><div className="permission-row" key={area}><span>{area}</span><input type="checkbox" defaultChecked/><input type="checkbox" defaultChecked={area!=='Activity Logs'}/><input type="checkbox" defaultChecked={['Members','Events','Messages'].includes(area)}/><input type="checkbox" defaultChecked={['Events','Forms'].includes(area)}/></div>)}</div>}
     {section==='Security'&&<div className="settings-choice-list"><div><b>Authentication</b><small>Device authentication and admin session controls.</small></div><div><span>Authentication status</span><b>Active</b></div><div><span>Session duration</span><b>30 days</b></div><div><span>Failed login protection</span><b>Enabled</b></div><button className="btn secondary">Revoke other admin sessions</button></div>}
     {section==='Integrations'&&<div className="integration-list"><div><div className="small-icon"><Send size={15}/></div><div><b>Firebase Cloud Messaging</b><small>Connected · Push delivery only</small></div><span className="badge success">Connected</span></div><div><div className="small-icon"><Database size={15}/></div><div><b>PostgreSQL</b><small>Connected · Primary application database</small></div><span className="badge success">Connected</span></div></div>}
@@ -368,6 +359,29 @@ const LiveActivityLog = function LiveActivityLog() {
 }
 
 function ModernEvents(){
+ const [items,setItems]=useState([])
+ const [query,setQuery]=useState('')
+ const [status,setStatus]=useState('ALL')
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const [createOpen,setCreateOpen]=useState(false)
+ const load=()=>fetchAdminApi('/api/admin/events').then(({events:records=[]})=>{setItems(records);setError('')}).catch((requestError)=>setError(requestError.message||'Events could not be loaded.')).finally(()=>setLoading(false))
+ useEffect(()=>{load()},[])
+ const visible=items.filter((event)=>`${event.title||''} ${event.eventType||''} ${event.venueName||event.location||''}`.toLowerCase().includes(query.toLowerCase())&&(status==='ALL'||event.status===status))
+ const onCreated=()=>{setCreateOpen(false);setLoading(true);load()}
+ return <Page title="Events" subtitle="Manage published events, registrations, transport, and reminders" action={<button className="btn primary" onClick={()=>setCreateOpen(true)}><Plus size={15}/> Create Event</button>}>
+  <Card className="table-card modern-events-card">
+   <div className="event-filters"><div className="search"><Search size={15}/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Search events..."/></div><select value={status} onChange={(event)=>setStatus(event.target.value)} aria-label="Filter events by status"><option value="ALL">All statuses</option><option value="PUBLISHED">Published</option><option value="DRAFT">Draft</option><option value="ARCHIVED">Archived</option></select><Link className="tool" to="/events/registrations"><ClipboardList size={14}/> Registrations</Link></div>
+   {loading&&<div className="empty-message">Loading events...</div>}
+   {!loading&&error&&<div className="empty-message" role="alert">{error}</div>}
+   {!loading&&!error&&!visible.length&&<div className="empty-message">{items.length?'No events match these filters.':'No events yet. Create an event to get started.'}</div>}
+  {!loading&&!error&&visible.length>0&&<div className="event-list">{visible.map((event)=><Link className="event-admin-row" to={`/events/${event.id}`} key={event.id}>{event.flyerUrl||event.imageUrl?<img src={event.flyerUrl||event.imageUrl} alt=""/>:<div className="event-image-placeholder"><CalendarDays size={20}/></div>}<div className="event-info"><b>{event.title}</b><small><CalendarDays size={12}/>{event.startsAt?new Date(event.startsAt).toLocaleString():'Date to be announced'} <span>·</span> {event.venueName||event.location||'Location to be announced'}</small></div><div className="reg-count"><b>{event.registrationRequired?event.registrationCount||0:event.interestCount||0}</b><small>{event.registrationRequired?'Registrants':'Interested'}</small></div><span className={'badge '+(event.status==='PUBLISHED'?'success':'draft')}>{event.status}</span><MoreHorizontal size={17}/></Link>)}</div>}
+  </Card>
+  {createOpen&&<AdminCreateEventModal onClose={()=>setCreateOpen(false)} onCreated={onCreated}/>}
+ </Page>
+}
+
+function LegacyModernEvents(){
   const navigate=useNavigate()
  const [events,setEvents]=useState([])
  const [query,setQuery]=useState('')
@@ -413,7 +427,15 @@ function AdminEventRegistrations({eventId}){
  const [loading,setLoading]=useState(true)
  const [error,setError]=useState('')
  useEffect(()=>{setLoading(true);fetchAdminApi(`/api/admin/events/${eventId}/registrations`).then(setData).catch((requestError)=>setError(requestError.message)).finally(()=>setLoading(false))},[eventId])
- return <div className="event-admin-section"><h3>Registrations</h3>{loading?<p className="muted">Loading registrations...</p>:error?<p className="event-form-error">{error}</p>:<><div className="transport-summary">{data.passengerCounts.filter((item)=>item.pickupLocationId).map((item)=><div key={item.pickupLocationId}><small>{item.pickupLocationName}</small><b>{item.passengerCount} passengers</b></div>)}{!data.passengerCounts.filter((item)=>item.pickupLocationId).length&&<p className="muted">No passenger selections yet.</p>}</div><div className="table-wrap"><table><thead><tr><th>Member</th><th>Phone</th><th>Status</th><th>Bus pickup</th><th>Registered</th></tr></thead><tbody>{data.registrations.map((item)=><tr key={item.id}><td><b>{item.memberName||item.memberId}</b></td><td>{item.memberPhone||'—'}</td><td><span className="badge blue">{item.status}</span></td><td>{item.pickupLocationName||'—'}</td><td>{item.registeredAt?new Date(item.registeredAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>{!data.registrations.length&&<p className="muted">No registrations yet.</p>}</>}</div>
+ return <div className="event-admin-section"><h3>Registrations</h3>{loading?<p className="muted">Loading registrations...</p>:error?<p className="event-form-error">{error}</p>:<><div className="transport-summary">{data.passengerCounts.filter((item)=>item.pickupLocationId).map((item)=><div key={item.pickupLocationId}><small>{item.pickupLocationName}</small><b>{item.passengerCount} passengers</b></div>)}{!data.passengerCounts.filter((item)=>item.pickupLocationId).length&&<p className="muted">No passenger selections yet.</p>}</div><div className="table-wrap"><table><thead><tr><th>Member profile</th><th>Contact</th><th>Status</th><th>Bus pickup</th><th>Registered</th></tr></thead><tbody>{data.registrations.map((item)=><tr key={item.id}><td><div className="admin-event-member-profile">{item.memberAvatar?<img src={item.memberAvatar} alt=""/>:<span>{(item.memberName||'?').slice(0,1).toUpperCase()}</span>}<div><b>{item.memberName||item.memberId}</b><small>{item.memberCenter||'Center not provided'}</small></div></div></td><td>{item.memberEmail||'—'}<small>{item.memberPhone||'—'}</small></td><td><span className="badge blue">{item.status}</span></td><td>{item.pickupLocationName||'—'}</td><td>{item.registeredAt?new Date(item.registeredAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>{!data.registrations.length&&<p className="muted">No registrations yet.</p>}</>}</div>
+}
+
+function AdminEventInterests({eventId}){
+ const [interests,setInterests]=useState([])
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ useEffect(()=>{fetchAdminApi(`/api/admin/events/${eventId}/interests`).then(({interests:items=[]})=>setInterests(items)).catch((requestError)=>setError(requestError.message||'Interested member profiles could not be loaded.')).finally(()=>setLoading(false))},[eventId])
+ return <div className="event-admin-section"><h3>Interested members ({interests.length})</h3>{loading?<p className="muted">Loading interested member profiles...</p>:error?<p className="event-form-error">{error}</p>:interests.length?<div className="table-wrap"><table><thead><tr><th>Member profile</th><th>Contact</th><th>Center</th><th>Interested since</th></tr></thead><tbody>{interests.map((item)=><tr key={item.id}><td><div className="admin-event-member-profile">{item.memberAvatar?<img src={item.memberAvatar} alt=""/>:<span>{(item.memberName||'?').slice(0,1).toUpperCase()}</span>}<div><b>{item.memberName||item.memberId}</b><small>{item.memberId}</small></div></div></td><td>{item.memberEmail||'—'}<small>{item.memberPhone||'—'}</small></td><td>{item.memberCenter||'—'}</td><td>{item.interestedAt?new Date(item.interestedAt).toLocaleString():'—'}</td></tr>)}</tbody></table></div>:<p className="muted">No members have marked interest yet.</p>}</div>
 }
 
 function EventReminders({eventId,eventStartsAt}){
@@ -445,15 +467,16 @@ function AdminEventDetails(){
  }
  if(error)return <Page title="Event details"><Card className="empty-message">{error}</Card></Page>
  if(!event)return <Page title="Event details"><Card className="empty-message">Loading event...</Card></Page>
- const tabs=['Overview','Registrations','Bus pickups','Reminders']
+ const tabs=['Overview',...(event.registrationRequired?['Registrations']:['Interested']),'Bus pickups','Reminders']
   return <Page title={event.title} subtitle={event.eventType}>
-    <div className="detail-toolbar modern-detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><span className="badge success">{event.registrationCount||0} registrations</span><button className="tool" onClick={remove} disabled={deleting}><Trash2 size={15}/>{deleting?'Deleting...':'Delete event'}</button></div>
+   <div className="detail-toolbar modern-detail-toolbar"><Link to="/events"><ArrowLeft size={16}/> Back to Events</Link><span className="badge success">{event.registrationRequired?`${event.registrationCount||0} registrants`:`${event.interestCount||0} interested`}</span><button className="tool" onClick={remove} disabled={deleting}><Trash2 size={15}/>{deleting?'Deleting...':'Delete event'}</button></div>
     {deleteError&&<Card className="empty-message" role="alert">{deleteError}</Card>}
     <Card className="modern-event-detail">
       <div className="modern-event-summary"><div><span className={'badge '+(event.status==='PUBLISHED'?'success':'draft')}>{event.status}</span><h2>{event.title}</h2><p><CalendarDays size={14}/> {new Date(event.startsAt).toLocaleString()} {event.endsAt&&`– ${new Date(event.endsAt).toLocaleString()}`}</p><p><MapPin size={14}/> {event.locationType==='ONLINE'?'Online':event.venueName||event.location||'Location to be announced'}</p></div><div className="event-detail-facts"><b>{event.registrationRequired?'Registration required':'Registration not required'}</b>{event.registrationCapacity&&<span>Capacity {event.registrationCapacity}</span>}{event.organizerUnit&&<span>Organizer: {event.organizerUnit}</span>}{event.isOnline&&<span>Online link configured</span>}{event.busTransportEnabled&&<span>Bus transportation enabled</span>}</div></div>
       <div className="tabs big">{tabs.map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}</div>
       {tab==='Overview'&&<div className="event-admin-section"><div className="modern-profile-grid"><div><small>Description</small><b>{event.description||'—'}</b></div><div><small>Contact person</small><b>{event.organizerContactPerson||'—'} {event.organizerContactPhone&&`· ${event.organizerContactPhone}`}</b></div><div><small>Online access</small><b>{event.onlineUrl||'—'}</b></div><div><small>Confirmation push</small><b>{event.sendRegistrationConfirmation?'Enabled':'Disabled'}</b></div></div><AdminEventOrganizationSetting event={event} onSaved={setEvent}/></div>}
       {tab==='Registrations'&&<AdminEventRegistrations eventId={id}/>}
+      {tab==='Interested'&&<AdminEventInterests eventId={id}/>}
       {tab==='Bus pickups'&&<PickupLocations eventId={id}/>}
       {tab==='Reminders'&&<EventReminders eventId={id} eventStartsAt={event.startsAt}/>}
     </Card>
@@ -461,18 +484,48 @@ function AdminEventDetails(){
 }
 
 function AdminRegistrations(){
- const [events,setEvents]=useState([])
- const [eventId,setEventId]=useState('')
- useEffect(()=>{fetchAdminApi('/api/admin/events').then(({events:items=[]})=>{setEvents(items);if(items[0])setEventId(items[0].id)}).catch(()=>{})},[])
- return <Page title="Registrations" subtitle="View member registrations and bus passenger totals"><Card className="table-card"><label className="modern-field"><span>Event</span><select value={eventId} onChange={(event)=>setEventId(event.target.value)}>{events.map((item)=><option key={item.id} value={item.id}>{item.title}</option>)}</select></label>{eventId&&<AdminEventRegistrations eventId={eventId}/>}</Card></Page>
+ const [loading,setLoading]=useState(true)
+ const [error,setError]=useState('')
+ const [options,setOptions]=useState({events:[],genders:[],ageGroups:[]})
+ const [filters,setFilters]=useState({eventId:'',gender:'',ageGroupId:''})
+ const [report,setReport]=useState({summary:{},rows:[]})
+ useEffect(()=>{
+  let cancelled=false
+  const params=new URLSearchParams(Object.entries(filters).filter(([,value])=>value))
+  setLoading(true)
+  setError('')
+  fetchAdminApi(`/api/admin/attendance/registrations${params.size?`?${params.toString()}`:''}`).then((payload)=>{
+   if(cancelled)return
+   setReport({summary:payload.summary||{},rows:payload.rows||[]})
+   setOptions(payload.options||{events:[],genders:[],ageGroups:[]})
+  }).catch((requestError)=>{if(!cancelled)setError(requestError.message||'Registration data is unavailable.')}).finally(()=>{if(!cancelled)setLoading(false)})
+  return ()=>{cancelled=true}
+ },[filters.eventId,filters.gender,filters.ageGroupId])
+ const summaryItems=[['Total registrations',report.summary.total||0],['Confirmed',report.summary.confirmed||0],['Waitlisted',report.summary.waitlisted||0],['Pending',report.summary.pending||0],...(report.summary.cancelled>0?[['Cancelled',report.summary.cancelled]]:[])]
+ const summaryIcon=(label)=>label==='Confirmed'?CheckCircle2:label==='Waitlisted'?Clock3:ClipboardList
+ return <Page title="Event Registrations" subtitle="Registration totals and attendee status by event">
+  <Card className="table-card">
+   <div className="attendance-summary infographic-summary">{summaryItems.map(([label,value],index)=>{const Icon=summaryIcon(label);return <div className={`infographic-metric metric-${index%4}`} key={label}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
+   <div className="attendance-filters"><div className="attendance-filter-grid">
+    {[["EVENT","eventId",options.events,"All events","title"],["GENDER","gender",options.genders.map((value)=>({id:value,name:value})),"All genders","name"],["AGE GROUP","ageGroupId",options.ageGroups,"All age groups","name"]].map(([label,key,values,placeholder,valueKey])=><label key={key}><span>{label}</span><select value={filters[key]} onChange={(event)=>setFilters((current)=>({...current,[key]:event.target.value}))}><option value="">{placeholder}</option>{values.map((item)=><option key={item.id} value={item.id}>{item[valueKey]||item.name}</option>)}</select></label>)}
+   </div></div>
+   {loading&&<div className="empty-message">Loading registration report...</div>}
+   {!loading&&error&&<div className="empty-message" role="alert">Registration data is unavailable: {error}</div>}
+   {!loading&&!error&&<div className="table-wrap"><table><thead><tr><th>Event</th><th>Confirmed</th><th>Waitlisted</th><th>Pending</th><th>Total</th></tr></thead><tbody>{report.rows.length?report.rows.map((row,index)=><tr key={`${row.eventId||row.eventTitle||'event'}-${index}`}><td><b>{row.eventTitle||row.eventId||'Event'}</b></td><td>{row.confirmed||0}</td><td>{row.waitlisted||0}</td><td>{row.pending||0}</td><td>{row.total||0}</td></tr>):<tr><td colSpan={5}><div className="empty-message">{filters.gender||filters.ageGroupId?'No members match these filters.':'No registrations yet.'}</div></td></tr>}</tbody></table></div>}
+  </Card>
+ </Page>
 }
 
 function ModernMemberDetails(){
  const {id}=useParams()
  const navigate=useNavigate()
- const [member,setMember]=useState(null)
- const [groupMemberships,setGroupMemberships]=useState({ministries:[],cells:[],segments:[]})
- const [ageGroups,setAgeGroups]=useState([])
+ const memberPath=`/api/admin/members/${encodeURIComponent(id)}`
+ const [scope,setScope]=useState('')
+ useEffect(()=>{const user=adminAuth.currentUser;if(user)adminApiScope(user).then(setScope).catch(()=>setScope(''))},[])
+ const memberQuery=useQuery({queryKey:adminApiQueryKey(scope,memberPath),queryFn:()=>requestAdminApi(memberPath),enabled:Boolean(scope),staleTime:adminStaleTime(memberPath)})
+ const member=memberQuery.data?.member||null
+ const groupMemberships=memberQuery.data?.groups||{ministries:[],cells:[],segments:[]}
+ const ageGroups=memberQuery.data?.ageGroups||[]
  const [ageGroupId,setAgeGroupId]=useState('')
  const [relationshipStatus,setRelationshipStatus]=useState('')
  const [page,setPage]=useState(1)
@@ -483,8 +536,8 @@ function ModernMemberDetails(){
  const [savingProfile,setSavingProfile]=useState(false)
  const [deletingId,setDeletingId]=useState('')
  const [deleteError,setDeleteError]=useState('')
- useEffect(()=>{let cancelled=false;fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}`).then(({member:record,groups={},ageGroups:options=[]})=>{if(cancelled)return;setMember(record);setGroupMemberships({ministries:groups.ministries||[],cells:groups.fellowships||groups.cells||[],segments:groups.segments||[]});setAgeGroups(options);setAgeGroupId(record.ageGroupId||'');setRelationshipStatus(record.relationshipStatus||'');setBirthday(record.birthday||'')}).catch(()=>{if(!cancelled)setMember(null)});return()=>{cancelled=true}},[id])
- const saveDemographics=async()=>{setSavingProfile(true);setProfileNotice('');try{const {member:updated}=await fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}/profile`,{method:'PATCH',body:JSON.stringify({ageGroupId:ageGroupId||null,relationshipStatus:relationshipStatus||null,birthday})});setMember(updated);setProfileNotice('Personal information updated.')}catch(error){setProfileNotice(error.message||'Profile update failed.')}finally{setSavingProfile(false)}}
+ useEffect(()=>{const record=memberQuery.data?.member;if(!record)return;setAgeGroupId(record.ageGroupId||'');setRelationshipStatus(record.relationshipStatus||'');setBirthday(record.birthday||'')},[memberQuery.data?.member])
+ const saveDemographics=async()=>{setSavingProfile(true);setProfileNotice('');try{const {member:updated}=await fetchAdminApi(`/api/admin/members/${encodeURIComponent(id)}/profile`,{method:'PATCH',body:JSON.stringify({ageGroupId:ageGroupId||null,relationshipStatus:relationshipStatus||null,birthday})});setProfileNotice('Personal information updated.');void updated}catch(error){setProfileNotice(error.message||'Profile update failed.')}finally{setSavingProfile(false)}}
  const deleteMember=async(member)=>{
   if(!window.confirm(`Delete ${member.displayName||'this member'}? This permanently removes the member profile, devices, notifications, reminders, and ministry applications.`))return
   setDeleteError('')
@@ -554,40 +607,32 @@ function LiveMembers(){
  const [statusFilters,setStatusFilters]=useState([])
  const [page,setPage]=useState(1)
  const [pageSize]=useState(50)
- const [total,setTotal]=useState(0)
  const [unitIds,setUnitIds]=useState([])
  const [fellowshipIds,setFellowshipIds]=useState([])
  const [segmentIds,setSegmentIds]=useState([])
  const [ageGroupIds,setAgeGroupIds]=useState([])
  const [relationshipStatuses,setRelationshipStatuses]=useState([])
- const [filterOptions,setFilterOptions]=useState({units:[],fellowships:[],segments:[],ageGroups:[]})
- const [records,setRecords]=useState([])
- const [loading,setLoading]=useState(true)
- const [error,setError]=useState('')
  const [deleteError,setDeleteError]=useState('')
  const [deletingId,setDeletingId]=useState('')
- useEffect(()=>{
-  let cancelled=false
-  const params=new URLSearchParams()
-  if(query.trim())params.set('search',query.trim())
-  statusFilters.forEach((value)=>params.append('status',value))
-  unitIds.forEach((value)=>params.append('unitId',value))
-  fellowshipIds.forEach((value)=>params.append('fellowshipId',value))
-  segmentIds.forEach((value)=>params.append('segmentId',value))
-  ageGroupIds.forEach((value)=>params.append('ageGroupId',value))
-  relationshipStatuses.forEach((value)=>params.append('relationshipStatus',value))
-  params.set('page',String(page))
-  params.set('pageSize',String(pageSize))
-  setLoading(true)
-  setError('')
-  fetchAdminApi(`/api/admin/members?${params.toString()}`).then(({members=[],filters={},total:count=0})=>{
-   if(cancelled)return
-   setRecords(members)
-  setTotal(count)
-  setFilterOptions({units:filters.units||[],fellowships:filters.fellowships||[],segments:filters.segments||[],ageGroups:filters.ageGroups||[]})
-  }).catch((requestError)=>{if(!cancelled)setError(requestError.message)}).finally(()=>{if(!cancelled)setLoading(false)})
-  return ()=>{cancelled=true}
- },[query,statusFilters,unitIds,fellowshipIds,segmentIds,ageGroupIds,relationshipStatuses,page,pageSize])
+ const params=new URLSearchParams()
+ if(query.trim())params.set('search',query.trim())
+ statusFilters.forEach((value)=>params.append('status',value))
+ unitIds.forEach((value)=>params.append('unitId',value))
+ fellowshipIds.forEach((value)=>params.append('fellowshipId',value))
+ segmentIds.forEach((value)=>params.append('segmentId',value))
+ ageGroupIds.forEach((value)=>params.append('ageGroupId',value))
+ relationshipStatuses.forEach((value)=>params.append('relationshipStatus',value))
+ params.set('page',String(page))
+ params.set('pageSize',String(pageSize))
+ const path=`/api/admin/members?${params.toString()}`
+ const [scope,setScope]=useState('')
+ useEffect(()=>{const user=adminAuth.currentUser;if(user)adminApiScope(user).then(setScope).catch(()=>setScope(''))},[])
+ const membersQuery=useQuery({queryKey:adminApiQueryKey(scope,path),queryFn:()=>requestAdminApi(path),enabled:Boolean(scope),staleTime:adminStaleTime(path),placeholderData:(previousData)=>previousData})
+ const records=membersQuery.data?.members||[]
+ const total=membersQuery.data?.total||0
+ const filterOptions={units:membersQuery.data?.filters?.units||[],fellowships:membersQuery.data?.filters?.fellowships||[],segments:membersQuery.data?.filters?.segments||[],ageGroups:membersQuery.data?.filters?.ageGroups||[]}
+ const loading=membersQuery.isPending
+ const error=membersQuery.isError&&!membersQuery.data?membersQuery.error?.message:''
  useEffect(()=>{setPage(1)},[query,statusFilters,unitIds,fellowshipIds,segmentIds,ageGroupIds,relationshipStatuses])
  const visible=records
  const displayName=(member)=>String(member.displayName||member.name||'Unnamed member').trim()||'Unnamed member'
@@ -597,7 +642,6 @@ function LiveMembers(){
   setDeletingId(member.id)
   try{
    await fetchAdminApi(`/api/admin/ministry-applications/members/${encodeURIComponent(member.id)}`,{method:'DELETE'})
-   setRecords((items)=>items.filter((item)=>item.id!==member.id))
   }catch(requestError){
    setDeleteError(requestError.message||'Member could not be deleted.')
   }finally{
@@ -631,10 +675,12 @@ function LiveMemberDetails(){
 }
 
 function LiveDashboard(){
- const [summary,setSummary]=useState({members:0,applications:0,messages:0,sentMessages:0,upcomingEvents:0,pendingApplications:0})
- const [error,setError]=useState('')
- useEffect(()=>{Promise.all([fetchAdminApi('/api/admin/ministry-applications/members'),fetchAdminApi('/api/admin/ministry-applications'),fetchAdminApi('/api/admin/notifications'),fetchAdminApi('/api/admin/events/summary')]).then(([memberData,applicationData,messageData,eventData])=>setSummary({members:memberData.members?.length||0,applications:applicationData.applications?.length||0,messages:messageData.items?.length||0,sentMessages:(messageData.items||[]).filter((item)=>['SENT','PARTIALLY_FAILED','FAILED'].includes(item.status)).length,upcomingEvents:eventData.upcomingEvents||0,pendingApplications:(applicationData.applications||[]).filter((item)=>item.status==='PENDING').length})).catch((requestError)=>setError(requestError.message))},[])
- return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministries" label="Organizations" value="Manage" change={`${summary.pendingApplications} pending applications`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{error&&<Card className="empty-message">Live dashboard data is unavailable right now.</Card>}</Page>
+ const [scope,setScope]=useState('')
+ useEffect(()=>{const user=adminAuth.currentUser;if(user)adminApiScope(user).then(setScope).catch(()=>setScope(''))},[])
+ const path='/api/admin/dashboard'
+ const dashboard=useQuery({queryKey:adminApiQueryKey(scope,path),queryFn:()=>requestAdminApi(path),enabled:Boolean(scope),staleTime:adminStaleTime(path)})
+ const summary=dashboard.data||{members:0,applications:0,messages:0,sentMessages:0,upcomingEvents:0,pendingApplications:0}
+ return <Page title="Dashboard" subtitle="Live data from the GIC platform"><div className="stats"><Stat to="/members" label="Members" value={summary.members} change="Live records" icon={Users}/><Stat to="/ministries" label="Organizations" value="Manage" change={`${summary.pendingApplications} pending applications`} icon={ClipboardList} type="green"/><Stat to="/messages" label="Notifications" value={summary.messages} change="Live campaigns" icon={Bell} type="blue"/><Stat to="/events" label="Published events" value={summary.upcomingEvents} change="Live records" icon={CalendarDays} type="orange"/><Stat to="/messages" label="Sent messages" value={summary.sentMessages} change="Filter by status in Messages" icon={Send} type="purple"/></div>{dashboard.isError&&<Card className="empty-message">{dashboard.data?'Showing saved dashboard data; refresh failed.':'Live dashboard data is unavailable right now.'}</Card>}</Page>
 }
 
 function AttendanceOverview(){
@@ -652,13 +698,13 @@ function AttendanceOverview(){
    rows: [],
   })
  const [options,setOptions]=useState({
-   ageGroups: [], genders: [], events: [], recordings: [],
+   ageGroups: [], genders: [], recordings: [],
  })
  const [filters,setFilters]=useState({
-   occurrenceId: '', eventId: '', recordingId: '', date: '', gender: '', ageGroupId: '',
+   occurrenceId: '', recordingId: '', date: '', gender: '', ageGroupId: '',
  })
 
- const endpoint = tab === 'Services' ? 'service' : tab === 'Event Registrations' ? 'registrations' : 'mixlr'
+ const endpoint = tab === 'Services' ? 'service' : 'mixlr'
 
  useEffect(()=>{
   let cancelled = false
@@ -668,9 +714,6 @@ function AttendanceOverview(){
   const params = new URLSearchParams()
   if (tab === 'Services') {
    if (filters.occurrenceId) params.set('occurrenceId', filters.occurrenceId)
-  }
-  if (tab === 'Event Registrations') {
-   if (filters.eventId) params.set('eventId', filters.eventId)
   }
   if (tab === 'Mixlr' && filters.recordingId) params.set('recordingId', filters.recordingId)
   if (filters.gender) params.set('gender', filters.gender)
@@ -691,7 +734,7 @@ function AttendanceOverview(){
        setServiceOptions(payload.rows || [])
       }
       setOptions(payload.options || {
-        ageGroups: [], genders: [], events: [], recordings: [],
+        ageGroups: [], genders: [], recordings: [],
       })
     })
     .catch((requestError)=>{
@@ -706,30 +749,24 @@ function AttendanceOverview(){
 
  const summaryItems = tab === 'Services'
    ? [['Responded', summary.responded], ['In person', summary.inPerson], ['Online', summary.online], ['Not attending', summary.notAttending], ['No response', summary.noResponse], ['Response rate', `${summary.responseRate || 0}%`]]
-   : tab === 'Event Registrations'
-     ? [['Total registrations', summary.total ?? 0], ['Confirmed', summary.confirmed ?? summary.responded ?? 0], ['Waitlisted', summary.waitlisted ?? summary.notAttending ?? 0], ['Pending', summary.pending ?? summary.noResponse ?? 0], ...(summary.cancelled > 0 ? [['Cancelled', summary.cancelled]] : [])]
-     : [['Listeners', summary.totalListeners ?? 0], ['Plays', summary.totalPlays ?? 0], ['Listening time', formatListeningTime(summary.totalListeningTimeSeconds)], ['Identified members', summary.identifiedListeners ?? 0]]
+   : [['Listeners', summary.totalListeners ?? 0], ['Plays', summary.totalPlays ?? 0], ['Listening time', formatListeningTime(summary.totalListeningTimeSeconds)], ['Identified members', summary.identifiedListeners ?? 0]]
  const summaryIcon = (label) => label === 'Online' || label === 'Plays' ? Globe : label === 'In person' || label === 'Confirmed' || label === 'Responded' || label === 'Identified members' ? CheckCircle2 : label === 'Not attending' || label === 'Waitlisted' || label === 'Listening time' ? Clock3 : label === 'Response rate' ? BarChart3 : ClipboardList
 
  const filterSets = tab === 'Services'
    ? [['SERVICE', 'occurrenceId', serviceOptions, 'All services', 'serviceLabel'], ['DATE', 'date', serviceOptions.map((item)=>({id:item.occurrenceId,name:item.eventStartsAt ? new Date(item.eventStartsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : item.serviceLabel})), 'All dates', 'name'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
-   : tab === 'Event Registrations'
-     ? [['EVENT', 'eventId', options.events, 'All events', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
-     : [['RECORDING', 'recordingId', options.recordings, 'All recordings', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
+   : [['RECORDING', 'recordingId', options.recordings, 'All recordings', 'title'], ['GENDER', 'gender', options.genders.map((value)=>({id:value,name:value})), 'All genders', 'name'], ['AGE GROUP', 'ageGroupId', options.ageGroups, 'All age groups', 'name']]
  const allFilters = filterSets
  const tableHeaders = tab === 'Services'
    ? ['Service', 'In person', 'Online', 'Not attending', 'No response', 'Total']
-   : tab === 'Event Registrations'
-     ? ['Event', 'Confirmed', 'Waitlisted', 'Pending', 'Total']
-     : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
+   : ['Recording', 'Listeners', 'Plays', 'Listening time', 'Identified']
 
  const tableRows = summary.rows || []
- const emptyMessage = tab === 'Services' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No attendance responses yet') : tab === 'Event Registrations' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No registrations yet') : (filters.recordingId ? 'No listeners recorded for this recording' : 'No Mixlr recordings available')
+ const emptyMessage = tab === 'Services' ? (filters.gender || filters.ageGroupId ? 'No members match these filters.' : 'No attendance responses yet') : (filters.recordingId ? 'No listeners recorded for this recording' : 'No Mixlr recordings available')
 
- return <Page title="Attendance" subtitle="Service attendance, event registrations, and Mixlr listening reports">
+ return <Page title="Attendance" subtitle="Service attendance and Mixlr listening reports">
   <Card className="table-card">
    <div className="tabs big attendance-tabs" style={{marginBottom:'0'}}>
-    {['Services','Event Registrations','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
+    {['Services','Mixlr'].map((item)=><button key={item} className={tab===item?'active':''} onClick={()=>setTab(item)}>{item}</button>)}
    </div>
   <div className={`attendance-summary infographic-summary ${tab === 'Mixlr' ? 'mixlr-summary' : ''}`}>{summaryItems.map(([label,value], index)=>{const Icon=summaryIcon(label); const drilldown=tab==='Mixlr'&&['Listeners','Identified members'].includes(label); return <div className={`infographic-metric metric-${index % 4}${drilldown?' clickable-metric':''}`} key={label} role={drilldown?'button':undefined} tabIndex={drilldown?0:undefined} aria-haspopup={drilldown?'dialog':undefined} onClick={drilldown?()=>setMemberListType(label):undefined} onKeyDown={drilldown?(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setMemberListType(label)}}:undefined}><span className="infographic-icon"><Icon size={17}/></span><div><span>{label}</span><strong>{value}</strong></div></div>})}</div>
    <div className="attendance-filters"><div className="attendance-filter-grid">{allFilters.map(([label,key,values,placeholder,valueKey='name'])=><label key={key}><span>{label}</span><select value={filters[key] || ''} onChange={(event)=>setFilters((current)=>({...current,[key]:event.target.value}))}><option value="">{placeholder || `All ${label.toLowerCase()}`}</option>{(values || []).map((item)=><option key={item.id || item.occurrenceId} value={item.id || item.occurrenceId}>{item[valueKey] || item.name || item.serviceLabel || item.title}</option>)}</select></label>)}</div></div>
@@ -757,16 +794,6 @@ function AttendanceOverview(){
                      <td>{row.plays ?? 0}</td>
                      <td>{formatListeningTime(row.listeningTimeSeconds)}</td>
                      <td>{row.identifiedListeners ?? 0}</td>
-                   </tr>
-                 }
-
-                 if (tab === 'Event Registrations') {
-                   return <tr key={`${row.eventId || row.eventTitle || 'event'}-${index}`}>
-                     <td><b>{row.eventTitle || row.eventId || 'Event'}</b></td>
-                     <td>{row.confirmed || 0}</td>
-                     <td>{row.waitlisted || 0}</td>
-                     <td>{row.pending || 0}</td>
-                     <td>{row.total || 0}</td>
                    </tr>
                  }
 
@@ -822,7 +849,7 @@ function AdminLogin(){
    setLoading(false)
   }
  }
- return <main className="auth-screen"><form className="auth-card" onSubmit={submit}><Logo/><h1>Admin sign in</h1><p>Use your authorized GIC administrator account.</p><label>Email<input type="email" value={email} onChange={(event)=>setEmail(event.target.value)} autoComplete="email" required/></label><label>Password<input type="password" value={password} onChange={(event)=>setPassword(event.target.value)} autoComplete="current-password" required/></label>{error&&<div className="auth-error" role="alert">{error}</div>}<button className="btn primary" type="submit" disabled={loading}>{loading?'Signing in...':'Sign in'}</button></form></main>
+ return <main className="auth-screen"><form className="auth-card" onSubmit={submit}><Logo/><h1>Admin sign in</h1><p>Sign in to Kingdom Comms with your authorized administrator account.</p><label>Email<input type="email" value={email} onChange={(event)=>setEmail(event.target.value)} autoComplete="email" required/></label><label>Password<input type="password" value={password} onChange={(event)=>setPassword(event.target.value)} autoComplete="current-password" required/></label>{error&&<div className="auth-error" role="alert">{error}</div>}<button className="btn primary" type="submit" disabled={loading}>{loading?'Signing in...':'Sign in'}</button></form></main>
 }
 
 function AdminGate({children}){

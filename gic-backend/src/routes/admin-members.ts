@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
@@ -111,8 +111,13 @@ app.get("/", async (c) => {
     if (searchClause) conditions.push(searchClause);
   }
 
-  const baseMembers = await db.query.members.findMany({ where: and(...conditions) });
-  const baseIds = new Set(baseMembers.map((member) => member.id));
+  const systemSegmentIds = segmentIds.filter((id) => ["new-members", "old-members", "male", "female"].includes(id));
+  const baseMembers = systemSegmentIds.length ? await db.select({
+    id: members.id,
+    gender: members.gender,
+    joinedMonth: members.joinedMonth,
+    joinedYear: members.joinedYear,
+  }).from(members).where(and(...conditions)) : [];
   await ensureMemberAppMinistries(churchId);
   await ensureYouthFellowship(churchId);
   const filterOptions = await Promise.all([
@@ -130,7 +135,7 @@ app.get("/", async (c) => {
   if (cellIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, cellIds, "cell"));
   if (groupIds.length) categorySets.push(await filterMemberIdsByMemberships(churchId, groupIds, "group"));
   const eventIds = segmentIds.filter((id) => id.startsWith("event:")).map((id) => id.slice("event:".length));
-  const systemSegments = segmentIds.filter((id) => ["new-members", "old-members", "male", "female"].includes(id));
+  const systemSegments = systemSegmentIds;
   const customSegmentIds = segmentIds.filter((id) => !systemSegments.includes(id) && !id.startsWith("event:"));
   const segmentMatches = new Set<string>();
   for (const segmentId of systemSegments) {
@@ -155,15 +160,23 @@ app.get("/", async (c) => {
   }
   if (segmentIds.length) categorySets.push(segmentMatches);
 
-  const candidateIds = categorySets.length ? categorySets.reduce((intersection, current) => {
+  const candidateIds = categorySets.length ? categorySets.slice(1).reduce((intersection, current) => {
     const next = new Set<string>();
     for (const id of intersection) if (current.has(id)) next.add(id);
     return next;
-  }, new Set(baseIds)) : new Set(baseIds);
-
-  const matchingMembers = baseMembers.filter((member) => candidateIds.has(member.id));
-  const total = matchingMembers.length;
-  const membersList = matchingMembers.slice((page - 1) * pageSize, page * pageSize);
+  }, new Set(categorySets[0])) : null;
+  const matchingConditions = candidateIds ? [...conditions, ...(candidateIds.size ? [inArray(members.id, [...candidateIds])] : [sql`false`])] : conditions;
+  const matchingWhere = and(...matchingConditions);
+  const [[totalResult], membersList] = await Promise.all([
+    db.select({ total: count() }).from(members).where(matchingWhere),
+    db.query.members.findMany({
+      where: matchingWhere,
+      orderBy: [desc(members.createdAt)],
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    }),
+  ]);
+  const total = Number(totalResult?.total || 0);
 
   const memberGroups = new Map<string, { ministries: Array<{ id: string; name: string }>; fellowships: Array<{ id: string; name: string }>; segments: Array<{ id: string; name: string; type: string }> }>();
   for (const member of membersList) {

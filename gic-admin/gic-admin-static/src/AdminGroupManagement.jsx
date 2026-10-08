@@ -1,22 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Plus, RefreshCw, Users, Search, Layers3 } from 'lucide-react'
-import { adminAuth } from './firebase'
+import { fetchAdminApi as groupsApi } from './adminApi'
 import './admin-organizations.css'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://gic-backend-lx3q.onrender.com'
-
-async function groupsApi(path, options = {}) {
-  const user = adminAuth.currentUser
-  if (!user) throw new Error('Admin session is unavailable')
-  const token = await user.getIdToken()
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${token}` } })
-  if (!response.ok) {
-    const text = await response.text().catch(() => 'Request failed')
-    try { throw new Error(JSON.parse(text).error || text) } catch (error) { if (error instanceof SyntaxError) throw new Error(text); throw error }
-  }
-  return response.json()
-}
 
 const emptyForm = { name: '', description: '', imageUrl: '', active: true }
 const emptyAgeGroupForm = { name: '', minAge: '13', maxAge: '17', active: true }

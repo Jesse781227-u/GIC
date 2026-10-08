@@ -6,12 +6,14 @@ import { authMiddleware } from "../middleware/auth.js";
 import { db } from "../db/index.js";
 import {
   events,
+  eventInterests,
   eventPickupLocations,
   eventRegistrations,
   members,
   busPickupPoints,
 } from "../db/schema.js";
 import { notificationService } from "../services/notifications/notification.service.js";
+import { notificationMediaService } from "../services/notifications/media.service.js";
 import { churchIdForUser } from "../lib/tenant.js";
 import { eventRegistrationAvailability, validateEventForm, type RegistrationField } from "../services/event-domain.js";
 
@@ -51,6 +53,23 @@ function formatEvent(event: typeof events.$inferSelect, pickupLocations: EventPi
   };
 }
 
+async function formatEventWithFlyer(event: typeof events.$inferSelect, pickupLocations: EventPickupWithReference[], churchId: string) {
+  const formatted = formatEvent(event, pickupLocations);
+  const flyerMediaId = typeof event.builderData?.flyerMediaId === "string" ? event.builderData.flyerMediaId : null;
+  if (!flyerMediaId) return formatted;
+  try {
+    const asset = await notificationMediaService.getMemberAsset(flyerMediaId, churchId);
+    return {
+      ...formatted,
+      flyerMediaUrl: asset?.url || null,
+      flyerMediaType: asset?.media.mediaType || null,
+    };
+  } catch (error) {
+    console.error(`Unable to resolve flyer media for event ${event.id}:`, error);
+    return { ...formatted, flyerMediaUrl: null, flyerMediaType: null };
+  }
+}
+
 app.get("/", async (c) => {
   const churchId = churchIdForUser(c.get("user"));
   const records = await db.query.events.findMany({
@@ -61,7 +80,40 @@ app.get("/", async (c) => {
   const pickupLocations = ids.length
     ? await db.query.eventPickupLocations.findMany({ where: inArray(eventPickupLocations.eventId, ids), orderBy: [asc(eventPickupLocations.pickupTime)], with: { busPickupPoint: true } })
     : [];
-  return c.json({ events: records.map((event) => formatEvent(event, pickupLocations.filter((location) => location.eventId === event.id))) });
+  const interests = await db.select({ eventId: eventInterests.eventId }).from(eventInterests)
+    .where(and(eq(eventInterests.churchId, churchId), eq(eventInterests.memberId, c.get("user").sub)));
+  const interestedEventIds = new Set(interests.map((interest) => interest.eventId));
+  const formattedEvents = await Promise.all(records.map(async (event) => {
+    const formatted = await formatEventWithFlyer(event, pickupLocations.filter((location) => location.eventId === event.id), churchId);
+    return { ...formatted, interested: interestedEventIds.has(event.id) };
+  }));
+  return c.json({ events: formattedEvents });
+});
+
+app.post("/:id/interest", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const eventId = c.req.param("id");
+  const memberId = c.get("user").sub;
+  const [event, member] = await Promise.all([
+    db.query.events.findFirst({ where: and(eq(events.id, eventId), eq(events.churchId, churchId), eq(events.status, "PUBLISHED")) }),
+    db.query.members.findFirst({ where: and(eq(members.id, memberId), eq(members.churchId, churchId), eq(members.active, true)) }),
+  ]);
+  if (!event) return c.json({ error: "Event not found" }, 404);
+  if (event.registrationRequired) return c.json({ error: "This event requires registration instead of an interest response." }, 409);
+  if (!member) return c.json({ error: "Member account not found" }, 404);
+  await db.insert(eventInterests).values({ churchId, eventId, memberId }).onConflictDoNothing();
+  return c.json({ interested: true }, 200);
+});
+
+app.delete("/:id/interest", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const eventId = c.req.param("id");
+  await db.delete(eventInterests).where(and(
+    eq(eventInterests.churchId, churchId),
+    eq(eventInterests.eventId, eventId),
+    eq(eventInterests.memberId, c.get("user").sub),
+  ));
+  return c.json({ interested: false });
 });
 
 app.post("/:id/registrations", async (c) => {
@@ -186,13 +238,57 @@ app.get("/registrations", async (c) => {
     pickupManagerPhone: busPickupPoints.managerPhone,
     eventTitle: events.title,
     startsAt: events.startsAt,
+    endsAt: events.endsAt,
     location: events.location,
+    imageUrl: events.imageUrl,
+    description: events.description,
+    builderData: events.builderData,
   }).from(eventRegistrations)
     .innerJoin(events, eq(events.id, eventRegistrations.eventId))
     .leftJoin(eventPickupLocations, eq(eventPickupLocations.id, eventRegistrations.pickupLocationId))
     .where(and(eq(eventRegistrations.memberId, c.get("user").sub), eq(events.churchId, churchId)))
     .orderBy(desc(events.startsAt));
-  return c.json({ registrations });
+  return c.json({ registrations: await Promise.all(registrations.map(async (registration) => {
+    const flyerMediaId = typeof registration.builderData?.flyerMediaId === "string" ? registration.builderData.flyerMediaId : null;
+    if (!flyerMediaId) return registration;
+    try {
+      const asset = await notificationMediaService.getMemberAsset(flyerMediaId, churchId);
+      return { ...registration, flyerMediaUrl: asset?.url || null, flyerMediaType: asset?.media.mediaType || null };
+    } catch (error) {
+      console.error(`Unable to resolve flyer media for event ${registration.eventId}:`, error);
+      return { ...registration, flyerMediaUrl: null, flyerMediaType: null };
+    }
+  })) });
+});
+
+app.get("/interests", async (c) => {
+  const churchId = churchIdForUser(c.get("user"));
+  const interests = await db.select({
+    id: eventInterests.id,
+    eventId: eventInterests.eventId,
+    interestedAt: eventInterests.createdAt,
+    eventTitle: events.title,
+    startsAt: events.startsAt,
+    endsAt: events.endsAt,
+    location: events.location,
+    imageUrl: events.imageUrl,
+    description: events.description,
+    builderData: events.builderData,
+  }).from(eventInterests)
+    .innerJoin(events, and(eq(events.id, eventInterests.eventId), eq(events.churchId, churchId)))
+    .where(eq(eventInterests.memberId, c.get("user").sub))
+    .orderBy(desc(events.startsAt));
+  return c.json({ interests: await Promise.all(interests.map(async (interest) => {
+    const flyerMediaId = typeof interest.builderData?.flyerMediaId === "string" ? interest.builderData.flyerMediaId : null;
+    if (!flyerMediaId) return interest;
+    try {
+      const asset = await notificationMediaService.getMemberAsset(flyerMediaId, churchId);
+      return { ...interest, flyerMediaUrl: asset?.url || null, flyerMediaType: asset?.media.mediaType || null };
+    } catch (error) {
+      console.error(`Unable to resolve flyer media for event ${interest.eventId}:`, error);
+      return { ...interest, flyerMediaUrl: null, flyerMediaType: null };
+    }
+  })) });
 });
 
 app.get("/:id", async (c) => {
@@ -207,7 +303,10 @@ app.get("/:id", async (c) => {
   const registration = await db.query.eventRegistrations.findFirst({
     where: and(eq(eventRegistrations.eventId, event.id), eq(eventRegistrations.memberId, c.get("user").sub)),
   });
-  return c.json({ event: formatEvent(event, pickupLocations), registration: registration || null });
+  const interest = await db.query.eventInterests.findFirst({
+    where: and(eq(eventInterests.eventId, event.id), eq(eventInterests.memberId, c.get("user").sub)),
+  });
+  return c.json({ event: await formatEventWithFlyer(event, pickupLocations, churchId), registration: registration || null, interested: Boolean(interest) });
 });
 
 export default app;

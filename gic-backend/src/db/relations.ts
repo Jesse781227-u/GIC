@@ -10,6 +10,7 @@ import {
   events,
   eventPickupLocations,
   eventRegistrations,
+  eventInterests,
   eventReminders,
   busPickupPoints,
 } from "./schema.js";
@@ -51,6 +52,7 @@ export const birthdayNotificationSendsRelations = relations(birthdayNotification
 export const eventsRelations = relations(events, ({ many }) => ({
   pickupLocations: many(eventPickupLocations),
   registrations: many(eventRegistrations),
+  interests: many(eventInterests),
   reminders: many(eventReminders),
 }));
 export const eventPickupLocationsRelations = relations(eventPickupLocations, ({ one, many }) => ({
@@ -61,6 +63,9 @@ export const eventPickupLocationsRelations = relations(eventPickupLocations, ({ 
 export const eventRegistrationsRelations = relations(eventRegistrations, ({ one }) => ({
   event: one(events, { fields: [eventRegistrations.eventId], references: [events.id] }),
   pickupLocation: one(eventPickupLocations, { fields: [eventRegistrations.pickupLocationId], references: [eventPickupLocations.id] }),
+}));
+export const eventInterestsRelations = relations(eventInterests, ({ one }) => ({
+  event: one(events, { fields: [eventInterests.eventId], references: [events.id] }),
 }));
 export const eventRemindersRelations = relations(eventReminders, ({ one }) => ({
   event: one(events, { fields: [eventReminders.eventId], references: [events.id] }),
