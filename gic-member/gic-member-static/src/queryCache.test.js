@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { QueryClient } from '@tanstack/react-query'
-import { cachedMemberQuery, memberApiQueryKey, memberScopeFromToken, memberStaleTime } from './queryCache.js'
+import { cachedMemberQuery, memberApiQueryKey, memberScopeFromToken, memberStaleTime, updateMemberProfileCache } from './queryCache.js'
 
 function token(payload) {
   return `header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.signature`
@@ -32,5 +32,17 @@ test('member cache reuses fresh reads and updates stale data without blocking th
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(requests, 2)
   assert.deepEqual(client.getQueryData(queryKey), { revision: 2 })
+  client.clear()
+})
+
+test('profile completion replaces the cached incomplete profile immediately', () => {
+  const client = new QueryClient()
+  const scope = 'church-a:member-a'
+  const queryKey = memberApiQueryKey(scope, '/api/auth/profile')
+  client.setQueryData(queryKey, { profile: { id: 'member-a', profileComplete: false } })
+
+  updateMemberProfileCache(scope, { id: 'member-a', profileComplete: true, name: 'Member Name' }, client)
+
+  assert.deepEqual(client.getQueryData(queryKey), { profile: { id: 'member-a', profileComplete: true, name: 'Member Name' } })
   client.clear()
 })

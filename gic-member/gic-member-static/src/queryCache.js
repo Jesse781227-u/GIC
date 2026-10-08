@@ -64,3 +64,8 @@ export function cachedMemberQuery(queryKey, queryFn, staleTime, client = memberQ
   }
   return client.fetchQuery({ queryKey, queryFn, staleTime })
 }
+
+export function updateMemberProfileCache(scope, profile, client = memberQueryClient) {
+  if (!profile?.id) return
+  client.setQueryData(memberApiQueryKey(scope, '/api/auth/profile'), { profile })
+}
