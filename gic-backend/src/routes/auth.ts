@@ -51,6 +51,24 @@ function isProfileComplete(member: typeof members.$inferSelect) {
   return Boolean(member.displayName?.trim() && member.displayName !== "Member" && member.phone?.trim());
 }
 
+function profileCompletionPercent(member: typeof members.$inferSelect) {
+  const profileFields = [
+    member.displayName && member.displayName !== "Member" ? member.displayName : "",
+    member.phone,
+    member.email,
+    member.birthday,
+    member.gender,
+    member.ageGroupId,
+    member.relationshipStatus,
+    member.center,
+    member.serviceTime,
+    member.membershipStatus,
+    member.joinedYear,
+  ];
+  const completedFields = profileFields.filter((value) => value !== null && value !== undefined && String(value).trim() !== '').length;
+  return Math.min(100, Math.round(25 + (completedFields / profileFields.length) * 75));
+}
+
 async function issueMemberToken(member: typeof members.$inferSelect, platform = "web") {
   return new SignJWT({ sub: member.id, churchId: member.churchId, role: "MEMBER", name: member.displayName, platform })
     .setProtectedHeader({ alg: "HS256" })
@@ -79,6 +97,7 @@ function memberResponse(member: typeof members.$inferSelect) {
     avatar: member.avatar || "",
     active: member.active,
     profileComplete: isProfileComplete(member),
+    profileCompletionPercent: profileCompletionPercent(member),
     authMethod: "device_auth",
     authenticatedAt: new Date().toISOString(),
   };
@@ -215,6 +234,7 @@ app.get("/profile", async (c) => {
       avatar: member.avatar || "",
       active: member.active,
       profileComplete: isProfileComplete(member),
+      profileCompletionPercent: profileCompletionPercent(member),
     },
   });
 });
@@ -299,6 +319,7 @@ app.patch("/profile", async (c) => {
       avatar: member.avatar || "",
       active: member.active,
       profileComplete: isProfileComplete(member),
+      profileCompletionPercent: profileCompletionPercent(member),
     },
   });
 });

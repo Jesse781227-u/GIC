@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { CALENDAR_EVENTS_KEY, createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents.js'
+import { CALENDAR_EVENTS_KEY, createCalendarFile, getEventStartTimestamp, getMemberEventStorageKey, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents.js'
 
 function createStorage() {
   const values = new Map()
@@ -44,4 +44,18 @@ test('countdown reads ISO timestamps from registrations and calendar-saved event
   assert.equal(getEventStartTimestamp({ startsAt, date: '24/10/2026', time: '10:00 AM' }), expected)
   assert.equal(getEventStartTimestamp({ date: 'Oct 24, 2026', time: '10:00 AM' }), Date.parse('Oct 24, 2026 10:00 AM'))
   assert.equal(getEventStartTimestamp({ date: 'not a date', time: '' }), null)
+})
+
+test('calendar additions and local registration keys are isolated by member account', () => {
+  const storage = createStorage()
+  storage.setItem('gic_account_id', 'member-a')
+  const event = { id: 'event-1', title: 'Community Day', startsAt: '2026-11-01T10:00:00.000Z' }
+  saveCalendarEvent(event, storage)
+  storage.setItem(getMemberEventStorageKey('gic_registration', event.id, storage), JSON.stringify({ eventId: event.id }))
+
+  assert.equal(readCalendarEvents(storage).length, 1)
+  assert.equal(readCalendarEvents(storage, 'member-b').length, 0)
+  assert.ok(storage.getItem(getMemberEventStorageKey('gic_registration', event.id, storage)))
+  assert.equal(storage.getItem(getMemberEventStorageKey('gic_registration', event.id, storage, 'member-b')), null)
+  assert.equal(storage.getItem(CALENDAR_EVENTS_KEY), null)
 })

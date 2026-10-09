@@ -14,10 +14,11 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } fr
 import { useQuery } from '@tanstack/react-query'
 import { formatServiceOccurrenceLabel, getNextServiceOccurrence, TIME_ZONE } from './serviceOccurrence'
 import { getBrowserName, getIOSInstallSteps, isIOSDevice } from './pwa'
-import { isNotificationDestinationRoute, validateMemberRoute } from './notificationDestination'
-import { createCalendarFile, getEventStartTimestamp, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
+import { validateMemberRoute } from './notificationDestination'
+import { createCalendarFile, getEventStartTimestamp, getMemberEventStorageKey, isCalendarEventSaved, readCalendarEvents, saveCalendarEvent } from './myEvents'
 import { invalidateEventApiCache, readEventApiCache, shouldCacheEventApiRequest, writeEventApiCache } from './eventApiCache'
 import { cachedMemberQuery, invalidateMemberResource, memberApiQueryKey, memberQueryClient, memberResourceForPath, memberScopeFromToken, memberStaleTime, updateMemberProfileCache } from './queryCache'
+import { canFinishOnboarding, getPostAuthDestination } from './onboardingPolicy'
 
 const MIXLR_CACHE_TTL = 60 * 60 * 1000
 const MIXLR_CACHE_KEY = 'gic_mixlr_cache'
@@ -363,20 +364,37 @@ function AudioPlayerProvider({ children }) {
     let active = true
     let sessionId = null
     let heartbeatId = null
+    let pendingMilliseconds = 0
+    let reportInFlight = false
+    let finishRequested = false
+    let endReported = false
     let lastReportedAt = Date.now()
 
     const reportListening = async (ended = false) => {
-      if (!sessionId) return
-      const durationSeconds = Math.min(30, Math.max(0, Math.floor((Date.now() - lastReportedAt) / 1000)))
-      lastReportedAt = Date.now()
+      const now = Date.now()
+      pendingMilliseconds += Math.max(0, now - lastReportedAt)
+      lastReportedAt = now
+      finishRequested ||= ended
+      if (!sessionId || reportInFlight) return
+
+      reportInFlight = true
       try {
-        await fetchMemberApi(`/api/mixlr/listens/${encodeURIComponent(sessionId)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ durationSeconds, ended }),
-          keepalive: ended,
-        })
+        while (pendingMilliseconds >= 1000 || (finishRequested && !endReported)) {
+          const durationSeconds = Math.min(30, Math.floor(pendingMilliseconds / 1000))
+          const sendEnded = finishRequested && pendingMilliseconds <= durationSeconds * 1000
+          await fetchMemberApi(`/api/mixlr/listens/${encodeURIComponent(sessionId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ durationSeconds, ended: sendEnded }),
+            keepalive: sendEnded,
+          })
+          pendingMilliseconds -= durationSeconds * 1000
+          if (sendEnded) endReported = true
+          if (!finishRequested && pendingMilliseconds < 30000) break
+        }
       } catch {
         // Playback continues even if analytics are temporarily unavailable.
+      } finally {
+        reportInFlight = false
       }
     }
 
@@ -980,10 +998,26 @@ function MemberShell({ children, active = 'home', title, backTo, lockProfile = f
       {title ? <strong>{title}</strong> : <Logo />}
       {lockProfile ? <div style={{ width: '30px' }} /> : <Link to="/announcements" className={`bell-btn ${notificationPulse ? 'notification-pulse' : ''}`} title="Announcements"><Bell size={18} />{unreadCount > 0 && <span className="bell-badge" />}</Link>}
     </header>
+    <ProfileProgressBar />
     <main className="mobile-main">{children}</main>
     {showPersistentConsole && <PersistentAudioPlayer />}
     {!lockProfile && <BottomNav active={active} />}
   </div>
+}
+
+function ProfileProgressBar() {
+  const profileQuery = useMemberQuery('/api/auth/profile')
+  const profile = profileQuery.data?.profile
+  if (!profile || profileQuery.isError) return null
+
+  const percent = Math.max(0, Math.min(100, Number(profile.profileCompletionPercent ?? 25)))
+  if (percent >= 100) return null
+
+  return <Link className="profile-progress" to="/profile/edit" aria-label={`Complete your profile: ${percent}% complete`}>
+    <div className="profile-progress-heading"><strong>Complete your profile</strong><b>{percent}%</b></div>
+    <div className="profile-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div>
+    <small>{percent === 25 ? "You're already off to a great start." : 'Add a little more information to personalize your GIC experience.'}</small>
+  </Link>
 }
 
 function hasCompleteLocalProfile() {
@@ -1020,17 +1054,9 @@ function ProtectedRoute({ children }) {
       return
     }
     storeMemberProfile(profile)
-    if (!profile.active || !profile.profileComplete) {
-      if (location.pathname !== '/profile/edit') navigate('/profile/edit?required=1', { replace: true })
+    if (!isStandalonePwa() && location.pathname !== '/onboarding') {
+      navigate(getPostAuthDestination(false), { replace: true })
       return
-    }
-    const isNotificationDestination = isNotificationDestinationRoute(location.pathname)
-    if (!isStandalonePwa() && location.pathname !== '/onboarding' && !isNotificationDestination) {
-      navigate('/onboarding?stage=install', { replace: true })
-      return
-    }
-    if (isStandalonePwa() && 'Notification' in window && Notification.permission === 'default' && location.pathname !== '/onboarding' && !isNotificationDestination) {
-      navigate('/onboarding?stage=notifications', { replace: true })
     }
   }, [token, profileQuery.data, profileQuery.error, profileQuery.isError, location.pathname, navigate])
 
@@ -1071,7 +1097,7 @@ function Welcome() {
         }
       } else profile = (await performDeviceAuth()).member
       window.dispatchEvent(new Event('gic:notifications-updated'))
-      navigate(profile.active && profile.profileComplete ? '/home' : '/profile/edit?required=1', { replace: true })
+      navigate(getPostAuthDestination(isStandalonePwa()), { replace: true })
     } catch {
       setError('We could not sign you in. Please recover your account with your phone number.')
     } finally {
@@ -1137,8 +1163,7 @@ function Recovery() {
       if (!response.ok) throw new Error(data.error || 'Account recovery failed.')
       storeMemberSession(data)
       localStorage.setItem('gic_profile_completed', data.member.profileComplete ? 'true' : 'false')
-      localStorage.setItem('gic_onboarding_profile', 'true')
-      navigate('/onboarding', { replace: true })
+      navigate(getPostAuthDestination(isStandalonePwa()), { replace: true })
     } catch (recoveryError) {
       setError(recoveryError.message || 'The verification code was not accepted.')
     } finally {
@@ -1168,11 +1193,11 @@ function OnboardingFlow() {
   const [busy, setBusy] = useState(false)
   const [permissionState, setPermissionState] = useState('default')
   const [installPrompt, setInstallPrompt] = useState(null)
-  const [stage, setStage] = useState('profile')
+  const [stage, setStage] = useState(() => isStandalonePwa() ? 'notification' : 'pwa')
   const [dismissedNotice, setDismissedNotice] = useState('')
   const [installMode, setInstallMode] = useState('unknown')
   const [installBrowser, setInstallBrowser] = useState(() => getBrowserName())
-  const [installedApp, setInstalledApp] = useState(() => isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
+  const [installedApp, setInstalledApp] = useState(() => isStandalonePwa())
 
   useEffect(() => {
     const token = localStorage.getItem('gic_auth_token')
@@ -1182,21 +1207,18 @@ function OnboardingFlow() {
     }
 
     const notificationsAllowed = !('Notification' in window) || Notification.permission !== 'default'
-    if (localStorage.getItem('gic_onboarding_completed') === 'true' && hasCompleteLocalProfile() && isStandalonePwa() && notificationsAllowed) {
+    if (localStorage.getItem('gic_onboarding_completed') === 'true' && isStandalonePwa() && notificationsAllowed) {
       navigate('/home', { replace: true })
       return
     }
 
-    const profileCompleted = localStorage.getItem('gic_profile_completed') === 'true'
     const requestedStage = new URLSearchParams(window.location.search).get('stage')
     const savedPermission = localStorage.getItem('gic_notification_permission')
     if (savedPermission) {
       setPermissionState(savedPermission)
     }
 
-    if (!profileCompleted) {
-      setStage('profile')
-    } else if (requestedStage === 'install' && !isStandalonePwa()) {
+    if (requestedStage === 'install' && !isStandalonePwa()) {
       setStage('pwa')
     } else if (requestedStage === 'notifications' && isStandalonePwa()) {
       setStage('notification')
@@ -1215,12 +1237,11 @@ function OnboardingFlow() {
     }
 
     const handleInstalled = () => {
-      setInstalledApp(true)
-      setLocalState('gic_pwa_installed', 'true')
+      setInstalledApp(isStandalonePwa())
       setDismissedNotice('GIC is installed. Open GIC from your home screen to continue.')
     }
 
-    const refreshDisplayMode = () => setInstalledApp(isStandalonePwa() || localStorage.getItem('gic_pwa_installed') === 'true')
+    const refreshDisplayMode = () => setInstalledApp(isStandalonePwa())
 
     window.addEventListener('beforeinstallprompt', handleInstallPrompt)
     window.addEventListener('appinstalled', handleInstalled)
@@ -1238,6 +1259,11 @@ function OnboardingFlow() {
   }, [navigate])
 
   const finishOnboarding = () => {
+    if (!canFinishOnboarding(isStandalonePwa())) {
+      setStage('pwa')
+      setDismissedNotice('Install GIC, then open it from your home screen to continue.')
+      return
+    }
     setLocalState('gic_onboarding_completed', 'true')
     localStorage.removeItem('gic_onboarding_profile')
     navigate('/home', { replace: true })
@@ -1306,7 +1332,7 @@ function OnboardingFlow() {
 
   const handleInstall = async () => {
     if (installedApp) {
-      setDismissedNotice('GIC is already installed. Open it from your home screen to continue.')
+      setStage('notification')
       return
     }
 
@@ -1314,7 +1340,6 @@ function OnboardingFlow() {
       await installPrompt.prompt()
       const choice = await installPrompt.userChoice
       if (choice.outcome === 'accepted') {
-        setLocalState('gic_pwa_installed', 'true')
         setDismissedNotice('GIC has been added. Open it from your home screen to continue.')
       }
       return
@@ -1343,7 +1368,10 @@ function OnboardingFlow() {
         {installSteps.map((step, index) => <div key={step} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><span style={{ width: '24px', height: '24px', borderRadius: '8px', background: '#f0edf7', display: 'grid', placeItems: 'center', color: '#5b2c8a', fontWeight: 700 }}>{index + 1}</span><span>{step}</span></div>)}
       </div>
       <div style={{ display: 'flex', gap: '10px', marginTop: '26px' }}>
-        <button className="btn gold wide" onClick={() => setDismissedNotice('Open GIC from your home screen to continue.')}>I installed GIC</button>
+        <button className="btn gold wide" onClick={() => {
+          if (isStandalonePwa()) setStage('notification')
+          else setDismissedNotice('Open GIC from your home screen to continue.')
+        }}>I installed GIC</button>
       </div>
       {dismissedNotice && <p className="sub" style={{ marginTop: '16px', textAlign: 'center', color: '#a61e1e' }}>{dismissedNotice}</p>}
     </div></div>
@@ -1351,13 +1379,7 @@ function OnboardingFlow() {
 
   return <div className="onboarding-page"><div className="onboarding-card">
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Logo /></div>
-    {stage === 'profile' ? <>
-      <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Complete your profile</h1>
-      <p className="sub" style={{ textAlign: 'center' }}>Tell us a little about yourself so your GIC member experience is personalized.</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '18px' }}>
-        <button className="btn primary wide" onClick={() => navigate('/profile/edit')}>Complete Profile</button>
-      </div>
-    </> : stage === 'notification' ? <>
+    {stage === 'notification' ? <>
       <h1 style={{ fontSize: '30px', textAlign: 'center', margin: '6px 0 12px' }}>Stay connected with GIC</h1>
       <p className="sub" style={{ textAlign: 'center' }}>Get important church updates, event reminders, registration updates, announcements and other notifications directly on your device.</p>
       <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1922,11 +1944,11 @@ function EventDetails() {
   }, [id, staticEvent])
   if (loading) return <MemberShell active="events" title="Event" backTo="/events"><p className="center muted">Loading event...</p></MemberShell>
   const e = remoteEvent || staticEvent || events[0]
-  const isRegistered = Boolean(registration || localStorage.getItem(`gic_registration_${e.id}`))
+  const isRegistered = Boolean(registration || localStorage.getItem(getMemberEventStorageKey('gic_registration', e.id)))
   const addToCalendar = async (calendarEvent = e) => {
     try {
       const invite = createCalendarFile(calendarEvent)
-      saveCalendarEvent(calendarEvent)
+      saveCalendarEvent(calendarEvent, localStorage)
       if (!calendarEvent.registrationRequired && !staticEvent && !interested) {
         await fetchMemberApi(`/api/events/${encodeURIComponent(calendarEvent.id)}/interest`, { method: 'POST' })
         setInterested(true)
@@ -2021,7 +2043,7 @@ function EventRegistration() {
       }
       setSaving(false)
     }
-    localStorage.setItem(`gic_registration_${event.id}`, JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image, flyerMediaUrl: event.flyerMediaUrl, flyerMediaType: event.flyerMediaType, startsAt: event.startsAt, endsAt: event.endsAt, description: event.description } }))
+    localStorage.setItem(getMemberEventStorageKey('gic_registration', event.id), JSON.stringify({ eventId: event.id, registeredAt: new Date().toISOString(), name: memberName, event: { id: event.id, title: event.title, date: event.date, time: event.time, location: event.location, image: event.image, flyerMediaUrl: event.flyerMediaUrl, flyerMediaType: event.flyerMediaType, startsAt: event.startsAt, endsAt: event.endsAt, description: event.description } }))
     navigate(`/events/${event.id}/success`)
   }
 
@@ -2045,14 +2067,14 @@ function EventRegistration() {
 function RegistrationSuccess() {
   const { id } = useParams()
   const [storedEvent] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(`gic_registration_${id}`) || 'null')?.event || null } catch { return null }
+    try { return JSON.parse(localStorage.getItem(getMemberEventStorageKey('gic_registration', id)) || 'null')?.event || null } catch { return null }
   })
   const event = events.find((item) => item.id === id) || storedEvent || events[0]
   const [calendarAdded, setCalendarAdded] = useState(false)
   const handleAddToCalendar = () => {
     try {
       const invite = createCalendarFile(event)
-      saveCalendarEvent(event)
+      saveCalendarEvent(event, localStorage)
       const blob = new Blob([invite], { type: 'text/calendar;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -2556,14 +2578,14 @@ function EditProfile() {
 function MyRegistrations() {
   const navigate = useNavigate()
   const [now, setNow] = useState(Date.now())
-  const [calendarEvents] = useState(() => readCalendarEvents())
+  const [calendarEvents] = useState(() => readCalendarEvents(localStorage))
   const registrationsQuery = useMemberQuery('/api/events/registrations', true)
   const interestsQuery = useMemberQuery('/api/events/interests', true)
   const remoteRegistrations = registrationsQuery.data?.registrations || []
   const remoteInterests = interestsQuery.data?.interests || []
   const localRegistrations = events.filter((event) => {
     try {
-      return Boolean(localStorage.getItem(`gic_registration_${event.id}`))
+      return Boolean(localStorage.getItem(getMemberEventStorageKey('gic_registration', event.id)))
     } catch {
       return false
     }
@@ -2591,7 +2613,7 @@ function MyRegistrations() {
   const remoteEventIds = new Set(remoteRegistrations.map((registration) => registration.eventId))
   const localEvents = localRegistrations.filter((event) => !remoteEventIds.has(event.id)).map((event) => {
     try {
-      const stored = JSON.parse(localStorage.getItem(`gic_registration_${event.id}`) || 'null')
+      const stored = JSON.parse(localStorage.getItem(getMemberEventStorageKey('gic_registration', event.id)) || 'null')
       return { ...event, ...(stored?.event || {}), status: 'CONFIRMED', registered: true }
     } catch {
       return { ...event, status: 'CONFIRMED', registered: true }
