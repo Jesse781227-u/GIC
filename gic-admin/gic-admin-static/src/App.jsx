@@ -524,7 +524,12 @@ function ModernMemberDetails(){
  useEffect(()=>{const user=adminAuth.currentUser;if(user)adminApiScope(user).then(setScope).catch(()=>setScope(''))},[])
  const memberQuery=useQuery({queryKey:adminApiQueryKey(scope,memberPath),queryFn:()=>requestAdminApi(memberPath),enabled:Boolean(scope),staleTime:adminStaleTime(memberPath)})
  const member=memberQuery.data?.member||null
- const groupMemberships=memberQuery.data?.groups||{ministries:[],cells:[],segments:[]}
+ const groupData=memberQuery.data?.groups||{}
+ const groupMemberships={
+  ministries:Array.isArray(groupData.ministries)?groupData.ministries:[],
+  cells:Array.isArray(groupData.cells)?groupData.cells:Array.isArray(groupData.fellowships)?groupData.fellowships:[],
+  segments:Array.isArray(groupData.segments)?groupData.segments:[],
+ }
  const ageGroups=memberQuery.data?.ageGroups||[]
  const [ageGroupId,setAgeGroupId]=useState('')
  const [relationshipStatus,setRelationshipStatus]=useState('')
