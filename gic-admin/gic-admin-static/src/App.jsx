@@ -733,8 +733,10 @@ function AttendanceOverview(){
       if (tab === 'Services' && !filters.occurrenceId && !filters.gender && !filters.ageGroupId) {
        setServiceOptions(payload.rows || [])
       }
-      setOptions(payload.options || {
-        ageGroups: [], genders: [], recordings: [],
+      setOptions({
+        ageGroups: Array.isArray(payload.options?.ageGroups) ? payload.options.ageGroups : [],
+        genders: Array.isArray(payload.options?.genders) ? payload.options.genders : [],
+        recordings: Array.isArray(payload.options?.recordings) ? payload.options.recordings : [],
       })
     })
     .catch((requestError)=>{
