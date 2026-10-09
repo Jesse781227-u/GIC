@@ -364,20 +364,37 @@ function AudioPlayerProvider({ children }) {
     let active = true
     let sessionId = null
     let heartbeatId = null
+    let pendingMilliseconds = 0
+    let reportInFlight = false
+    let finishRequested = false
+    let endReported = false
     let lastReportedAt = Date.now()
 
     const reportListening = async (ended = false) => {
-      if (!sessionId) return
-      const durationSeconds = Math.min(30, Math.max(0, Math.floor((Date.now() - lastReportedAt) / 1000)))
-      lastReportedAt = Date.now()
+      const now = Date.now()
+      pendingMilliseconds += Math.max(0, now - lastReportedAt)
+      lastReportedAt = now
+      finishRequested ||= ended
+      if (!sessionId || reportInFlight) return
+
+      reportInFlight = true
       try {
-        await fetchMemberApi(`/api/mixlr/listens/${encodeURIComponent(sessionId)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ durationSeconds, ended }),
-          keepalive: ended,
-        })
+        while (pendingMilliseconds >= 1000 || (finishRequested && !endReported)) {
+          const durationSeconds = Math.min(30, Math.floor(pendingMilliseconds / 1000))
+          const sendEnded = finishRequested && pendingMilliseconds <= durationSeconds * 1000
+          await fetchMemberApi(`/api/mixlr/listens/${encodeURIComponent(sessionId)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ durationSeconds, ended: sendEnded }),
+            keepalive: sendEnded,
+          })
+          pendingMilliseconds -= durationSeconds * 1000
+          if (sendEnded) endReported = true
+          if (!finishRequested && pendingMilliseconds < 30000) break
+        }
       } catch {
         // Playback continues even if analytics are temporarily unavailable.
+      } finally {
+        reportInFlight = false
       }
     }
 
